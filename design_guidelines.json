@@ -1,0 +1,145 @@
+{
+  "theme_and_archetype": {
+    "theme": "Dark",
+    "archetype": "Swiss & High-Contrast + Luxury (Fintech Variation)",
+    "description": "A sophisticated, high-density 'Control Room' dashboard prioritizing data clarity, precision, and trust. Uses deep slate-blue voids, crisp 1px borders, and highly legible typography. Avoids 'AI slop' glows in favor of institutional fintech aesthetics."
+  },
+  "color_tokens": {
+    "background": {
+      "main_void": "#080C11",
+      "surface_card": "#11171F",
+      "sidebar": "#0A0E14",
+      "glass_panel": "rgba(8, 12, 17, 0.75)"
+    },
+    "border": {
+      "default": "#212B36",
+      "hover": "#334155",
+      "focus": "#0066FF"
+    },
+    "text": {
+      "primary": "#F3F4F6",
+      "secondary": "#9CA3AF",
+      "muted": "#6B7280",
+      "inverse": "#080C11"
+    },
+    "accent": {
+      "brand": "#0066FF",
+      "brand_hover": "#2563EB",
+      "positive": "#10B981",
+      "warning": "#F59E0B",
+      "critical": "#EF4444"
+    },
+    "property_status_badges": {
+      "in_valutazione": { "bg": "rgba(59, 130, 246, 0.15)", "text": "#60A5FA", "border": "rgba(59, 130, 246, 0.3)" },
+      "in_trattativa": { "bg": "rgba(245, 158, 11, 0.15)", "text": "#FBBF24", "border": "rgba(245, 158, 11, 0.3)" },
+      "acquistato": { "bg": "rgba(16, 185, 129, 0.15)", "text": "#34D399", "border": "rgba(16, 185, 129, 0.3)" },
+      "in_ristrutturazione": { "bg": "rgba(249, 115, 22, 0.15)", "text": "#FB923C", "border": "rgba(249, 115, 22, 0.3)" },
+      "disponibile": { "bg": "rgba(6, 182, 212, 0.15)", "text": "#22D3EE", "border": "rgba(6, 182, 212, 0.3)" },
+      "affittato": { "bg": "rgba(132, 204, 22, 0.15)", "text": "#A3E635", "border": "rgba(132, 204, 22, 0.3)" },
+      "sfitto": { "bg": "rgba(239, 68, 68, 0.15)", "text": "#F87171", "border": "rgba(239, 68, 68, 0.3)" },
+      "in_vendita": { "bg": "rgba(14, 165, 233, 0.15)", "text": "#38BDF8", "border": "rgba(14, 165, 233, 0.3)" },
+      "venduto": { "bg": "rgba(100, 116, 139, 0.15)", "text": "#94A3B8", "border": "rgba(100, 116, 139, 0.3)" },
+      "archiviato": { "bg": "rgba(63, 63, 70, 0.15)", "text": "#A1A1AA", "border": "rgba(63, 63, 70, 0.3)" }
+    }
+  },
+  "typography": {
+    "font_families": {
+      "heading": "'Cabinet Grotesk', sans-serif",
+      "body": "'IBM Plex Sans', sans-serif",
+      "data": "'IBM Plex Sans', monospace"
+    },
+    "scale": {
+      "h1": "text-3xl md:text-4xl font-bold tracking-tight",
+      "h2": "text-xl md:text-2xl font-semibold tracking-tight",
+      "h3": "text-lg font-semibold",
+      "body_base": "text-sm text-[#F3F4F6] leading-relaxed",
+      "body_small": "text-xs text-[#9CA3AF]",
+      "kpi_value": "text-3xl md:text-4xl font-bold tracking-tighter tabular-nums",
+      "table_data": "text-sm tabular-nums"
+    },
+    "instructions": "Import Cabinet Grotesk via Fontshare and IBM Plex Sans via Google Fonts. Strictly avoid Inter, Roboto, and Space Grotesk. Enforce tabular-nums for all financial metrics to prevent layout shifts."
+  },
+  "layout_and_spacing": {
+    "grid_system": {
+      "pattern": "Control Room Grid",
+      "columns": "grid-cols-1 md:grid-cols-2 xl:grid-cols-4",
+      "gap": "gap-4 or gap-6 for macro layout; gap-2 for internal card elements."
+    },
+    "sidebar": {
+      "width": "w-64",
+      "grouping": [
+        { "name": "Overview", "items": ["Dashboard Generale", "KPI & Rendimenti", "Cash Flow"] },
+        { "name": "Portfolio", "items": ["Patrimonio Immobiliare", "Scheda Immobile", "Mappa"] },
+        { "name": "Operazioni", "items": ["Operazioni Immobiliari", "Affitti & Locazioni", "Vendite & Rivendite", "Lavori & Ristrutturazioni"] },
+        { "name": "Finanza", "items": ["Costi & Ricavi", "Mutui & Finanziamenti", "Simulatore Investimenti"] },
+        { "name": "Intelligenza", "items": ["AI Autopilot", "AI Alert Center", "Report Direzionali"] },
+        { "name": "Sistema", "items": ["Documenti", "Impostazioni"] }
+      ]
+    },
+    "padding_strategy": "Cards must use p-6 to breathe. Dense data tables can use p-4. Avoid full-bleed tables within cards unless borders are merged."
+  },
+  "component_patterns": {
+    "cards": {
+      "style": "bg-[#11171F] border border-[#212B36] rounded-xl. No drop shadows. For interactive cards, add hover:border-[#334155] transition-colors."
+    },
+    "buttons": {
+      "primary": "bg-[#0066FF] hover:bg-[#2563EB] text-white rounded-lg px-4 py-2 font-medium transition-colors",
+      "secondary": "bg-transparent border border-[#334155] text-[#F3F4F6] hover:bg-[#212B36] rounded-lg px-4 py-2"
+    },
+    "charts": {
+      "library": "Recharts",
+      "styling": "Use #0066FF for main series, #10B981 for revenue/positive. Remove standard axis lines (axisLine={false}). Use dotted or dashed horizontal grid lines colored #212B36."
+    },
+    "score_gauge": {
+      "description": "Portfolio Score / Deal Score 0-100.",
+      "implementation": "Circular SVG progress bar (conic gradient or stroke-dasharray) with a #212B36 background track. Text centered inside using Cabinet Grotesk. Color scales: 0-40 Red, 41-70 Amber, 71-100 Green."
+    },
+    "ai_chat_panel": {
+      "style": "Glassmorphism control panel. backdrop-blur-2xl bg-[#080C11]/80 border border-[#212B36] rounded-xl or as a right-side fixed drawer. Use a subtle inner border (border-t border-white/5). AI responses use a slightly lighter background like #161B22."
+    },
+    "badges": {
+      "style": "rounded-full px-2.5 py-0.5 text-xs font-medium border"
+    }
+  },
+  "testing_and_accessibility": {
+    "data_testid": "MANDATORY. Every interactive element (link, button, input, tab, card) MUST have a data-testid attribute in kebab-case. E.g., data-testid='sidebar-nav-dashboard', data-testid='kpi-card-roi'."
+  },
+  "media_assets": {
+    "property_thumbnails": [
+      {
+        "url": "https://images.unsplash.com/photo-1619218070141-bcfeb8b93074?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBsdXh1cnklMjBhcGFydG1lbnQlMjBleHRlcmlvciUyMGFyY2hpdGVjdHVyZXxlbnwwfHx8fDE3ODAwMDU4MzF8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Modern concrete luxury exterior"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1635506232643-6c526f97e519?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwzfHxtb2Rlcm4lMjBsdXh1cnklMjBhcGFydG1lbnQlMjBleHRlcmlvciUyMGFyY2hpdGVjdHVyZXxlbnwwfHx8fDE3ODAwMDU4MzF8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Tall modern building"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1597682496035-b04f723202a4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwzfHxpdGFsaWFuJTIwbHV4dXJ5JTIwdmlsbGElMjByZWFsJTIwZXN0YXRlfGVufDB8fHx8MTc4MDAwNTgzMXww&ixlib=rb-4.1.0&q=85",
+        "description": "Italian villa over water"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1734173071981-b16ee4f9867f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwxfHxpdGFsaWFuJTIwbHV4dXJ5JTIwdmlsbGElMjByZWFsJTIwZXN0YXRlfGVufDB8fHx8MTc4MDAwNTgzMXww&ixlib=rb-4.1.0&q=85",
+        "description": "Italian luxury courtyard"
+      }
+    ],
+    "user_avatars": [
+      {
+        "url": "https://images.unsplash.com/photo-1600878459138-e1123b37cb30?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHw0fHxwcm9mZXNzaW9uYWwlMjBjb3Jwb3JhdGUlMjBoZWFkc2hvdCUyMHBvcnRyYWl0fGVufDB8fHx8MTc4MDAwNTg0OXww&ixlib=rb-4.1.0&q=85",
+        "role": "CEO / Admin"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1685760259914-ee8d2c92d2e0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHwyfHxwcm9mZXNzaW9uYWwlMjBjb3Jwb3JhdGUlMjBoZWFkc2hvdCUyMHBvcnRyYWl0fGVufDB8fHx8MTc4MDAwNTg0OXww&ixlib=rb-4.1.0&q=85",
+        "role": "Amministrazione"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBjb3Jwb3JhdGUlMjBoZWFkc2hvdCUyMHBvcnRyYWl0fGVufDB8fHx8MTc4MDAwNTg0OXww&ixlib=rb-4.1.0&q=85",
+        "role": "Commercialista"
+      }
+    ]
+  },
+  "icons": {
+    "library": "lucide-react",
+    "instructions": "Use lucide-react strictly. No emojis. Standardize icon sizes (e.g., size={16} for inline, size={24} for sidebar)."
+  }
+}
