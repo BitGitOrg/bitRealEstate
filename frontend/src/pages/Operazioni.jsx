@@ -1,0 +1,84 @@
+import { Layout } from "../components/layout/Layout";
+import { SectionCard } from "../components/dashboard/SectionCard";
+import { StatusBadge } from "../components/StatusBadge";
+import { properties, formatEur } from "../lib/demoData";
+import { Home, ShoppingBag, Hammer } from "lucide-react";
+import { Link } from "react-router-dom";
+
+const OPERAZIONI = {
+  reddito: { label: "Immobile a reddito", icon: Home, color: "#10B981", desc: "Acquisto finalizzato all'affitto" },
+  compra_vendi: { label: "Compra-Vendi", icon: ShoppingBag, color: "#0066FF", desc: "Acquisto finalizzato alla rivendita" },
+  compra_ristruttura_vendi: { label: "Compra-Ristruttura-Vendi", icon: Hammer, color: "#F59E0B", desc: "Acquisto, lavori e rivendita" },
+};
+
+export default function Operazioni() {
+  const grouped = Object.keys(OPERAZIONI).map(k => ({
+    key: k, meta: OPERAZIONI[k], items: properties.filter(p => p.operazione === k),
+  }));
+
+  return (
+    <Layout title="Operazioni Immobiliari" subtitle="Gestione delle tipologie di operazione attive">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {grouped.map(g => {
+          const Icon = g.meta.icon;
+          const totale = g.items.reduce((s, x) => s + x.costo_totale, 0);
+          return (
+            <SectionCard key={g.key} testId={`op-summary-${g.key}`}>
+              <div className="flex items-start gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: `${g.meta.color}20`, border: `1px solid ${g.meta.color}40` }}>
+                  <Icon size={18} style={{ color: g.meta.color }} />
+                </div>
+                <div>
+                  <div className="font-display font-semibold text-[#F3F4F6]">{g.meta.label}</div>
+                  <div className="text-xs text-[#9CA3AF]">{g.meta.desc}</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-[#212B36]">
+                <div>
+                  <div className="text-[10px] uppercase text-[#6B7280]">Immobili</div>
+                  <div className="font-display text-2xl font-bold tabular">{g.items.length}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase text-[#6B7280]">Capitale</div>
+                  <div className="font-display text-2xl font-bold tabular">{formatEur(totale)}</div>
+                </div>
+              </div>
+            </SectionCard>
+          );
+        })}
+      </div>
+
+      {grouped.map(g => g.items.length > 0 && (
+        <SectionCard key={g.key} title={g.meta.label} subtitle={`${g.items.length} operazioni`} testId={`op-list-${g.key}`} className="mb-4">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[10px] uppercase tracking-wider text-[#6B7280] border-b border-[#212B36]">
+                <th className="py-2">Immobile</th>
+                <th className="py-2">Stato</th>
+                <th className="py-2 text-right">Costo totale</th>
+                <th className="py-2 text-right">Valore</th>
+                <th className="py-2 text-right">Canone</th>
+                <th className="py-2 text-right">Margine atteso</th>
+              </tr>
+            </thead>
+            <tbody>
+              {g.items.map(p => {
+                const margine = (p.valore_stimato || 0) - p.costo_totale;
+                return (
+                  <tr key={p.id} className="border-b border-[#212B36] last:border-0">
+                    <td className="py-3"><Link to={`/immobile/${p.id}`} className="hover:text-[#60A5FA]">{p.nome}</Link></td>
+                    <td className="py-3"><StatusBadge stato={p.stato} /></td>
+                    <td className="py-3 text-right tabular">{formatEur(p.costo_totale)}</td>
+                    <td className="py-3 text-right tabular">{formatEur(p.valore_stimato)}</td>
+                    <td className="py-3 text-right tabular">{p.canone_mensile ? formatEur(p.canone_mensile) : "—"}</td>
+                    <td className={`py-3 text-right tabular ${margine >= 0 ? "text-[#34D399]" : "text-[#F87171]"}`}>{formatEur(margine)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </SectionCard>
+      ))}
+    </Layout>
+  );
+}

@@ -1,0 +1,54 @@
+{
+  "summary": "Backend 100% pass (14/14 incl. live Claude Sonnet 4.6 chat). Frontend mostly working: login, dashboard with KPIs+Recharts, all 17 sidebar voices navigate cleanly, Patrimonio table with 10 rows + filters, Scheda Immobile loads correctly, Simulatore live-update + AI deal-analyze working. CRITICAL: AI Autopilot suggestion/chat crashes the whole app with a React 'Objects are not valid as a React child' overlay due to a 422 Pydantic validation error from backend (frontend sends context as string, backend expects dict).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/ai/chat", "issue": "ChatMessageIn.context typed as Optional[dict] but the Italian frontend naturally sends a free-text context string. Either widen the type to Union[str, dict, None] or accept str. Current behaviour: 422 with FastAPI validation detail (list of dicts) returned to the client."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AIAutopilot.jsx (line 40)", "issue": "Sends `context: ctx` where ctx is a STRING, but backend expects Optional[dict] -> always 422. ALSO the catch block does `toast.error(e?.response?.data?.detail || 'Errore AI')` and FastAPI's 422 detail is an ARRAY OF OBJECTS, which causes a React fatal 'Objects are not valid as a React child' runtime-error overlay covering the entire UI. The chat is completely broken; every suggestion click leaves the user on a red error screen.", "selector": "[data-testid^='ai-suggestion-'], [data-testid='ai-chat-send']", "priority": "CRITICAL"},
+      {"component": "SchedaImmobile.jsx", "issue": "Tabs (Anagrafica, Acquisto, Economico, Documenti, Movimenti) render correctly but lack data-testid attributes (expected `scheda-tab-anagrafica` etc.). Hampers automated testing.", "selector": "tab buttons", "priority": "LOW"},
+      {"component": "Patrimonio.jsx", "issue": "Only the property NAME cell is a Link (`property-link-{id}`). Clicking elsewhere on the row does nothing. Per the spec ('click su una riga apre la Scheda Immobile') the whole <tr> should be clickable / show pointer cursor.", "selector": "tbody tr", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [
+      {"flow": "AI Autopilot chat", "issue": "POST /api/ai/chat always 422 because of context type mismatch. Toast error handler then renders the validation detail array → unhandled React crash.", "affected_selectors": ["[data-testid='ai-chat-input']", "[data-testid='ai-chat-send']", "[data-testid^='ai-suggestion-']"]}
+    ],
+    "design_issues": [
+      {"screen": "Dashboard", "issues": ["Two non-fatal console warnings 'The width(-1) and height(-1) of chart should be greater than 0' from Recharts ResponsiveContainer — happens because charts mount inside a flex/grid item without explicit min-height on first render. Cosmetic only, charts render correctly."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "FIX AI Autopilot context type mismatch: option A (preferred) — in /app/frontend/src/pages/AIAutopilot.jsx wrap ctx into an object: `context: { summary: ctx }`. Option B — in /app/backend/server.py change `context: Optional[dict]` to `context: Optional[Any] = None` and inject as string in sys prompt.",
+    "FIX frontend error handler in AIAutopilot.jsx catch block: never pass non-string to toast.error / React children. Use: `const msg = typeof e?.response?.data?.detail === 'string' ? e.response.data.detail : (e?.response?.data?.detail?.[0]?.msg || 'Errore AI'); toast.error(msg);`",
+    "Add data-testid='scheda-tab-{anagrafica|acquisto|economico|documenti|movimenti}' to the tab buttons in SchedaImmobile.jsx",
+    "Optional: make the entire <tr> in Patrimonio clickable (navigate(`/immobile/${p.id}`) on row onClick) to match the functional spec"
+  ],
+  "critical_code_review_comments": [
+    "Backend: FastAPI exception detail is an OBJECT list on 422. Frontend always assumes detail is a string. Add a global apiClient interceptor that normalises errors into a plain string before they reach UI components.",
+    "Backend: `seed_users()` is called inside login handler AND on startup. Pattern is OK but if first request lands before startup finishes there can be a race. Consider awaiting only the startup version.",
+    "Frontend AIAutopilot.jsx is missing input validation on `data.reply`; if backend returns 500 the catch path runs but UI still functions — OK.",
+    "Frontend: portfolioKPI / ctx string concatenation in AIAutopilot uses raw numbers without thousands separators — minor UX nit.",
+    "Backend: `await db.users.delete_many({})` inside seed_users on a fresh deploy is fine, but the guard `existing >= len(DEMO_USERS)` means adding a new demo user requires manual cleanup. Use email-keyed upserts instead."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "85%"},
+  "test_credentials": "ceo@controlroom.it / demo1234 (+ amministrazione/commercialista/collaboratore @controlroom.it, same pwd)",
+  "seed_data_creation": "None added by tests. DEMO_USERS auto-seeded by backend on startup and on first /api/auth/login call.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend is solid (14/14 pytest, live Claude works). Focus next iteration on: (1) re-test /api/ai/chat after the context type fix — must succeed with both `{summary: 'string'}` dict context and absent context; (2) verify AI Autopilot UI no longer crashes when clicking suggestions and shows the AI reply bubble; (3) verify SchedaImmobile data-testid on tabs; (4) optionally verify whole-row clickability on Patrimonio. Use session_id like `test-sess-{uuid}` to avoid history pollution.",
+  "rca_of_ai_chat_bug": {
+    "symptom": "Clicking any AI suggestion or sending a message in AI Autopilot causes a fullscreen red 'Uncaught runtime errors' overlay: 'Objects are not valid as a React child (found: object with keys {type, loc, msg, input, url})'. Console also shows 422 on POST /api/ai/chat.",
+    "reproduction": "Login as ceo@controlroom.it / demo1234 → sidebar 'AI Autopilot' → click any of the 6 suggestions.",
+    "root_cause": "Dual bug. (1) /app/frontend/src/pages/AIAutopilot.jsx line 36-41 builds a string `ctx` and posts `{ session_id, message, context: ctx }`. Backend Pydantic model ChatMessageIn declares `context: Optional[dict]` (server.py line 55) → FastAPI returns HTTP 422 with `detail: [{type, loc, msg, input, url}]`. (2) The catch block (line 44) does `toast.error(e?.response?.data?.detail || 'Errore AI')` and pushes the same value through React, but `detail` is an ARRAY OF OBJECTS, not a string — Sonner toast accepts ReactNode and React then throws when trying to render an object.",
+    "mitigation": "Quick: in AIAutopilot.jsx replace `context: ctx` with `context: { summary: ctx }`. Defensive: change catch to `const detail = e?.response?.data?.detail; const msg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map(d => d.msg).join(', ') : 'Errore AI'); toast.error(msg);`. Long-term: widen backend type to `Optional[Union[str, dict]]` and convert to string in the system prompt."
+  }
+}

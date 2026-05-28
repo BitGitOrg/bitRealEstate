@@ -1,0 +1,233 @@
+import { Layout } from "../components/layout/Layout";
+import { KpiCard } from "../components/dashboard/KpiCard";
+import { SectionCard } from "../components/dashboard/SectionCard";
+import { ScoreGauge } from "../components/ScoreGauge";
+import { StatusBadge, SeverityBadge } from "../components/StatusBadge";
+import {
+  Building2, Wallet, TrendingUp, Banknote, AlertTriangle, Sparkles,
+  ArrowUpRight, ArrowDownRight, MapPin, Trophy, Activity
+} from "lucide-react";
+import { Link } from "react-router-dom";
+import {
+  ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis,
+  CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell,
+} from "recharts";
+import {
+  portfolioKPI, properties, cashFlowMensile, ricaviCostiAnnuali,
+  distribuzioneTipologia, alerts, formatEur,
+} from "../lib/demoData";
+
+const tooltipStyle = {
+  backgroundColor: "#080C11",
+  border: "1px solid #212B36",
+  borderRadius: 8,
+  fontSize: 12,
+  color: "#F3F4F6",
+};
+
+export default function Dashboard() {
+  const top = [...properties].sort((a, b) => b.portfolio_score - a.portfolio_score)[0];
+  const worst = [...properties].sort((a, b) => a.portfolio_score - b.portfolio_score)[0];
+
+  return (
+    <Layout
+      title="Dashboard Generale"
+      subtitle="Vista sintetica del portafoglio · Aggiornato in tempo reale"
+      actions={
+        <Link to="/ai-autopilot" data-testid="dashboard-ai-cta" className="hidden md:inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[rgba(0,102,255,0.1)] border border-[rgba(0,102,255,0.3)] text-[#60A5FA] hover:bg-[rgba(0,102,255,0.2)] text-sm font-medium transition-colors">
+          <Sparkles size={14} /> Chiedi ad AI Autopilot
+        </Link>
+      }
+    >
+      {/* KPI grid */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
+        <KpiCard label="Valore patrimonio" value={formatEur(portfolioKPI.valore_stimato_totale)} delta={6.4} icon={Building2} accent="brand" sublabel="Stima attuale" />
+        <KpiCard label="Capitale investito" value={formatEur(portfolioKPI.capitale_investito)} icon={Wallet} sublabel={`${portfolioKPI.totale_immobili} immobili`} />
+        <KpiCard label="Ricavi mensili" value={formatEur(portfolioKPI.ricavi_mensili)} delta={2.1} icon={ArrowUpRight} accent="positive" sublabel="Affitti incassati" />
+        <KpiCard label="Cash flow netto" value={formatEur(portfolioKPI.cash_flow_mensile)} delta={-3.2} icon={Activity} accent={portfolioKPI.cash_flow_mensile > 0 ? "positive" : "critical"} sublabel="Questo mese" />
+        <KpiCard label="Debito residuo" value={formatEur(portfolioKPI.debito_residuo)} icon={Banknote} accent="warning" sublabel="LTV 38%" />
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <KpiCard label="Rend. medio netto" value={`${portfolioKPI.rendimento_medio_netto}%`} delta={0.4} icon={TrendingUp} accent="positive" sublabel="Target 4,5%" />
+        <KpiCard label="Utile anno" value={formatEur(portfolioKPI.utile_anno)} delta={12.1} icon={ArrowUpRight} accent="positive" />
+        <KpiCard label="Liquidità" value={formatEur(portfolioKPI.liquidita_disponibile)} icon={Wallet} sublabel="Disponibile" />
+        <KpiCard label="Immobili critici" value={portfolioKPI.immobili_sotto_target + portfolioKPI.immobili_sfitti} icon={AlertTriangle} accent="critical" sublabel="Sotto target / sfitti" />
+      </div>
+
+      {/* Charts grid */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
+        <SectionCard testId="chart-cashflow" title="Andamento Cash Flow" subtitle="Ultimi 12 mesi" className="xl:col-span-2">
+          <ResponsiveContainer width="100%" height={280}>
+            <AreaChart data={cashFlowMensile} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+              <defs>
+                <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#0066FF" stopOpacity={0.4} />
+                  <stop offset="100%" stopColor="#0066FF" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#212B36" vertical={false} />
+              <XAxis dataKey="mese" stroke="#6B7280" fontSize={11} axisLine={false} tickLine={false} />
+              <YAxis stroke="#6B7280" fontSize={11} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatEur(v)} />
+              <Area type="monotone" dataKey="saldo" stroke="#0066FF" strokeWidth={2} fill="url(#g1)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </SectionCard>
+
+        <SectionCard testId="chart-distribuzione" title="Distribuzione patrimonio" subtitle="Per tipologia">
+          <ResponsiveContainer width="100%" height={220}>
+            <PieChart>
+              <Pie data={distribuzioneTipologia} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2}>
+                {distribuzioneTipologia.map((e, i) => <Cell key={i} fill={e.color} stroke="#11171F" strokeWidth={2} />)}
+              </Pie>
+              <Tooltip contentStyle={tooltipStyle} />
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="space-y-1.5 mt-2">
+            {distribuzioneTipologia.map((d) => (
+              <div key={d.name} className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full" style={{background: d.color}}/> {d.name}</span>
+                <span className="text-[#9CA3AF] tabular">{d.value}</span>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
+        <SectionCard testId="chart-ricavi-costi" title="Ricavi vs Costi" subtitle="Confronto mensile" className="xl:col-span-2">
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={ricaviCostiAnnuali} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#212B36" vertical={false} />
+              <XAxis dataKey="mese" stroke="#6B7280" fontSize={11} axisLine={false} tickLine={false} />
+              <YAxis stroke="#6B7280" fontSize={11} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatEur(v)} />
+              <Bar dataKey="ricavi" fill="#10B981" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="costi" fill="#EF4444" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </SectionCard>
+
+        <SectionCard testId="portfolio-score-card" title="Portfolio Score" subtitle="Salute complessiva del patrimonio">
+          <div className="flex flex-col items-center justify-center py-2">
+            <ScoreGauge value={72} size={160} dataTestId="portfolio-score-main" />
+            <div className="mt-4 grid grid-cols-2 gap-3 w-full">
+              <div className="text-center p-2 rounded-lg bg-[#080C11] border border-[#212B36]">
+                <div className="text-[10px] uppercase text-[#6B7280]">Profittevoli</div>
+                <div className="font-display text-lg font-bold text-[#34D399] tabular">{portfolioKPI.immobili_profittevoli}</div>
+              </div>
+              <div className="text-center p-2 rounded-lg bg-[#080C11] border border-[#212B36]">
+                <div className="text-[10px] uppercase text-[#6B7280]">Sotto target</div>
+                <div className="font-display text-lg font-bold text-[#F87171] tabular">{portfolioKPI.immobili_sotto_target}</div>
+              </div>
+            </div>
+          </div>
+        </SectionCard>
+      </div>
+
+      {/* Widgets row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <SectionCard testId="widget-best" title="Miglior immobile" action={<Trophy size={16} className="text-[#FBBF24]" />}>
+          <Link to={`/immobile/${top.id}`} className="block group">
+            <img src={top.img} alt={top.nome} className="w-full h-28 object-cover rounded-lg mb-3" />
+            <div className="font-display font-semibold text-sm text-[#F3F4F6] group-hover:text-[#60A5FA] transition-colors">{top.nome}</div>
+            <div className="flex items-center justify-between text-xs mt-1.5">
+              <span className="text-[#9CA3AF] flex items-center gap-1"><MapPin size={10}/> {top.citta}</span>
+              <span className="text-[#34D399] tabular font-medium">{top.rendimento_netto}% netto</span>
+            </div>
+          </Link>
+        </SectionCard>
+
+        <SectionCard testId="widget-worst" title="Da monitorare" action={<AlertTriangle size={16} className="text-[#F87171]" />}>
+          <Link to={`/immobile/${worst.id}`} className="block group">
+            <img src={worst.img} alt={worst.nome} className="w-full h-28 object-cover rounded-lg mb-3 grayscale-[40%]" />
+            <div className="font-display font-semibold text-sm text-[#F3F4F6] group-hover:text-[#60A5FA] transition-colors">{worst.nome}</div>
+            <div className="flex items-center justify-between text-xs mt-1.5">
+              <span className="text-[#9CA3AF] flex items-center gap-1"><MapPin size={10}/> {worst.citta}</span>
+              <StatusBadge stato={worst.stato} />
+            </div>
+          </Link>
+        </SectionCard>
+
+        <SectionCard testId="widget-alerts" title="Alert recenti" action={<Link to="/alert-center" className="text-xs text-[#60A5FA] hover:underline">Vedi tutti</Link>}>
+          <div className="space-y-2.5">
+            {alerts.slice(0, 3).map((a) => (
+              <div key={a.id} className="flex items-start gap-2.5 pb-2.5 border-b border-[#212B36] last:border-0 last:pb-0">
+                <SeverityBadge severity={a.severity} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium text-[#F3F4F6] truncate">{a.titolo}</div>
+                  <div className="text-[11px] text-[#9CA3AF] line-clamp-2">{a.descrizione}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+
+        <SectionCard testId="widget-forecast" title="Liquidità 90 gg" action={<Activity size={16} className="text-[#60A5FA]" />}>
+          <div className="font-display text-3xl font-bold tabular text-[#F3F4F6]">{formatEur(168200)}</div>
+          <div className="text-xs text-[#9CA3AF] mt-1">Previsione netta forecast</div>
+          <div className="mt-4 h-12">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={[{v:142},{v:155},{v:148},{v:162},{v:168}]}>
+                <Line type="monotone" dataKey="v" stroke="#10B981" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <Link to="/cash-flow" className="text-xs text-[#60A5FA] hover:underline">Vedi forecast →</Link>
+        </SectionCard>
+      </div>
+
+      {/* Recent properties table */}
+      <SectionCard testId="dashboard-recent-properties" title="Patrimonio recente" subtitle="Ultimi immobili nel portafoglio"
+        action={<Link to="/patrimonio" className="text-xs text-[#60A5FA] hover:underline">Vedi tutti →</Link>}>
+        <div className="overflow-x-auto -mx-2">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[10px] uppercase tracking-wider text-[#6B7280] border-b border-[#212B36]">
+                <th className="font-medium px-2 py-2">Immobile</th>
+                <th className="font-medium px-2 py-2">Città</th>
+                <th className="font-medium px-2 py-2">Stato</th>
+                <th className="font-medium px-2 py-2 text-right">Canone</th>
+                <th className="font-medium px-2 py-2 text-right">Rend. netto</th>
+                <th className="font-medium px-2 py-2 text-right">Cash flow</th>
+                <th className="font-medium px-2 py-2 text-right">Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {properties.slice(0, 6).map((p) => (
+                <tr key={p.id} className="border-b border-[#212B36] last:border-0 hover:bg-[#080C11]/50 transition-colors">
+                  <td className="px-2 py-3">
+                    <Link to={`/immobile/${p.id}`} className="flex items-center gap-3 hover:text-[#60A5FA]" data-testid={`row-property-${p.id}`}>
+                      <img src={p.img} alt="" className="w-10 h-10 rounded object-cover" />
+                      <div>
+                        <div className="font-medium text-[#F3F4F6]">{p.nome}</div>
+                        <div className="text-[11px] text-[#6B7280]">{p.id} · {p.metratura} m²</div>
+                      </div>
+                    </Link>
+                  </td>
+                  <td className="px-2 py-3 text-[#9CA3AF]">{p.citta}</td>
+                  <td className="px-2 py-3"><StatusBadge stato={p.stato} /></td>
+                  <td className="px-2 py-3 text-right tabular">{p.canone_mensile ? formatEur(p.canone_mensile) : "—"}</td>
+                  <td className="px-2 py-3 text-right tabular">
+                    {p.rendimento_netto > 0 ? <span className="text-[#34D399]">{p.rendimento_netto}%</span> : <span className="text-[#6B7280]">—</span>}
+                  </td>
+                  <td className="px-2 py-3 text-right tabular">
+                    <span className={p.cash_flow_mensile >= 0 ? "text-[#34D399]" : "text-[#F87171]"}>
+                      {formatEur(p.cash_flow_mensile)}
+                    </span>
+                  </td>
+                  <td className="px-2 py-3 text-right">
+                    <span className={`tabular font-medium ${p.portfolio_score >= 71 ? "text-[#34D399]" : p.portfolio_score >= 41 ? "text-[#FBBF24]" : "text-[#F87171]"}`}>
+                      {p.portfolio_score}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
+    </Layout>
+  );
+}
