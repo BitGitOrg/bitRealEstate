@@ -33,7 +33,17 @@ export default function AIAutopilot() {
     setMessages(newMsgs);
     setLoading(true);
     try {
-      const ctx = `KPI portafoglio: valore stimato ${portfolioKPI.valore_stimato_totale}€, capitale investito ${portfolioKPI.capitale_investito}€, ricavi mensili ${portfolioKPI.ricavi_mensili}€, cash flow mensile ${portfolioKPI.cash_flow_mensile}€, debito ${portfolioKPI.debito_residuo}€, rendimento medio netto ${portfolioKPI.rendimento_medio_netto}%, ${portfolioKPI.totale_immobili} immobili totali, ${portfolioKPI.immobili_sfitti} sfitto, ${portfolioKPI.immobili_in_lavorazione} in lavorazione.`;
+      const ctx = {
+        valore_stimato_totale: portfolioKPI.valore_stimato_totale,
+        capitale_investito: portfolioKPI.capitale_investito,
+        ricavi_mensili: portfolioKPI.ricavi_mensili,
+        cash_flow_mensile: portfolioKPI.cash_flow_mensile,
+        debito_residuo: portfolioKPI.debito_residuo,
+        rendimento_medio_netto: portfolioKPI.rendimento_medio_netto,
+        totale_immobili: portfolioKPI.totale_immobili,
+        immobili_sfitti: portfolioKPI.immobili_sfitti,
+        immobili_in_lavorazione: portfolioKPI.immobili_in_lavorazione,
+      };
       const { data } = await apiClient().post("/ai/chat", {
         session_id: sessionId,
         message: q,
@@ -41,7 +51,11 @@ export default function AIAutopilot() {
       });
       setMessages([...newMsgs, { role: "ai", text: data.reply }]);
     } catch (e) {
-      toast.error(e?.response?.data?.detail || "Errore AI");
+      const detail = e?.response?.data?.detail;
+      const msg = typeof detail === "string"
+        ? detail
+        : Array.isArray(detail) ? detail.map(d => d?.msg || "errore").join(", ") : "Errore AI";
+      toast.error(msg);
       setMessages([...newMsgs, { role: "ai", text: "⚠ Impossibile ottenere risposta. Riprova tra poco.", error: true }]);
     } finally { setLoading(false); }
   };

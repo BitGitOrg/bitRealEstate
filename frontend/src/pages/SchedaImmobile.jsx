@@ -59,11 +59,11 @@ export default function SchedaImmobile() {
 
       <Tabs defaultValue="anagrafica" className="w-full">
         <TabsList className="bg-[#11171F] border border-[#212B36]" data-testid="immobile-tabs">
-          <TabsTrigger value="anagrafica" data-testid="tab-anagrafica">Anagrafica</TabsTrigger>
-          <TabsTrigger value="acquisto" data-testid="tab-acquisto">Acquisto</TabsTrigger>
-          <TabsTrigger value="economico" data-testid="tab-economico">Economico</TabsTrigger>
-          <TabsTrigger value="documenti" data-testid="tab-documenti">Documenti</TabsTrigger>
-          <TabsTrigger value="movimenti" data-testid="tab-movimenti">Movimenti</TabsTrigger>
+          <TabsTrigger value="anagrafica" data-testid="scheda-tab-anagrafica">Anagrafica</TabsTrigger>
+          <TabsTrigger value="acquisto" data-testid="scheda-tab-acquisto">Acquisto</TabsTrigger>
+          <TabsTrigger value="economico" data-testid="scheda-tab-economico">Economico</TabsTrigger>
+          <TabsTrigger value="documenti" data-testid="scheda-tab-documenti">Documenti</TabsTrigger>
+          <TabsTrigger value="movimenti" data-testid="scheda-tab-movimenti">Movimenti</TabsTrigger>
         </TabsList>
 
         <TabsContent value="anagrafica" className="mt-4">
