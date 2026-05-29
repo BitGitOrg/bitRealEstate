@@ -23,6 +23,8 @@ import Documenti from "@/pages/Documenti";
 import Report from "@/pages/Report";
 import Impostazioni from "@/pages/Impostazioni";
 import Mappa from "@/pages/Mappa";
+import DealInbox from "@/pages/DealInbox";
+import Watchlists from "@/pages/Watchlists";
 
 const Protected = ({ children }) => {
   const { user, loading } = useAuth();
@@ -56,6 +58,8 @@ function App() {
             <Route path="/report" element={<Protected><Report /></Protected>} />
             <Route path="/impostazioni" element={<Protected><Impostazioni /></Protected>} />
             <Route path="/mappa" element={<Protected><Mappa /></Protected>} />
+            <Route path="/deal-inbox" element={<Protected><DealInbox /></Protected>} />
+            <Route path="/watchlists" element={<Protected><Watchlists /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <Toaster position="top-right" theme="dark" />

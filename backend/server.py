@@ -8,14 +8,18 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import json
+import re
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Any
 import uuid
 from datetime import datetime, timezone, timedelta
 import bcrypt
 import jwt
+import httpx
+from bs4 import BeautifulSoup
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -261,6 +265,238 @@ async def ai_history(session_id: str, user: dict = Depends(current_user)):
         {"_id": 0}
     ).sort("ts", 1).to_list(200)
     return msgs
+
+# ============================================================
+# ===== Deal Inbox + AI Scout + Watchlists =====
+# ============================================================
+
+class DealAnalyzeRequest(BaseModel):
+    url: Optional[str] = None
+    text: Optional[str] = None
+    note: Optional[str] = None
+
+class WatchlistIn(BaseModel):
+    nome: str
+    citta: Optional[str] = None
+    tipologia: Optional[str] = None
+    prezzo_max: Optional[float] = None
+    metratura_min: Optional[float] = None
+    rendimento_min: Optional[float] = None
+    attiva: bool = True
+
+class DealStatusUpdate(BaseModel):
+    status: Literal["nuovo", "interessato", "scartato", "in_trattativa"]
+
+def strip_html(html: str, limit: int = 8000) -> str:
+    soup = BeautifulSoup(html, "lxml")
+    for tag in soup(["script", "style", "noscript", "header", "footer", "nav", "svg"]):
+        tag.decompose()
+    text = soup.get_text(separator=" ", strip=True)
+    text = re.sub(r"\s+", " ", text)
+    return text[:limit]
+
+async def fetch_url_text(url: str) -> str:
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+    }
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, headers=headers) as client:
+        r = await client.get(url)
+        if r.status_code >= 400:
+            raise HTTPException(status_code=400, detail=f"Impossibile scaricare l'annuncio (HTTP {r.status_code}). Prova a incollare il testo dell'annuncio.")
+        return strip_html(r.text)
+
+DEAL_EXTRACT_PROMPT = (
+    "Sei un sistema di estrazione dati da annunci immobiliari italiani. "
+    "Ricevi il testo di un annuncio e devi rispondere SOLO con un JSON valido, niente prefissi, niente markdown, niente backticks. "
+    "Struttura JSON richiesta:\n"
+    '{\n'
+    '  "titolo": "string breve",\n'
+    '  "prezzo": numero in EUR (0 se non trovato),\n'
+    '  "metratura": numero in m² (0 se non trovato),\n'
+    '  "locali": numero (0 se non trovato),\n'
+    '  "piano": "string o vuoto",\n'
+    '  "tipologia": "Bilocale|Trilocale|Quadrilocale|Monolocale|Villa|Loft|Attico|Altro",\n'
+    '  "citta": "string",\n'
+    '  "zona": "quartiere o indirizzo se presente, altrimenti vuoto",\n'
+    '  "anno_costruzione": numero (0 se non trovato),\n'
+    '  "classe_energetica": "A|B|C|D|E|F|G o vuoto",\n'
+    '  "canone_stimato": numero EUR/mese stimato in base a zona e metratura italiani (mai 0),\n'
+    '  "descrizione_breve": "max 200 caratteri",\n'
+    '  "punti_forza": ["3-5 bullet"],\n'
+    '  "punti_attenzione": ["3-5 bullet"]\n'
+    "}\n"
+    "Se un dato non è esplicitamente nel testo, ricavalo con stima ragionevole basata su zona/metratura italiane. "
+    "Il canone_stimato deve essere SEMPRE > 0."
+)
+
+def compute_deal_score(prezzo: float, metratura: float, canone: float, citta: str) -> dict:
+    costo_totale = prezzo * 1.10  # +10% costi accessori stimati
+    rend_lordo = (canone * 12) / costo_totale * 100 if costo_totale > 0 else 0
+    rend_netto = rend_lordo * 0.65
+    score = 50 + min(30, max(-30, (rend_netto - 5) * 6))
+    if prezzo > 0 and metratura > 0:
+        prezzo_mq = prezzo / metratura
+        # Penalize >5500/mq big cities, >3500 small
+        big_city = citta.lower() in {"milano", "roma", "firenze", "venezia", "bologna"}
+        soglia = 5500 if big_city else 3500
+        if prezzo_mq > soglia * 1.3: score -= 12
+        elif prezzo_mq < soglia * 0.7: score += 8
+    score = max(0, min(100, int(score)))
+    if score >= 91: giudizio, strategia = "Operazione eccellente", "Affitto a reddito"
+    elif score >= 76: giudizio, strategia = "Buona operazione", "Affitto a reddito"
+    elif score >= 61: giudizio, strategia = "Operazione interessante", "Valutare lavori+rivendita"
+    elif score >= 41: giudizio, strategia = "Operazione rischiosa", "Negoziare prezzo"
+    else: giudizio, strategia = "Operazione sconsigliata", "Non procedere"
+    rischio = "Basso" if score >= 75 else ("Medio" if score >= 50 else "Alto")
+    return {
+        "deal_score": score,
+        "giudizio": giudizio,
+        "strategia": strategia,
+        "rischio": rischio,
+        "rendimento_lordo": round(rend_lordo, 2),
+        "rendimento_netto": round(rend_netto, 2),
+    }
+
+async def match_watchlists(user_id: str, deal: dict) -> list:
+    wls = await db.watchlists.find({"user_id": user_id, "attiva": True}, {"_id": 0}).to_list(50)
+    matches = []
+    for w in wls:
+        ok = True
+        if w.get("citta") and deal.get("citta", "").lower() != w["citta"].lower(): ok = False
+        if w.get("tipologia") and deal.get("tipologia") != w["tipologia"]: ok = False
+        if w.get("prezzo_max") and deal.get("prezzo", 0) > w["prezzo_max"]: ok = False
+        if w.get("metratura_min") and deal.get("metratura", 0) < w["metratura_min"]: ok = False
+        if w.get("rendimento_min") and deal.get("rendimento_netto", 0) < w["rendimento_min"]: ok = False
+        if ok:
+            matches.append({"id": w["id"], "nome": w["nome"]})
+    return matches
+
+@api_router.post("/deals/analyze")
+async def deals_analyze(req: DealAnalyzeRequest, user: dict = Depends(current_user)):
+    if not req.url and not req.text:
+        raise HTTPException(status_code=400, detail="Inserisci URL oppure testo dell'annuncio.")
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="LLM key non configurata")
+
+    raw = req.text or ""
+    if req.url and not raw:
+        raw = await fetch_url_text(req.url)
+    raw = raw[:8000]
+
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"extract-{uuid.uuid4()}",
+            system_message=DEAL_EXTRACT_PROMPT,
+        ).with_model("anthropic", "claude-sonnet-4-6")
+        reply = await chat.send_message(UserMessage(text=raw or req.note or ""))
+    except Exception as e:
+        logging.exception("LLM extract error")
+        raise HTTPException(status_code=500, detail=f"Errore estrazione AI: {str(e)}")
+
+    # Robust JSON extraction
+    parsed = None
+    try:
+        parsed = json.loads(reply)
+    except Exception:
+        m = re.search(r"\{[\s\S]*\}", reply)
+        if m:
+            try: parsed = json.loads(m.group(0))
+            except Exception: parsed = None
+    if not parsed:
+        raise HTTPException(status_code=500, detail="L'AI non ha restituito JSON valido. Riprova.")
+
+    # Compute deal score
+    score_data = compute_deal_score(
+        float(parsed.get("prezzo", 0) or 0),
+        float(parsed.get("metratura", 0) or 0),
+        float(parsed.get("canone_stimato", 0) or 0),
+        parsed.get("citta", "") or "",
+    )
+
+    deal = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "source_url": req.url,
+        "note": req.note,
+        "titolo": parsed.get("titolo", "Annuncio senza titolo"),
+        "prezzo": float(parsed.get("prezzo", 0) or 0),
+        "metratura": float(parsed.get("metratura", 0) or 0),
+        "locali": int(parsed.get("locali", 0) or 0),
+        "piano": parsed.get("piano", ""),
+        "tipologia": parsed.get("tipologia", "Altro"),
+        "citta": parsed.get("citta", ""),
+        "zona": parsed.get("zona", ""),
+        "anno_costruzione": int(parsed.get("anno_costruzione", 0) or 0),
+        "classe_energetica": parsed.get("classe_energetica", ""),
+        "canone_stimato": float(parsed.get("canone_stimato", 0) or 0),
+        "descrizione_breve": parsed.get("descrizione_breve", ""),
+        "punti_forza": parsed.get("punti_forza", []) or [],
+        "punti_attenzione": parsed.get("punti_attenzione", []) or [],
+        **score_data,
+        "status": "nuovo",
+        "watchlist_matches": [],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    deal["watchlist_matches"] = await match_watchlists(user["id"], deal)
+    await db.deals.insert_one(deal.copy())
+    deal.pop("_id", None)
+    return deal
+
+@api_router.get("/deals")
+async def list_deals(status: Optional[str] = None, user: dict = Depends(current_user)):
+    q = {"user_id": user["id"]}
+    if status: q["status"] = status
+    items = await db.deals.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return items
+
+@api_router.patch("/deals/{deal_id}/status")
+async def update_deal_status(deal_id: str, upd: DealStatusUpdate, user: dict = Depends(current_user)):
+    res = await db.deals.update_one(
+        {"id": deal_id, "user_id": user["id"]},
+        {"$set": {"status": upd.status, "updated_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Deal non trovato")
+    deal = await db.deals.find_one({"id": deal_id}, {"_id": 0})
+    return deal
+
+@api_router.delete("/deals/{deal_id}")
+async def delete_deal(deal_id: str, user: dict = Depends(current_user)):
+    await db.deals.delete_one({"id": deal_id, "user_id": user["id"]})
+    return {"ok": True}
+
+@api_router.get("/watchlists")
+async def list_watchlists(user: dict = Depends(current_user)):
+    items = await db.watchlists.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    return items
+
+@api_router.post("/watchlists")
+async def create_watchlist(w: WatchlistIn, user: dict = Depends(current_user)):
+    item = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        **w.model_dump(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.watchlists.insert_one(item.copy())
+    item.pop("_id", None)
+    return item
+
+@api_router.delete("/watchlists/{wid}")
+async def delete_watchlist(wid: str, user: dict = Depends(current_user)):
+    await db.watchlists.delete_one({"id": wid, "user_id": user["id"]})
+    return {"ok": True}
+
+@api_router.patch("/watchlists/{wid}")
+async def toggle_watchlist(wid: str, attiva: bool, user: dict = Depends(current_user)):
+    await db.watchlists.update_one(
+        {"id": wid, "user_id": user["id"]},
+        {"$set": {"attiva": attiva}},
+    )
+    return {"ok": True}
 
 # ===== Mount =====
 app.include_router(api_router)

@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 3 testing of Deal Inbox (AI Scout, Claude Sonnet 4.6) + Watchlists module. ALL 13 backend pytest tests PASSED (24.5s) including 3 live LLM analyze calls, watchlist matching (Roma WL correctly matched into deal.watchlist_matches), full CRUD on deals + watchlists, status PATCH validation, and url-soft test (example.com returns 200 with prezzo=0, no crash). Frontend Playwright run end-to-end PASSED: sidebar shows Intelligenza section with Deal Inbox + Watchlists; /deal-inbox renders form, analyze button works (text 'Bilocale Navigli 60mq prezzo 245000 ... Milano' produced a card with Deal Score visible in ~10s); detail panel exposes punti_forza + punti_attenzione and 3 action buttons (interessato/trattativa/scartato); clicking 'In trattativa' updates card status to 'In trattativa'; /watchlists CRUD via UI works (UI_TEST_WL created and visible as card); Patrimonio shows the in_trattativa deal as an extra row with 'Deal Inbox' badge and clicking the row correctly redirects to /deal-inbox (not /immobile/...).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/deals/analyze (url variant)", "issue": "When url returns thin/empty content (e.g., https://example.com), the LLM still produces a deal record with prezzo=0/metratura=0/canone_stimato=500 and score 20. Not a bug per spec (Test soft was 'must not crash, return 500 with detail or parse'), but consider returning 422 with a friendlier 'Annuncio non riconoscibile, incolla il testo' message instead of persisting a low-quality deal."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_deal_inbox.py",
+    "/app/test_reports/pytest/iter3_deal_inbox.xml"
+  ],
+  "action_items": [
+    "Optional UX: when /api/deals/analyze gets a URL whose extracted text yields prezzo=0 (LLM couldn't extract), do not persist the deal — return 422 with detail 'Annuncio non riconoscibile, incolla il testo'.",
+    "Optional cleanup: the example.com test left behind a low-quality deal record in Patrimonio. Consider auto-purging deals with prezzo==0 OR forcing minimum quality threshold before persistence."
+  ],
+  "critical_code_review_comments": [
+    "server.py:443 — deal['watchlist_matches'] is computed AFTER score_data merge, which means rendimento_min filter in watchlists works correctly against rendimento_netto. Verified end-to-end via the Roma test.",
+    "server.py:493 PATCH /api/watchlists/{wid} expects `attiva` as a query/body bool but is typed as a bare function arg without Pydantic body model — FastAPI will treat it as query param. The frontend currently doesn't call this toggle endpoint so no impact, but flag for future use: should be a body model like WatchlistToggleIn(attiva: bool).",
+    "server.py:380 EMERGENT_LLM_KEY check returns 500 — should return 503 (service unavailable) for clearer ops signal.",
+    "server.py:298 fetch_url_text timeout=15s is correct per spec; raises HTTPException(400) on non-2xx upstream which propagates correctly.",
+    "server.py:333 compute_deal_score formula is deterministic and bounded; rendimento_netto = rendimento_lordo * 0.65 is a reasonable Italian net-of-tax approximation; OK for demo.",
+    "DealInbox.jsx + Watchlists.jsx + Patrimonio.jsx all use data-testid consistently; well-structured for testing.",
+    "Patrimonio.jsx:118 + 149 — Link uses `p.fromDeal ? '/deal-inbox' : '/immobile/...'` which correctly routes deal rows to the inbox. Verified."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_deal_inbox.py (new — 13 tests covering Deal Inbox + Watchlists module)"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% (5/5 flows)"},
+  "test_credentials": "ceo@controlroom.it / demo1234 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Test created and cleaned up: 1 watchlist (TEST_WL_Milano), 1 throwaway watchlist (TEST_WL_throwaway, deleted), 1 Roma watchlist (TEST_WL_Roma, persisted), 2 deals (milano + roma analyze, milano was deleted). UI run added 1 watchlist (UI_TEST_WL) and 2 more deals (example.com + bilocale milano), one moved to in_trattativa. State is non-destructive but leaves some test data in db.deals / db.watchlists under ceo user. Recommend periodic cleanup.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Deal Inbox + Watchlists module fully verified end-to-end (backend + frontend). All endpoints under /api/deals/* and /api/watchlists/* working. Live Claude Sonnet 4.6 extraction works in ~6-10s per call. Watchlist matching evaluates rendimento_netto correctly. The Patrimonio integration (in_trattativa deal as extra row with /deal-inbox link) is verified. Test data is left under ceo user (~3 watchlists + 2-3 deals) — main agent or next test agent can purge if needed via DELETE endpoints.",
+  "rca_of_the_issue": "N/A — feature verification iteration, no critical issues found."
+}

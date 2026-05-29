@@ -27,6 +27,8 @@ const GROUPS = [
     { to: "/simulatore", label: "Simulatore", icon: Calculator },
   ]},
   { name: "Intelligenza", items: [
+    { to: "/deal-inbox", label: "Deal Inbox", icon: Sparkles, accent: true },
+    { to: "/watchlists", label: "Watchlists", icon: BellRing },
     { to: "/ai-autopilot", label: "AI Autopilot", icon: Bot, accent: true },
     { to: "/alert-center", label: "Alert Center", icon: BellRing },
     { to: "/report", label: "Report Direzionali", icon: FileBarChart },
