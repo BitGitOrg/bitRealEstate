@@ -1,0 +1,50 @@
+{
+  "summary": "Iter 5 Centro Import — backend + frontend verified end-to-end. 7/7 backend pytest tests PASSED (10.3s) including: XLSX template download (6672 bytes, 23 headers, 'Istruzioni' sheet present); /import/immobili/parse on the downloaded template returned the exact example row (Bilocale Navigli, prezzo 215000, Intesa Sanpaolo, residuo 95000); /import/immobili/commit created a property visible via GET /api/properties with IMM- id; /import/bilancio/parse with live Claude Sonnet 4.6 correctly extracted ricavi_affitti=28500, IMU=1800, utile_netto=16100, valore_immobili=3650000, debito_mutui=1310000, patrimonio_netto=2482500; /import/bilancio/commit + GET /import/bilanci roundtrip OK; /import/banca/parse correctly populated match_canone for the 1450€ entrata against a seeded property; /import/banca/commit persisted movimenti. Frontend Playwright: login OK, sidebar 'Sistema → Centro Import' visible with AI badge, /import renders 3 tabs (Immobili active by default), download-template-btn triggered a real .xlsx download (6672 bytes via Playwright expect_download), Bilanci AI and Estratto conto tabs switch correctly and show italian dropzone copy ('Trascina il PDF o l\\'Excel...', 'Carica il CSV o Excel dell\\'estratto conto...').",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/import/bilancio/parse", "issue": "Returns HTTP 500 when EMERGENT_LLM_KEY is missing or when the LLM doesn't return valid JSON. 503 Service Unavailable would be a clearer ops signal; same pattern flagged in iter 3 for /api/deals/analyze."},
+      {"endpoint": "POST /api/import/immobili/commit", "issue": "No de-duplication: re-committing the same Excel will create duplicate properties (different IMM- ids). Consider unique constraint on (user_id, nome, indirizzo) or a 'replace_existing' flag."},
+      {"endpoint": "POST /api/import/banca/commit", "issue": "Idem — no de-duplication on (user_id, data, importo, descrizione); re-uploading the same statement will double-book movimenti. Add a hash-based dedup before insert."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/import (light theme)", "issues": ["The 'Made with Emergent' badge in the bottom-right slightly overlaps with the page content area on 1920px width but does not block any clickable element."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_import_center.py",
+    "/app/test_reports/pytest/iter5_import_center.xml"
+  ],
+  "action_items": [
+    "Optional: change /import/bilancio/parse error responses 500 → 503 when LLM key missing, 422 when JSON not parseable, for clearer client-side handling.",
+    "Optional: add de-duplication on import/immobili/commit and import/banca/commit to make re-uploads idempotent.",
+    "Optional: add ImportImmobiliCommit row-level Pydantic validation (currently rows: List[dict] is untyped — typo-prone)."
+  ],
+  "critical_code_review_comments": [
+    "server.py:734 parse_immobili reads workbook with data_only=True — correct for Excel files containing formulas; OK.",
+    "server.py:794 commit_immobili silently skips rows with valid=False — UI should ensure invalid rows are excluded before posting (already done client-side at ImportCenter.jsx:72). OK.",
+    "server.py:911 parse_bilancio: LLM JSON extraction has two fallbacks (raw json.loads + regex extract) — robust enough for Claude's typical output. Good.",
+    "server.py:974 parse_banca: pandas read_csv with sep=None engine='python' auto-detects delimiter — handled both ',' and ';' separators in tests. Solid.",
+    "server.py:1021 match_canone tolerance of 5€ may be too narrow if the bank credits the tenant with a small rounding (e.g., bonifico bancario fee); consider widening to 10€ or making it a parameter.",
+    "server.py:1043 commit_banca uses {**m, 'imported_at': ...} — beware: m comes from request body unchecked, a malicious client could inject arbitrary fields. Tighten with a Pydantic Movimento model with strict fields (data, descrizione, importo, tipo, match_canone).",
+    "ImportCenter.jsx:13 uses process.env.REACT_APP_BACKEND_URL — correct. Token retrieved from localStorage 'crr_token' to do raw fetch() for the download (apiClient is axios and would JSON-decode the binary). OK.",
+    "ImportCenter.jsx:44 localStorage.getItem('crr_token') is read on every download click — fine, but if token expires there's no refresh. Acceptable for MVP.",
+    "ImportCenter.jsx:398 lines total — within file-size budget.",
+    "Sidebar.jsx 'Centro Import' correctly placed in 'Sistema' section with accent=true (AI badge). Verified rendered text 'Centro Import\\nAI'.",
+    "No data-testid missing on critical interactive elements: tab-import-immobili / -bilanci / -banca, download-template-btn, immobili-commit-btn, bilancio-commit-btn, banca-commit-btn, dropzone-immobili are all present."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_import_center.py (new — 7 tests covering Centro Import module)"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (6/6 flows)"},
+  "test_credentials": "ceo@controlroom.it / demo1234 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Backend tests create+delete: 1 TEST_bulk_import property, 1 TEST_banca_match property, 1 bilancio doc, N movimenti_bancari. Properties and bilanci are cleaned up via DELETE in test fixtures. Movimenti_bancari from test_commit_banca are NOT cleaned (no DELETE endpoint exists for /api/import/banca) — leaves 2 movs per run in db.movimenti_bancari under ceo user. Consider adding DELETE /api/import/banca/{id} for cleanup.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 5 Centro Import is fully functional. The live Claude bilancio extraction works in ~6-9s and correctly returns all expected fields. The frontend tab switching, download flow, and dropzone messages are all in italian and correct. Test data left behind: a few movimenti_bancari rows (no DELETE endpoint). If iter 6 modifies any /api/import/* endpoint, re-run test_import_center.py.",
+  "rca_of_the_issue": "N/A — no issues found, feature works end-to-end."
+}

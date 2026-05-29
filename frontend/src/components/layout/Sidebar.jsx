@@ -2,7 +2,7 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, TrendingUp, Wallet, Building2, Map, FileText,
   Handshake, Home, ShoppingBag, Hammer, Receipt, Banknote, Calculator,
-  Bot, BellRing, FolderArchive, Settings, FileBarChart, ChevronRight, Sparkles
+  Bot, BellRing, FolderArchive, Settings, FileBarChart, ChevronRight, Sparkles, Database
 } from "lucide-react";
 
 const GROUPS = [
@@ -34,6 +34,7 @@ const GROUPS = [
     { to: "/report", label: "Report Direzionali", icon: FileBarChart },
   ]},
   { name: "Sistema", items: [
+    { to: "/import", label: "Centro Import", icon: Database, accent: true },
     { to: "/documenti", label: "Documenti", icon: FolderArchive },
     { to: "/impostazioni", label: "Impostazioni", icon: Settings },
   ]},

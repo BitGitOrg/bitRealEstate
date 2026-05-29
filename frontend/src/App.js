@@ -25,6 +25,7 @@ import Impostazioni from "@/pages/Impostazioni";
 import Mappa from "@/pages/Mappa";
 import DealInbox from "@/pages/DealInbox";
 import Watchlists from "@/pages/Watchlists";
+import ImportCenter from "@/pages/ImportCenter";
 
 const Protected = ({ children }) => {
   const { user, loading } = useAuth();
@@ -60,6 +61,7 @@ function App() {
             <Route path="/mappa" element={<Protected><Mappa /></Protected>} />
             <Route path="/deal-inbox" element={<Protected><DealInbox /></Protected>} />
             <Route path="/watchlists" element={<Protected><Watchlists /></Protected>} />
+            <Route path="/import" element={<Protected><ImportCenter /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <Toaster position="top-right" theme="dark" />

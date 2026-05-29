@@ -20,6 +20,12 @@ import bcrypt
 import jwt
 import httpx
 from bs4 import BeautifulSoup
+import io
+import openpyxl
+import pdfplumber
+import pandas as pd
+from fastapi import UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -643,6 +649,410 @@ async def convert_deal_to_property(deal_id: str, ov: ConvertDealIn, user: dict =
     )
     item.pop("_id", None)
     return _enrich_property(item)
+
+# ============================================================
+# ===== Centro Import (Immobili / Bilanci / Estratto Conto) =====
+# ============================================================
+
+IMMOBILI_COLUMNS = [
+    "Nome immobile", "Indirizzo", "Città", "Provincia", "Tipologia", "Metratura (m²)",
+    "Piano", "Anno costruzione", "Classe energetica", "Stato",
+    "Data acquisto (YYYY-MM-DD)", "Prezzo acquisto (€)", "Notaio (€)", "Agenzia (€)",
+    "Imposte (€)", "Lavori (€)", "Valore stimato (€)", "Canone mensile (€)",
+    "Banca mutuo", "Capitale residuo (€)", "Rata mutuo (€)", "Tasso mutuo (%)",
+    "Note",
+]
+
+IMMOBILI_EXAMPLE_ROW = [
+    "Bilocale Navigli", "Via Vigevano 12", "Milano", "MI", "Bilocale", 58,
+    "2", 1972, "D", "affittato",
+    "2022-03-15", 215000, 4200, 6500,
+    8900, 18000, 285000, 1450,
+    "Intesa Sanpaolo", 95000, 540, 2.8,
+    "Esempio — sostituisci con i tuoi dati",
+]
+
+@api_router.get("/import/template/immobili")
+async def download_immobili_template(user: dict = Depends(current_user)):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Immobili"
+    # header
+    for i, col in enumerate(IMMOBILI_COLUMNS, 1):
+        c = ws.cell(row=1, column=i, value=col)
+        c.font = openpyxl.styles.Font(bold=True, color="FFFFFF")
+        c.fill = openpyxl.styles.PatternFill("solid", fgColor="0066FF")
+        c.alignment = openpyxl.styles.Alignment(horizontal="center", vertical="center", wrap_text=True)
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = max(16, len(col) + 2)
+    ws.row_dimensions[1].height = 32
+    # example row
+    for i, v in enumerate(IMMOBILI_EXAMPLE_ROW, 1):
+        ws.cell(row=2, column=i, value=v).font = openpyxl.styles.Font(italic=True, color="64748B")
+    # freeze header
+    ws.freeze_panes = "A2"
+    # legend sheet
+    ws2 = wb.create_sheet("Istruzioni")
+    ws2["A1"] = "Istruzioni compilazione template immobili"
+    ws2["A1"].font = openpyxl.styles.Font(bold=True, size=14)
+    notes = [
+        "1. La prima riga è la riga di intestazione: NON modificarla.",
+        "2. La seconda riga è un esempio: cancellala o sovrascrivila.",
+        "3. Campi obbligatori: Nome immobile, Prezzo acquisto.",
+        "4. Tipologia: Bilocale, Trilocale, Quadrilocale, Monolocale, Villa, Loft, Attico, Altro.",
+        "5. Stato: in_valutazione, in_trattativa, acquistato, in_ristrutturazione, disponibile, affittato, sfitto, in_vendita, venduto.",
+        "6. Date in formato YYYY-MM-DD (es. 2024-03-15).",
+        "7. Importi senza simbolo €, usa il punto come separatore decimale (es. 1450.00).",
+        "8. Se l'immobile non ha mutuo lascia vuoti i 4 campi mutuo.",
+    ]
+    for i, n in enumerate(notes, 3):
+        ws2.cell(row=i, column=1, value=n)
+    ws2.column_dimensions["A"].width = 90
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="template_immobili_control_room.xlsx"'},
+    )
+
+def _coerce_float(v):
+    if v is None or v == "": return 0.0
+    if isinstance(v, (int, float)): return float(v)
+    try: return float(str(v).replace("€", "").replace(",", ".").replace(" ", "").strip())
+    except Exception: return 0.0
+
+def _coerce_int(v):
+    try: return int(_coerce_float(v))
+    except Exception: return 0
+
+def _coerce_str(v):
+    if v is None: return ""
+    return str(v).strip()
+
+@api_router.post("/import/immobili/parse")
+async def parse_immobili(file: UploadFile = File(...), user: dict = Depends(current_user)):
+    content = await file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+        ws = wb["Immobili"] if "Immobili" in wb.sheetnames else wb.active
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"File Excel non valido: {str(e)}")
+
+    rows = []
+    errors_total = 0
+    for row_idx in range(2, ws.max_row + 1):
+        cells = [ws.cell(row=row_idx, column=i).value for i in range(1, len(IMMOBILI_COLUMNS) + 1)]
+        if not any(cells): continue  # skip empty
+        nome = _coerce_str(cells[0])
+        if not nome: continue
+        prezzo = _coerce_float(cells[11])
+        warnings = []
+        if prezzo <= 0: warnings.append("Prezzo acquisto mancante o non valido")
+        item = {
+            "_row": row_idx,
+            "nome": nome,
+            "indirizzo": _coerce_str(cells[1]),
+            "citta": _coerce_str(cells[2]),
+            "provincia": _coerce_str(cells[3]),
+            "tipologia": _coerce_str(cells[4]) or "Altro",
+            "metratura": _coerce_float(cells[5]),
+            "piano": _coerce_str(cells[6]),
+            "anno_costruzione": _coerce_int(cells[7]),
+            "classe_energetica": _coerce_str(cells[8]),
+            "stato": _coerce_str(cells[9]) or "acquistato",
+            "data_acquisto": _coerce_str(cells[10]),
+            "prezzo_acquisto": prezzo,
+            "notaio": _coerce_float(cells[12]),
+            "agenzia": _coerce_float(cells[13]),
+            "imposte": _coerce_float(cells[14]),
+            "lavori": _coerce_float(cells[15]),
+            "valore_stimato": _coerce_float(cells[16]) or prezzo,
+            "canone_mensile": _coerce_float(cells[17]),
+            "mutuo_banca": _coerce_str(cells[18]),
+            "mutuo_residuo": _coerce_float(cells[19]),
+            "mutuo_rata": _coerce_float(cells[20]),
+            "mutuo_tasso": _coerce_float(cells[21]),
+            "note": _coerce_str(cells[22]),
+            "warnings": warnings,
+            "valid": len(warnings) == 0,
+        }
+        if warnings: errors_total += 1
+        rows.append(item)
+    return {
+        "filename": file.filename,
+        "total_rows": len(rows),
+        "valid_rows": sum(1 for r in rows if r["valid"]),
+        "rows_with_warnings": errors_total,
+        "rows": rows,
+    }
+
+class ImportImmobiliCommit(BaseModel):
+    rows: List[dict]
+
+@api_router.post("/import/immobili/commit")
+async def commit_immobili(payload: ImportImmobiliCommit, user: dict = Depends(current_user)):
+    created = []
+    for r in payload.rows:
+        if not r.get("valid", True): continue
+        mutuo = None
+        if r.get("mutuo_banca") and r.get("mutuo_residuo"):
+            mutuo = {
+                "banca": r["mutuo_banca"],
+                "residuo": float(r.get("mutuo_residuo", 0) or 0),
+                "rata": float(r.get("mutuo_rata", 0) or 0),
+                "tasso": float(r.get("mutuo_tasso", 0) or 0),
+            }
+        item = {
+            "id": f"IMM-{uuid.uuid4().hex[:6].upper()}",
+            "user_id": user["id"],
+            "nome": r["nome"],
+            "indirizzo": r.get("indirizzo", ""),
+            "citta": r.get("citta", ""),
+            "provincia": r.get("provincia", ""),
+            "tipologia": r.get("tipologia", "Altro"),
+            "metratura": float(r.get("metratura", 0) or 0),
+            "piano": r.get("piano", ""),
+            "anno_costruzione": int(r.get("anno_costruzione", 0) or 0),
+            "classe_energetica": r.get("classe_energetica", ""),
+            "stato": r.get("stato", "acquistato"),
+            "operazione": "reddito" if r.get("canone_mensile", 0) > 0 else "compra_vendi",
+            "prezzo_acquisto": float(r.get("prezzo_acquisto", 0) or 0),
+            "notaio": float(r.get("notaio", 0) or 0),
+            "agenzia": float(r.get("agenzia", 0) or 0),
+            "imposte": float(r.get("imposte", 0) or 0),
+            "lavori": float(r.get("lavori", 0) or 0),
+            "valore_stimato": float(r.get("valore_stimato", 0) or 0) or float(r.get("prezzo_acquisto", 0) or 0),
+            "canone_mensile": float(r.get("canone_mensile", 0) or 0),
+            "data_acquisto": r.get("data_acquisto", ""),
+            "mutuo": mutuo,
+            "note": r.get("note", ""),
+            "img": "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?crop=entropy&cs=srgb&fm=jpg&w=800",
+            "fromDeal": False,
+            "deal_id": None,
+            "source": "import_excel",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.properties.insert_one(item.copy())
+        item.pop("_id", None)
+        created.append(_enrich_property(item))
+    return {"created": len(created), "items": created}
+
+# ----- Bilanci (AI Reader) -----
+
+BILANCIO_EXTRACT_PROMPT = (
+    "Sei un sistema di estrazione dati da bilanci di società immobiliari italiane (Conto Economico + Stato Patrimoniale, "
+    "tipicamente esportati da gestionali tipo Arca, Zucchetti, TeamSystem). "
+    "Rispondi SOLO con JSON valido, niente prefissi, niente markdown. Schema:\n"
+    '{\n'
+    '  "periodo": "string es: Gennaio 2026 oppure Q1 2026 oppure 2025",\n'
+    '  "tipo": "provvisorio|definitivo",\n'
+    '  "conto_economico": {\n'
+    '    "ricavi_affitti": numero,\n'
+    '    "ricavi_vendite": numero,\n'
+    '    "altri_ricavi": numero,\n'
+    '    "totale_ricavi": numero,\n'
+    '    "costi_gestione": numero,\n'
+    '    "costi_manutenzione": numero,\n'
+    '    "imu": numero,\n'
+    '    "interessi_mutui": numero,\n'
+    '    "ammortamenti": numero,\n'
+    '    "altri_costi": numero,\n'
+    '    "totale_costi": numero,\n'
+    '    "utile_netto": numero\n'
+    '  },\n'
+    '  "stato_patrimoniale": {\n'
+    '    "valore_immobili": numero,\n'
+    '    "liquidita": numero,\n'
+    '    "crediti": numero,\n'
+    '    "totale_attivo": numero,\n'
+    '    "debito_mutui": numero,\n'
+    '    "altri_debiti": numero,\n'
+    '    "totale_passivo": numero,\n'
+    '    "patrimonio_netto": numero\n'
+    '  },\n'
+    '  "note_estrazione": "stringa breve con eventuali avvertenze"\n'
+    "}\n"
+    "Se un valore non è presente, metti 0. Gli importi sono in EUR. Se vedi importi in migliaia (k€), convertili in euro."
+)
+
+def _extract_text_from_upload(content: bytes, filename: str) -> str:
+    fl = filename.lower()
+    if fl.endswith(".pdf"):
+        try:
+            with pdfplumber.open(io.BytesIO(content)) as pdf:
+                text = "\n".join((p.extract_text() or "") for p in pdf.pages[:20])
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"PDF non leggibile: {str(e)}")
+        return text[:30000]
+    if fl.endswith((".xlsx", ".xls")):
+        try:
+            wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Excel non leggibile: {str(e)}")
+        parts = []
+        for sn in wb.sheetnames[:5]:
+            ws = wb[sn]
+            parts.append(f"## Foglio: {sn}")
+            for row in ws.iter_rows(values_only=True, max_row=200):
+                line = " | ".join(str(c) if c is not None else "" for c in row)
+                if line.strip(" |"): parts.append(line)
+        return "\n".join(parts)[:30000]
+    if fl.endswith(".csv"):
+        try:
+            text = content.decode("utf-8", errors="ignore")
+        except Exception:
+            text = content.decode("latin-1", errors="ignore")
+        return text[:30000]
+    # fallback: treat as text
+    return content.decode("utf-8", errors="ignore")[:30000]
+
+@api_router.post("/import/bilancio/parse")
+async def parse_bilancio(file: UploadFile = File(...), user: dict = Depends(current_user)):
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="LLM key non configurata")
+    content = await file.read()
+    text = _extract_text_from_upload(content, file.filename or "")
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Impossibile estrarre testo dal file.")
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"bilancio-{uuid.uuid4()}",
+            system_message=BILANCIO_EXTRACT_PROMPT,
+        ).with_model("anthropic", "claude-sonnet-4-6")
+        reply = await chat.send_message(UserMessage(text=text))
+    except Exception as e:
+        logging.exception("AI bilancio error")
+        raise HTTPException(status_code=500, detail=f"Errore AI: {str(e)}")
+    parsed = None
+    try: parsed = json.loads(reply)
+    except Exception:
+        m = re.search(r"\{[\s\S]*\}", reply)
+        if m:
+            try: parsed = json.loads(m.group(0))
+            except Exception: parsed = None
+    if not parsed:
+        raise HTTPException(status_code=500, detail="L'AI non ha restituito JSON valido.")
+    parsed["_filename"] = file.filename
+    return parsed
+
+class BilancioCommit(BaseModel):
+    periodo: str
+    tipo: Optional[str] = "provvisorio"
+    conto_economico: dict
+    stato_patrimoniale: dict
+    note_estrazione: Optional[str] = ""
+    filename: Optional[str] = ""
+
+@api_router.post("/import/bilancio/commit")
+async def commit_bilancio(b: BilancioCommit, user: dict = Depends(current_user)):
+    item = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        **b.model_dump(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.bilanci.insert_one(item.copy())
+    item.pop("_id", None)
+    return item
+
+@api_router.get("/import/bilanci")
+async def list_bilanci(user: dict = Depends(current_user)):
+    items = await db.bilanci.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    return items
+
+@api_router.delete("/import/bilanci/{bid}")
+async def delete_bilancio(bid: str, user: dict = Depends(current_user)):
+    await db.bilanci.delete_one({"id": bid, "user_id": user["id"]})
+    return {"ok": True}
+
+# ----- Estratto conto bancario -----
+
+@api_router.post("/import/banca/parse")
+async def parse_banca(file: UploadFile = File(...), user: dict = Depends(current_user)):
+    content = await file.read()
+    fl = (file.filename or "").lower()
+    try:
+        if fl.endswith(".csv"):
+            try:
+                df = pd.read_csv(io.BytesIO(content), sep=None, engine="python")
+            except Exception:
+                df = pd.read_csv(io.BytesIO(content), sep=";", engine="python", encoding="latin-1")
+        elif fl.endswith((".xlsx", ".xls")):
+            df = pd.read_excel(io.BytesIO(content))
+        else:
+            raise HTTPException(status_code=400, detail="Carica un file CSV o Excel.")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"File non leggibile: {str(e)}")
+
+    cols = {c.lower().strip(): c for c in df.columns}
+    def find_col(*keys):
+        for k in keys:
+            for cl, orig in cols.items():
+                if k in cl: return orig
+        return None
+    col_data = find_col("data")
+    col_desc = find_col("descrizione", "causale", "movimento")
+    col_imp = find_col("importo", "amount", "dare", "avere")
+
+    if not col_data or not col_imp:
+        raise HTTPException(status_code=400, detail="Colonne mancanti: serve almeno una colonna 'Data' e una 'Importo'. Trovate: " + ", ".join(df.columns.astype(str)))
+
+    movs = []
+    for _, r in df.iterrows():
+        importo = r.get(col_imp)
+        if pd.isna(importo): continue
+        try: importo = float(str(importo).replace(",", ".").replace("€", "").strip())
+        except Exception: continue
+        data = str(r.get(col_data, ""))[:10]
+        desc = str(r.get(col_desc, "") or "")[:200]
+        movs.append({
+            "data": data,
+            "descrizione": desc,
+            "importo": importo,
+            "tipo": "entrata" if importo > 0 else "uscita",
+            "match_canone": None,
+        })
+
+    # Riconciliazione: cerca per ogni "entrata" un canone atteso dai contratti immobili user
+    properties_user = await db.properties.find({"user_id": user["id"], "canone_mensile": {"$gt": 0}}, {"_id": 0}).to_list(200)
+    for m in movs:
+        if m["tipo"] != "entrata": continue
+        for p in properties_user:
+            canone = float(p.get("canone_mensile", 0) or 0)
+            if canone <= 0: continue
+            if abs(m["importo"] - canone) < 5:  # tolerance 5 EUR
+                m["match_canone"] = {"property_id": p["id"], "property_nome": p["nome"], "canone_atteso": canone}
+                break
+
+    return {
+        "filename": file.filename,
+        "total": len(movs),
+        "entrate": sum(1 for m in movs if m["tipo"] == "entrata"),
+        "uscite": sum(1 for m in movs if m["tipo"] == "uscita"),
+        "matched": sum(1 for m in movs if m["match_canone"]),
+        "movimenti": movs[:200],
+    }
+
+class BancaCommit(BaseModel):
+    movimenti: List[dict]
+
+@api_router.post("/import/banca/commit")
+async def commit_banca(payload: BancaCommit, user: dict = Depends(current_user)):
+    count = 0
+    for m in payload.movimenti:
+        item = {
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"],
+            **m,
+            "imported_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.movimenti_bancari.insert_one(item)
+        count += 1
+    return {"created": count}
 
 # ===== Mount =====
 app.include_router(api_router)
