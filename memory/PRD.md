@@ -84,7 +84,12 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 30. **Storico bilanci MoM** (`/import` tab "Storico"): grafico Recharts evoluzione (Costi/Ricavi/Utile/Patrimonio netto) + card affiancate dei bilanci ordinati cronologicamente per periodo (parser italiano "Gennaio"..."Dicembre" + anno + supporto "Q1 2026"). Per ogni voce confronto MoM con delta € e % colorati verde/rosso, con inversione semantica per costi/debiti (riduzione = verde).
 31. **Cash flow Dashboard live**: nuovo endpoint `GET /api/import/banca/cashflow-mensile?months=12` aggrega movimenti per YYYY-MM. Se ≥2 mesi di dati, il chart Dashboard "Andamento Cash Flow" passa automaticamente ai dati reali con subtitle "X mesi · da movimenti bancari reali". Fallback ai demo altrimenti.
 32. **Server-side paginazione movimenti banca**: `GET /api/import/banca?skip=&limit=&q=&tipo=&matched=` con risposta `{total, skip, limit, items, has_more}`. Frontend `/costi-ricavi` ha search bar server-side e controlli Precedenti/Successivi quando >50 movimenti.
-33. **Report PDF/Excel/CSV REALI** (non più mockati): `GET /api/report/{id}.{fmt}` genera con reportlab+xlsxwriter. Attualmente reali: **Report Patrimonio** (PDF/XLSX/CSV) e **Bilancio** (PDF, dell'ultimo caricato). Gli altri 6 report mostrano badge "Mockup" e toast informativo.
+33. **Report PDF/Excel/CSV REALI**: `GET /api/report/{id}.{fmt}` con reportlab + xlsxwriter.
+
+## 🆕 8 Report PDF completi + Split parziale (29 May 2026 - iter 8)
+34. **Tutti gli 8 report PDF reali**: rendimento (PDF/XLSX/CSV), affitti, vendite, lavori, cashflow, mutui — tutti generati live da reportlab basandosi su `db.properties` e `db.movimenti_bancari`. Frontend `/report`: rimossi i badge "Mockup", tutti i bottoni attivi.
+35. **Chart "Ricavi vs Costi" Dashboard live**: oltre a "Andamento Cash Flow", anche il barchart Ricavi vs Costi usa `bankCashflow` quando ≥2 mesi di movimenti sono presenti (incassi → ricavi, uscite → costi); fallback demo.
+36. **Split parziale backend**: nuovo `/app/backend/routers/reports.py` (220 righe) con factory pattern `make_reports_router(db, current_user, enrich_property)` per i 8 report builders. Server.py 1483 → 1269 righe (-214). Imports e Properties resteranno nel server.py per ora (split rinviato).
 
 ## Demo accounts
 - ceo@controlroom.it / demo1234 (admin)
