@@ -91,6 +91,20 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 35. **Chart "Ricavi vs Costi" Dashboard live**: oltre a "Andamento Cash Flow", anche il barchart Ricavi vs Costi usa `bankCashflow` quando ≥2 mesi di movimenti sono presenti (incassi → ricavi, uscite → costi); fallback demo.
 36. **Split parziale backend**: nuovo `/app/backend/routers/reports.py` (220 righe) con factory pattern `make_reports_router(db, current_user, enrich_property)` per i 8 report builders. Server.py 1483 → 1269 righe (-214). Imports e Properties resteranno nel server.py per ora (split rinviato).
 
+## 🆕 Split completo + Reports v2 + Logo società (29 May 2026 - iter 9)
+37. **Split completo server.py**: da 1269 → **591 righe** (-678, sotto target 700). Estratti router:
+   - `routers/_shared.py` (compute_deal_score, enrich_property, coerce_*)
+   - `routers/properties.py` (`/api/properties` CRUD + `/api/deals/{id}/convert`)
+   - `routers/imports.py` (tutti gli `/api/import/*` ~530 righe)
+   - `routers/settings.py` (`/api/settings` GET/PUT + `/api/settings/logo` POST/DELETE)
+   - `routers/reports.py` (Reports v2)
+38. **Reports v2 — solo 2 PDF completi**: rimossi gli 8 report granulari precedenti. Disponibili ora:
+   - `GET /api/report/stato-salute.pdf` → "Stato di Salute della Società" (KPI sintesi + CE + Top/Worst immobili + alert + storico bilanci)
+   - `GET /api/report/business-plan.pdf` → "Business Plan" per le banche (profilo + patrimonio + CE/EBITDA + struttura debito + scenari +2/+5/+10 immobili/anno + indici solidità LTV/coverage/PN/Debito + allegato A immobili)
+   - **Branded chrome**: header colorato con logo società (se caricato) + brand name; footer con data generazione + brand al centro + "Pagina N" a destra su OGNI pagina (ReportLab PageTemplate via onFirstPage/onLaterPages callback).
+39. **Logo società upload (`POST /api/settings/logo`)**: multipart image (PNG/JPG/SVG/WebP) max 1 MB, persistito base64 in `db.settings`. UI in Impostazioni con preview, sostituisci, rimuovi. Il logo appare automaticamente nell'header di entrambi i PDF (ReportLab `ImageReader` con fallback safe se decode fallisce).
+40. **Settings persistiti**: nome società, valuta, target rendimento, target ROI, cash flow min, propensione rischio, strategia, capitale disponibile, limite indebitamento — caricati e salvati via `/api/settings` GET/PUT.
+
 ## Demo accounts
 - ceo@controlroom.it / demo1234 (admin)
 - amministrazione@controlroom.it / demo1234 (amministrazione)
