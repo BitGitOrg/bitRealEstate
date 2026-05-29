@@ -8,12 +8,12 @@ const API_BASE = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const REPORTS = [
   { id: "patrimonio", nome: "Report Patrimonio Completo", desc: "Vista d'insieme di tutto il portafoglio + snapshot da bilancio", formats: ["pdf", "xlsx", "csv"], real: true },
   { id: "bilancio", nome: "Bilancio (ultimo importato)", desc: "Conto Economico + Stato Patrimoniale dell'ultimo bilancio caricato", formats: ["pdf"], real: true },
-  { id: "rendimento", nome: "Report Rendimento per Immobile", desc: "Rendimento lordo, netto e ROI", formats: ["pdf", "xlsx"], real: false },
-  { id: "affitti", nome: "Report Affitti & Locazioni", desc: "Contratti, incassi, morosità", formats: ["pdf", "xlsx"], real: false },
-  { id: "vendite", nome: "Report Vendite & Rivendite", desc: "Operazioni concluse e margini", formats: ["pdf", "xlsx"], real: false },
-  { id: "lavori", nome: "Report Lavori e Ristrutturazioni", desc: "Budget vs effettivo per cantiere", formats: ["pdf", "xlsx"], real: false },
-  { id: "cashflow", nome: "Report Cash Flow 12 mesi", desc: "Storico + forecast", formats: ["pdf", "xlsx"], real: false },
-  { id: "mutui", nome: "Report Mutui & Esposizione", desc: "LTV, rate, scadenze", formats: ["pdf", "xlsx"], real: false },
+  { id: "rendimento", nome: "Report Rendimento per Immobile", desc: "Ranking per rendimento netto + ROI + score", formats: ["pdf", "xlsx", "csv"], real: true },
+  { id: "affitti", nome: "Report Affitti & Locazioni", desc: "Immobili a reddito, canoni, rendimento", formats: ["pdf"], real: true },
+  { id: "vendite", nome: "Report Vendite & Rivendite", desc: "In vendita + storico operazioni concluse", formats: ["pdf"], real: true },
+  { id: "lavori", nome: "Report Lavori e Ristrutturazioni", desc: "Cantieri attivi + budget lavori", formats: ["pdf"], real: true },
+  { id: "cashflow", nome: "Report Cash Flow", desc: "Andamento mensile da movimenti bancari", formats: ["pdf"], real: true },
+  { id: "mutui", nome: "Report Mutui & Esposizione", desc: "LTV, rate, capitale residuo per banca", formats: ["pdf"], real: true },
 ];
 
 export default function Report() {

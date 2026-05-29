@@ -1,0 +1,37 @@
+{
+  "summary": "Iter 8 e2e testing — Partial split of server.py into routers/reports.py, 6 new PDF reports (rendimento, affitti, vendite, lavori, cashflow, mutui), rendimento now supports xlsx/csv, Dashboard 'Ricavi vs Costi' override from bank movements. 25/25 new backend pytest passing + 16/16 iter7 regression tests still passing (41/41 total). Frontend /report verified: all 8 report cards present with NO 'Mockup' badge; PDF download from new endpoints (affitti, cashflow, mutui) confirmed working in browser via real download trigger.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Login → during navigation to dashboard", "issues": ["Recharts warning width(-1)/height(-1) reappears when chart container is briefly hidden during route transition — same cosmetic issue noted in iter7, no functional impact"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter8_reports_router.py",
+    "/app/backend/tests/test_iter7_reports.py",
+    "/app/test_reports/pytest/iter8_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py reduced from 1483 → 1269 lines (~14% reduction). Still above the 700-line guideline. Suggest continuing the split with imports/ and properties/ routers in next iteration (the agent context note already mentions this is rinviato — confirming it is a valid next step).",
+    "routers/reports.py uses factory pattern make_reports_router(db, current_user, enrich_property) for dependency injection — clean approach, no circular imports, no hardcoded DB refs.",
+    "Order of error checks in /api/report/{id}.{fmt}: format validation runs BEFORE report_id lookup (same as iter7). patrimonio.xml → 400 'Formato non supportato', unknown.pdf → 404. Per spec — works correctly.",
+    "Dashboard chart-ricavi-costi override: bankCashflow check requires ≥2 distinct months of bank movements; couldn't end-to-end validate the override during this test run because seed data only has 0 movements for ceo@controlroom.it (same as iter7). Backend /api/import/banca/cashflow-mensile endpoint returns valid empty structure — the wiring is correct, the fallback ('Ultimi 12 mesi · dati demo') is what's shown. To validate the override visually, main agent should seed ≥2 months of movimenti bancari via POST /api/import/banca/commit.",
+    "Test scripts had REACT_APP_BACKEND_URL fallback added to avoid NoneType crash when env var not present during pytest run (env vars from frontend/.env aren't auto-loaded in backend pytest context)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter8_reports_router.py (NEW — 25 tests)"
+  ],
+  "success_rate": {"backend": "100% (25/25 iter8 + 16/16 iter7 regression = 41/41)", "frontend": "100% (8/8 report cards present, no mockup badges, PDF downloads triggered successfully for affitti/cashflow/mutui)"},
+  "test_credentials": "ceo@controlroom.it / demo1234 (login returns key 'token')",
+  "seed_data_creation": "None — no DB writes during this test. Pre-seeded data only.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter 8 fully verified. The 6 new PDF report endpoints all return valid PDFs (>1KB, %PDF magic). The partial split (server.py 1483→1269 lines) did NOT break any pre-existing endpoint (auth, properties, deals, watchlists, import, AI chat, bilanci storico, cashflow-mensile, patrimonio.xlsx/csv all verified). Dashboard chart bankCashflow override cannot be visually validated until bank movements are seeded across ≥2 months. Next-iter splitting candidates (per main agent's note): imports/ router and properties/ router.",
+  "rca of the issue": "N/A — no issues found"
+}

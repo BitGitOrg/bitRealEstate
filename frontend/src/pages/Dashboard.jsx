@@ -148,9 +148,9 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
-        <SectionCard testId="chart-ricavi-costi" title="Ricavi vs Costi" subtitle="Confronto mensile" className="xl:col-span-2">
+        <SectionCard testId="chart-ricavi-costi" title="Ricavi vs Costi" subtitle={bankCashflow ? `${bankCashflow.length} mesi · da movimenti bancari reali` : "Confronto mensile · dati demo"} className="xl:col-span-2">
           <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={ricaviCostiAnnuali} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+            <BarChart data={bankCashflow ? bankCashflow.map(b => ({mese: b.mese, ricavi: b.incassi, costi: b.uscite})) : ricaviCostiAnnuali} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
               <XAxis dataKey="mese" stroke="#64748B" fontSize={11} axisLine={false} tickLine={false} />
               <YAxis stroke="#64748B" fontSize={11} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
