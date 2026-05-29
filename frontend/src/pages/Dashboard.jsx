@@ -50,7 +50,9 @@ export default function Dashboard() {
     liquidita_disponibile: sp.liquidita || portfolioKPI.liquidita_disponibile,
     utile_anno: ce.utile_netto || portfolioKPI.utile_anno,
     patrimonio_netto: sp.patrimonio_netto || 0,
-    rendimento_medio_netto: portfolioKPI.rendimento_medio_netto,
+    rendimento_medio_netto: sp.valore_immobili && ce.utile_netto
+      ? +((ce.utile_netto / sp.valore_immobili) * 100).toFixed(2)
+      : portfolioKPI.rendimento_medio_netto,
     totale_immobili: portfolioKPI.totale_immobili,
     immobili_profittevoli: portfolioKPI.immobili_profittevoli,
     immobili_sotto_target: portfolioKPI.immobili_sotto_target,

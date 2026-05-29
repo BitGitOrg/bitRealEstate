@@ -69,9 +69,16 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 - `POST /api/import/immobili/commit` → bulk insert properties
 - `POST /api/import/bilancio/parse` (PDF/XLSX/CSV) → Claude → JSON CE + SP
 - `POST /api/import/bilancio/commit` → persist `db.bilanci`
-- `GET /api/import/bilanci` → lista storico
+- `GET /api/import/bilanci` / `GET /api/import/bilanci/latest` → lista/ultimo
 - `POST /api/import/banca/parse` (CSV/XLSX) → movimenti + match_canone
-- `POST /api/import/banca/commit` → persist `db.movimenti_bancari`
+- `POST /api/import/banca/commit` → persist con **dedup SHA1** su (user, data, importo, descrizione)
+- `GET /api/import/banca` lista · `DELETE /api/import/banca/{id}`
+
+## 🆕 Wiring dati reali (29 May 2026 - iter 6)
+26. **Dashboard auto-override**: appena è presente un bilancio in DB, la Dashboard mostra subtitle "KPI da bilancio {periodo}", banner verde con utile/patrimonio netto, e le 9 KPI cards sono calcolate dai numeri reali (valore patrimonio, patrimonio netto, ricavi/12, utile/12, debito mutui, utile anno, rendimento netto = utile/valore*100). Fallback automatico ai demo se nessun bilancio.
+27. **Costi & Ricavi integrato con banca**: i movimenti bancari importati appaiono nella tabella movimenti con badge "Banca" + check verde se riconciliati con un canone. Nuovo filtro origine "tutte/manuale/banca". Subtitle mostra "X movimenti · N importati da banca".
+28. **AI Autopilot context-aware reale**: il system message di Claude viene arricchito server-side con la lista delle real properties (max 25) + ultimo bilancio + storico ultimi 3 bilanci. L'AI cita esplicitamente periodi e immobili reali invece dei demo.
+29. **Dedup estratto conto**: signature SHA1 di `user_id|data|importo|descrizione[:80]`. Re-upload dello stesso CSV → `{created:0, skipped_duplicates:N}`.
 
 ## Demo accounts
 - ceo@controlroom.it / demo1234 (admin)
