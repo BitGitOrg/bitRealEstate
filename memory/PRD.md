@@ -105,6 +105,18 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 39. **Logo società upload (`POST /api/settings/logo`)**: multipart image (PNG/JPG/SVG/WebP) max 1 MB, persistito base64 in `db.settings`. UI in Impostazioni con preview, sostituisci, rimuovi. Il logo appare automaticamente nell'header di entrambi i PDF (ReportLab `ImageReader` con fallback safe se decode fallisce).
 40. **Settings persistiti**: nome società, valuta, target rendimento, target ROI, cash flow min, propensione rischio, strategia, capitale disponibile, limite indebitamento — caricati e salvati via `/api/settings` GET/PUT.
 
+## 🆕 Forecast / Piano Industriale + AI Coach (29 May 2026 - iter 10)
+41. **Modulo Forecast pluri-annuale** (`/forecast`):
+   - **Scenari salvabili** in MongoDB con orizzonte configurabile **3 / 5 / 10 anni**, baseline da dati reali società oppure input manuale.
+   - **6 tipi di operazione pianificabili anno per anno**: acquisto (prezzo + lavori + canone + leva mutuo + tasso + durata), vendita (prezzo, opzionale link a immobile reale che libera debito/rata/canone), ristrutturazione (lavori + Δ canone con boost +1.4× sul valore), rinegoziazione mutuo (delta tasso → risparmio sulla rata), sfitto (mesi → perdita ricavi), aumento canone (€/mese o %).
+   - **Engine simulazione**: per ogni anno applica eventi automatici (rivalutazione immobili + ISTAT canoni) + operazioni utente + P&L (ricavi 12×canone, costi 15%, interessi 3% blended, ammortamento mutui, tasse) → snapshot con valore, debito, PN, canone, utile, cash flow, LTV, ROI.
+   - **AI Coach** per scenario (`POST /api/forecast/scenarios/{id}/ai`): chat con Claude Sonnet 4.6 che riceve nel system message TUTTO lo scenario (snapshot anno per anno + operazioni + summary). Storia conversazione persistita in `db.scenario_messages`. Preset prompts in UI.
+   - **Confronto fino a 3 scenari** side-by-side (`POST /api/forecast/scenarios/compare`): tabella riepilogo + grafico evoluzione patrimonio netto sovrapposto.
+   - **PDF "Piano Industriale"** (`GET /api/forecast/scenarios/{id}/pdf`): branded header con logo società + nome, sezioni 1.Riepilogo strategico 2.Operazioni pianificate 3.Proiezione anno per anno 4.Assunzioni 5.Conclusioni con verdict automatico.
+42. **PDF chrome condiviso** (`routers/_pdf_chrome.py`): estratto da reports.py per essere riusato da forecast.py (DRY) — setup_doc(), make_table(), chrome_factory(), eur(), pct().
+43. **Frontend `/forecast`**: 4 tab — Editor (parametri + operazioni CRUD con form contestuali per tipo), Risultati (4 KPI card + 4 grafici Recharts: patrimonio netto area, cash flow bar, debito+LTV composto, ricavi/costi/utile composto + tabella anno-per-anno), AI Coach (chat persistente con preset), Confronta (multi-select scenari + grafico sovrapposto).
+44. **Voce sidebar "Forecast & Piano Industriale"** con badge AI in gruppo Finanza.
+
 ## Demo accounts
 - ceo@controlroom.it / demo1234 (admin)
 - amministrazione@controlroom.it / demo1234 (amministrazione)
