@@ -52,6 +52,27 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 - `GET /api/deals?status=` lista. `PATCH /api/deals/:id/status` cambia stato. `DELETE /api/deals/:id`
 - `GET /api/watchlists` lista. `POST /api/watchlists` crea. `DELETE /api/watchlists/:id`
 
+## 🆕 Conversione Deal→Immobile + Tema chiaro (29 May 2026)
+22. **Conversione Deal→Patrimonio**: due modalità — `Converti rapidamente` (one-click, default sensati) e `Converti con dettagli…` (modale con data rogito, costi notaio/agenzia/imposte/lavori, mutuo opzionale). Il deal originale assume status "convertito" + `converted_property_id`.
+23. **Properties CRUD reali**: `/api/properties` POST/GET/DELETE persistito su MongoDB. Scheda Immobile carica via API con fallback su demo. Patrimonio mostra le real properties + deal in_trattativa + i 10 demo, distinti via prefisso `IMM-`/`DEAL-`.
+24. **Tema chiaro completo**: migrazione globale dal dark control-room al light fintech (stile Linear/Stripe). Background #F8FAFC, card bianche, bordi #E2E8F0, testo #0F172A. Tutti i 30+ file frontend ribaltati con script Python.
+
+## 🆕 Centro Import (29 May 2026)
+25. **Centro Import** (`/import`) — 3 tab per popolare il sistema con dati reali della società:
+   - **Immobili — bulk import Excel**: download template `.xlsx` pre-formattato (23 colonne + foglio Istruzioni), upload del file compilato, anteprima riga-per-riga con validation OK/warning, commit selettivo (solo righe valide)
+   - **Bilanci AI Reader**: drag-and-drop di PDF o Excel del gestionale (Arca/Zucchetti/TeamSystem) → Claude estrae automaticamente Conto Economico (ricavi affitti, costi gestione, IMU, interessi mutui, utile netto) e Stato Patrimoniale (valore immobili, debito, liquidità, patrimonio netto) → preview tabellare → commit
+   - **Estratto conto bancario**: upload CSV/Excel con colonne Data/Descrizione/Importo → parsing pandas (auto-detect separatore ; o ,) → riconciliazione automatica delle entrate con i canoni attesi degli immobili (tolleranza ±5€)
+
+### Backend endpoints Centro Import
+- `GET /api/import/template/immobili` → file .xlsx scaricabile
+- `POST /api/import/immobili/parse` (multipart file) → JSON anteprima righe
+- `POST /api/import/immobili/commit` → bulk insert properties
+- `POST /api/import/bilancio/parse` (PDF/XLSX/CSV) → Claude → JSON CE + SP
+- `POST /api/import/bilancio/commit` → persist `db.bilanci`
+- `GET /api/import/bilanci` → lista storico
+- `POST /api/import/banca/parse` (CSV/XLSX) → movimenti + match_canone
+- `POST /api/import/banca/commit` → persist `db.movimenti_bancari`
+
 ## Demo accounts
 - ceo@controlroom.it / demo1234 (admin)
 - amministrazione@controlroom.it / demo1234 (amministrazione)
