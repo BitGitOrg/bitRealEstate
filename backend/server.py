@@ -409,8 +409,14 @@ async def deals_analyze(req: DealAnalyzeRequest, user: dict = Depends(current_us
         raise HTTPException(status_code=500, detail="L'AI non ha restituito JSON valido. Riprova.")
 
     # Compute deal score
+    prezzo_val = float(parsed.get("prezzo", 0) or 0)
+    if prezzo_val <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Annuncio non riconoscibile: prezzo non trovato. Incolla il testo completo dell'annuncio.",
+        )
     score_data = compute_deal_score(
-        float(parsed.get("prezzo", 0) or 0),
+        prezzo_val,
         float(parsed.get("metratura", 0) or 0),
         float(parsed.get("canone_stimato", 0) or 0),
         parsed.get("citta", "") or "",

@@ -25,7 +25,7 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 ## Sezioni implementate (28 May 2026)
 1. Login multi-account con demo accounts
 2. Dashboard Generale (KPI cards × 9, 4 charts, 4 widgets, tabella recenti)
-3. Patrimonio Immobiliare (tabella + grid, filtri città/stato/ricerca, 10 immobili demo)
+3. Patrimonio Immobiliare (tabella + grid, filtri città/stato/ricerca, 10 immobili demo + righe da Deal Inbox in trattativa con badge)
 4. Scheda Immobile (tabs anagrafica/acquisto/economico/documenti/movimenti)
 5. Operazioni (tre tipologie: reddito / compra-vendi / compra-ristruttura-vendi)
 6. Affitti & Locazioni (contratti, incassi, stati pagamento)
@@ -41,7 +41,16 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 16. Documenti (filtri tipo, search, AI Reader badge)
 17. Report Direzionali (8 report + report AI mensile, PDF/Excel/CSV)
 18. Impostazioni (società + target + AI params + ruoli)
-+ Mappa Patrimonio (markers colorati per rendimento)
+19. Mappa Patrimonio (markers colorati per rendimento)
+
+## 🆕 Modulo Deal Inbox + AI Scout (29 May 2026)
+20. **Deal Inbox** — incolla URL annuncio (Immobiliare.it/Idealista/Subito) OPPURE testo → l'AI (Claude Sonnet 4.6) estrae automaticamente titolo, prezzo, metratura, zona, canone stimato, anno, classe energetica, punti forza/attenzione. Calcolo locale del Deal Score 0-100 + giudizio + strategia + rischio. Workflow: marcare come Interessato / Scartato / In trattativa. I deal "In trattativa" appaiono automaticamente nel Patrimonio con badge "Deal Inbox".
+21. **Watchlists** — filtri salvabili (città, tipologia, prezzo max, metratura min, rendimento netto min). Ogni nuovo deal viene confrontato contro le watchlists attive e popolato `watchlist_matches[]`.
+
+### Backend endpoints (persistiti su MongoDB)
+- `POST /api/deals/analyze` body `{url?, text?, note?}` → fetch URL (httpx + BeautifulSoup) → estrazione AI JSON → score → match watchlists → persist. Rifiuta 422 se prezzo non riconoscibile.
+- `GET /api/deals?status=` lista. `PATCH /api/deals/:id/status` cambia stato. `DELETE /api/deals/:id`
+- `GET /api/watchlists` lista. `POST /api/watchlists` crea. `DELETE /api/watchlists/:id`
 
 ## Demo accounts
 - ceo@controlroom.it / demo1234 (admin)
