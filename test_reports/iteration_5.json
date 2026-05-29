@@ -1,0 +1,44 @@
+{
+  "summary": "Iter 6 — Real data wiring (Dashboard + AI + Costi/Ricavi + estratto conto dedup) tested end-to-end. Backend: 7/7 pytest tests PASSED in 10s (latest bilancio empty -> {}; latest bilancio populated returns id/periodo/conto_economico/stato_patrimoniale; banca commit first call returns {created:3, skipped_duplicates:0}, second identical call returns {created:0, skipped_duplicates:3} via SHA1 signature dedup; GET /api/import/banca returns user movs; DELETE /api/import/banca/{id} removes the mov; POST /api/ai/chat with bilancio in DB → reply explicitly mentions 'Gennaio 2026' and the real numbers 16.100€ / 2.482.500€ instead of demo). Frontend: Playwright verified (1) Dashboard with bilancio shows subtitle 'KPI da bilancio Gennaio 2026 (provvisorio)', green banner [data-testid='dashboard-bilancio-banner'] with 'Utile netto 16.100 € · Patrimonio netto 2.482.500 €', and KPI cards override to real numbers (Valore patrimonio 3.650.000€, Patrimonio netto 2.482.500€, Ricavi mensili 2375€ = 28500/12, Cash flow 1342€ = 16100/12, Debito 1.310.000€, Utile anno 16.100€); (2) Dashboard without bilancio reverts to subtitle 'Vista sintetica del portafoglio · Dati demo', no green banner, demo KPIs (4.230.000€ etc.); (3) /costi-ricavi shows 'X movimenti · 5 importati da banca' subtitle, 5 [data-testid='badge-banca'] badges; (4) [data-testid='cr-filter-origine'] has options tutte/manuale/banca and correctly filters — switching to 'banca' shows TEST_iter6_ui rows, switching to 'manuale' hides them.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/ai/chat", "issue": "Field 'context' is typed as dict in Pydantic but frontend may send string in some flows; sending context:\"\" returns 422. Currently the frontend (AIAutopilot.jsx) sends a dict so production works, but worth confirming."},
+      {"endpoint": "POST /api/import/banca/commit dedup", "issue": "Signature uses descrizione[:80].strip().lower() — if user edits/normalizes descrizione before re-uploading (e.g., trailing space change), the dedup will miss. Acceptable for MVP but document this contract."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard (demo state)", "issues": ["Console warning: 'The width(-1) and height(-1) of chart should be greater than 0' from Recharts ResponsiveContainer at the moment KPI section first mounts. Cosmetic; chart renders correctly afterwards."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter6_realdata.py",
+    "/app/test_reports/pytest/iter6_results.xml"
+  ],
+  "action_items": [
+    "Optional: clarify /api/ai/chat 'context' field — accept Union[dict, str] or document dict-only to avoid 422 confusion for new API clients.",
+    "Optional: extend signature to include 'importo' rounded + tipo so accidental descrizione typos don't create duplicates that look distinct (currently importo IS in the signature — confirmed); consider also adding a per-row UUID supplied by parse step to make dedup deterministic across re-parse.",
+    "Optional: when bilancio is present, KPI 'Rend. medio netto' still shows 4.15% (demo) because Dashboard.jsx falls back to demo value when hasReal=true but no rendimento field; consider computing utile_netto/valore_immobili*100 from bilancio data."
+  ],
+  "critical_code_review_comments": [
+    "server.py:184-215 — real_block injection is well-scoped to user_id, limits to 25 properties and last 3 bilanci, no PII leakage. Good.",
+    "server.py:1083-1086 _movimento_signature uses SHA1 of user_id|data|importo(rounded 2dp)|descrizione[:80].lower() — deterministic and collision-safe for normal banking statements. Good.",
+    "server.py:1004 latest_bilancio returns {} when no doc (via 'or {}') — matches the frontend's hasReal = !!latestBilancio (empty object is falsy in JSX? actually {} is truthy in JS) — Dashboard.jsx:41 uses `!!latestBilancio` and the API returns null-ish via {}? Verified: frontend handles correctly because Dashboard.jsx checks `latestBilancio && latestBilancio.id` indirectly via `hasReal` flag and tests passed. OK.",
+    "Dashboard.jsx — bilancio override is read-only (no mutation of demo data). Defensive fallback to demo numbers when fields missing from bilancio. Solid.",
+    "CostiRicavi.jsx — merges /api/import/banca with demo manual rows; origine filter is client-side only. Adequate for MVP; will need server-side filtering when banca movs > 500.",
+    "AIAutopilot.jsx sidebar context note correctly informs user about real data priority."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter6_realdata.py (new — 7 tests for iter 6 real data wiring)"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (all 4 flows: dashboard with bilancio, dashboard demo, costi-ricavi filter, badge-banca)"},
+  "test_credentials": "ceo@controlroom.it / demo1234 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Tests create 1 'Gennaio 2026' bilancio + 3 banca movs (descrizione contains 'TEST_iter6') and a UI test created 2 extra movs with 'TEST_iter6_ui'. All cleaned up at fixture teardown / test end. Verified: after the run, db.bilanci has 0 user docs and db.movimenti_bancari has 0 TEST_iter6* rows (manual deletes in finally block).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 6 backend endpoints (bilanci/latest, banca commit dedup, banca GET/DELETE, ai/chat real-data enrichment) are all green. Frontend wiring (Dashboard banner override, CostiRicavi badge+filter) works. If iter 7 modifies any of these endpoints, re-run /app/backend/tests/test_iter6_realdata.py + the iter5 test_import_center.py. The ceo user starts with NO bilanci in DB after iter6 testing (we cleaned up). If you need a bilancio for testing, POST /api/import/bilancio/commit with the payload in test_iter6_realdata.py (created_bilancio_id fixture).",
+  "rca_of_the_issue": "N/A — no production issues. One test-only issue (context: '' string → 422) fixed in test code by sending context: {}."
+}

@@ -5,9 +5,11 @@ import { ScoreGauge } from "../components/ScoreGauge";
 import { StatusBadge, SeverityBadge } from "../components/StatusBadge";
 import {
   Building2, Wallet, TrendingUp, Banknote, AlertTriangle, Sparkles,
-  ArrowUpRight, ArrowDownRight, MapPin, Trophy, Activity
+  ArrowUpRight, ArrowDownRight, MapPin, Trophy, Activity, FileBarChart
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { apiClient } from "../lib/auth";
 import {
   ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis,
   CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell,
@@ -18,41 +20,85 @@ import {
 } from "../lib/demoData";
 
 const tooltipStyle = {
-  backgroundColor: "#F8FAFC",
+  backgroundColor: "#FFFFFF",
   border: "1px solid #E2E8F0",
   borderRadius: 8,
   fontSize: 12,
   color: "#0F172A",
+  boxShadow: "0 4px 12px rgba(15,23,42,0.08)",
 };
 
 export default function Dashboard() {
+  const [latestBilancio, setLatestBilancio] = useState(null);
+
+  useEffect(() => {
+    apiClient().get("/import/bilanci/latest")
+      .then(r => setLatestBilancio(r.data && r.data.periodo ? r.data : null))
+      .catch(() => {});
+  }, []);
+
+  // KPI override from real bilancio if present
+  const hasReal = !!latestBilancio;
+  const ce = latestBilancio?.conto_economico || {};
+  const sp = latestBilancio?.stato_patrimoniale || {};
+  const kpi = hasReal ? {
+    valore_stimato_totale: sp.valore_immobili || portfolioKPI.valore_stimato_totale,
+    capitale_investito: (sp.valore_immobili || 0) - (sp.debito_mutui || 0) || portfolioKPI.capitale_investito,
+    ricavi_mensili: Math.round((ce.ricavi_affitti || 0) / 12) || portfolioKPI.ricavi_mensili,
+    cash_flow_mensile: Math.round((ce.utile_netto || 0) / 12) || portfolioKPI.cash_flow_mensile,
+    debito_residuo: sp.debito_mutui || portfolioKPI.debito_residuo,
+    liquidita_disponibile: sp.liquidita || portfolioKPI.liquidita_disponibile,
+    utile_anno: ce.utile_netto || portfolioKPI.utile_anno,
+    patrimonio_netto: sp.patrimonio_netto || 0,
+    rendimento_medio_netto: portfolioKPI.rendimento_medio_netto,
+    totale_immobili: portfolioKPI.totale_immobili,
+    immobili_profittevoli: portfolioKPI.immobili_profittevoli,
+    immobili_sotto_target: portfolioKPI.immobili_sotto_target,
+    immobili_sfitti: portfolioKPI.immobili_sfitti,
+  } : portfolioKPI;
+
   const top = [...properties].sort((a, b) => b.portfolio_score - a.portfolio_score)[0];
   const worst = [...properties].sort((a, b) => a.portfolio_score - b.portfolio_score)[0];
 
   return (
     <Layout
       title="Dashboard Generale"
-      subtitle="Vista sintetica del portafoglio · Aggiornato in tempo reale"
+      subtitle={hasReal ? `KPI da bilancio ${latestBilancio.periodo} (${latestBilancio.tipo})` : "Vista sintetica del portafoglio · Dati demo"}
       actions={
         <Link to="/ai-autopilot" data-testid="dashboard-ai-cta" className="hidden md:inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[rgba(0,102,255,0.1)] border border-[rgba(0,102,255,0.3)] text-[#2563EB] hover:bg-[rgba(0,102,255,0.2)] text-sm font-medium transition-colors">
           <Sparkles size={14} /> Chiedi ad AI Autopilot
         </Link>
       }
     >
+      {hasReal && (
+        <div data-testid="dashboard-bilancio-banner" className="mb-4 px-4 py-3 rounded-xl bg-[rgba(16,185,129,0.06)] border border-[rgba(16,185,129,0.3)] flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2.5">
+            <FileBarChart size={16} className="text-[#059669]"/>
+            <div>
+              <div className="text-sm font-medium text-[#0F172A]">
+                KPI aggiornati dal bilancio importato — <strong>{latestBilancio.periodo}</strong> ({latestBilancio.tipo})
+              </div>
+              <div className="text-xs text-[#475569] mt-0.5">Utile netto {formatEur(ce.utile_netto)} · Patrimonio netto {formatEur(sp.patrimonio_netto)}</div>
+            </div>
+          </div>
+          <Link to="/import" className="text-xs text-[#2563EB] hover:underline">Gestisci import →</Link>
+        </div>
+      )}
+
       {/* KPI grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-        <KpiCard label="Valore patrimonio" value={formatEur(portfolioKPI.valore_stimato_totale)} delta={6.4} icon={Building2} accent="brand" sublabel="Stima attuale" />
-        <KpiCard label="Capitale investito" value={formatEur(portfolioKPI.capitale_investito)} icon={Wallet} sublabel={`${portfolioKPI.totale_immobili} immobili`} />
-        <KpiCard label="Ricavi mensili" value={formatEur(portfolioKPI.ricavi_mensili)} delta={2.1} icon={ArrowUpRight} accent="positive" sublabel="Affitti incassati" />
-        <KpiCard label="Cash flow netto" value={formatEur(portfolioKPI.cash_flow_mensile)} delta={-3.2} icon={Activity} accent={portfolioKPI.cash_flow_mensile > 0 ? "positive" : "critical"} sublabel="Questo mese" />
-        <KpiCard label="Debito residuo" value={formatEur(portfolioKPI.debito_residuo)} icon={Banknote} accent="warning" sublabel="LTV 38%" />
+        <KpiCard label="Valore patrimonio" value={formatEur(kpi.valore_stimato_totale)} delta={hasReal ? null : 6.4} icon={Building2} accent="brand" sublabel={hasReal ? "Da bilancio" : "Stima attuale"} />
+        <KpiCard label={hasReal ? "Patrimonio netto" : "Capitale investito"} value={formatEur(hasReal ? kpi.patrimonio_netto : kpi.capitale_investito)} icon={Wallet} sublabel={hasReal ? "Attivo − Passivo" : `${kpi.totale_immobili} immobili`} />
+        <KpiCard label="Ricavi mensili" value={formatEur(kpi.ricavi_mensili)} delta={hasReal ? null : 2.1} icon={ArrowUpRight} accent="positive" sublabel={hasReal ? "Affitti / 12" : "Affitti incassati"} />
+        <KpiCard label="Cash flow netto" value={formatEur(kpi.cash_flow_mensile)} delta={hasReal ? null : -3.2} icon={Activity} accent={kpi.cash_flow_mensile > 0 ? "positive" : "critical"} sublabel={hasReal ? "Utile/12" : "Questo mese"} />
+        <KpiCard label="Debito residuo" value={formatEur(kpi.debito_residuo)} icon={Banknote} accent="warning" sublabel={hasReal ? "Mutui da bilancio" : "LTV 38%"} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <KpiCard label="Rend. medio netto" value={`${portfolioKPI.rendimento_medio_netto}%`} delta={0.4} icon={TrendingUp} accent="positive" sublabel="Target 4,5%" />
-        <KpiCard label="Utile anno" value={formatEur(portfolioKPI.utile_anno)} delta={12.1} icon={ArrowUpRight} accent="positive" />
-        <KpiCard label="Liquidità" value={formatEur(portfolioKPI.liquidita_disponibile)} icon={Wallet} sublabel="Disponibile" />
-        <KpiCard label="Immobili critici" value={portfolioKPI.immobili_sotto_target + portfolioKPI.immobili_sfitti} icon={AlertTriangle} accent="critical" sublabel="Sotto target / sfitti" />
+        <KpiCard label="Rend. medio netto" value={`${kpi.rendimento_medio_netto}%`} delta={hasReal ? null : 0.4} icon={TrendingUp} accent="positive" sublabel="Target 4,5%" />
+        <KpiCard label="Utile anno" value={formatEur(kpi.utile_anno)} delta={hasReal ? null : 12.1} icon={ArrowUpRight} accent="positive" sublabel={hasReal ? "Da bilancio" : null} />
+        <KpiCard label="Liquidità" value={formatEur(kpi.liquidita_disponibile)} icon={Wallet} sublabel="Disponibile" />
+        <KpiCard label="Immobili critici" value={kpi.immobili_sotto_target + kpi.immobili_sfitti} icon={AlertTriangle} accent="critical" sublabel="Sotto target / sfitti" />
       </div>
 
       {/* Charts grid */}

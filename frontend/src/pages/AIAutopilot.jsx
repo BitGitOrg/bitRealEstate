@@ -85,13 +85,16 @@ export default function AIAutopilot() {
           </div>
 
           <div className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl p-5">
-            <div className="text-[10px] uppercase tracking-widest text-[#475569] mb-3">Contesto inviato</div>
+            <div className="text-[10px] uppercase tracking-widest text-[#475569] mb-3">Contesto usato</div>
             <div className="text-[11px] text-[#64748B] leading-relaxed space-y-1">
               <div>• {portfolioKPI.totale_immobili} immobili totali</div>
               <div>• Capitale: {(portfolioKPI.capitale_investito/1000000).toFixed(2)}M €</div>
               <div>• Cash flow: {portfolioKPI.cash_flow_mensile} €/mese</div>
               <div>• Debito: {(portfolioKPI.debito_residuo/1000).toFixed(0)}k €</div>
               <div>• Rend. netto medio: {portfolioKPI.rendimento_medio_netto}%</div>
+            </div>
+            <div className="mt-3 pt-3 border-t border-[#E2E8F0] text-[10px] text-[#64748B] leading-snug">
+              <strong className="text-[#2563EB]">Se hai importato bilanci o immobili reali</strong>, l'AI userà automaticamente quei dati al posto dei valori demo.
             </div>
           </div>
         </div>

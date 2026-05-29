@@ -179,21 +179,56 @@ async def ai_chat(input: ChatMessageIn, user: dict = Depends(current_user)):
     try:
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         sys_msg = AUTOPILOT_SYSTEM
-        if input.context:
+
+        # Enrich context with REAL data from MongoDB (overrides demo if present)
+        real_props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(200)
+        latest_bil = await db.bilanci.find_one({"user_id": user["id"]}, {"_id": 0}, sort=[("created_at", -1)])
+        last_3_bil = await db.bilanci.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(3)
+
+        real_block = ""
+        if real_props:
+            real_block += f"\n\n[DATI REALI — {len(real_props)} immobili importati]\n"
+            for p in real_props[:25]:
+                real_block += (
+                    f"- {p.get('nome')} ({p.get('citta','')}) · {p.get('tipologia','')} {p.get('metratura',0)}m² · "
+                    f"costo {p.get('prezzo_acquisto',0):.0f}€ · canone {p.get('canone_mensile',0):.0f}€/mese · "
+                    f"stato {p.get('stato','')}\n"
+                )
+        if latest_bil:
+            ce = latest_bil.get("conto_economico", {}) or {}
+            sp = latest_bil.get("stato_patrimoniale", {}) or {}
+            real_block += (
+                f"\n[ULTIMO BILANCIO — {latest_bil.get('periodo','')} ({latest_bil.get('tipo','')})]\n"
+                f"Ricavi affitti: {ce.get('ricavi_affitti',0):.0f}€ · Totale ricavi: {ce.get('totale_ricavi',0):.0f}€ · "
+                f"Totale costi: {ce.get('totale_costi',0):.0f}€ · Utile netto: {ce.get('utile_netto',0):.0f}€\n"
+                f"Valore immobili: {sp.get('valore_immobili',0):.0f}€ · Debito mutui: {sp.get('debito_mutui',0):.0f}€ · "
+                f"Liquidità: {sp.get('liquidita',0):.0f}€ · Patrimonio netto: {sp.get('patrimonio_netto',0):.0f}€\n"
+            )
+        if len(last_3_bil) > 1:
+            real_block += "\n[STORICO ULTIMI BILANCI]\n"
+            for b in last_3_bil:
+                ce = b.get("conto_economico", {}) or {}
+                real_block += f"- {b.get('periodo','')}: utile {ce.get('utile_netto',0):.0f}€, ricavi {ce.get('totale_ricavi',0):.0f}€\n"
+
+        if real_block:
+            sys_msg += "\n\n=== DATI EFFETTIVI DELLA SOCIETÀ (priorità su qualunque dato demo) ===" + real_block
+            sys_msg += "\nUsa SEMPRE questi dati reali nelle risposte e cita esplicitamente periodo/immobile quando li menzioni."
+        elif input.context:
             sys_msg += f"\n\n[CONTESTO PORTAFOGLIO]\n{input.context}"
+
         chat = LlmChat(
             api_key=EMERGENT_LLM_KEY,
             session_id=input.session_id,
             system_message=sys_msg,
         ).with_model("anthropic", "claude-sonnet-4-6")
         reply = await chat.send_message(UserMessage(text=input.message))
-        # persist
         await db.ai_messages.insert_one({
             "id": str(uuid.uuid4()),
             "user_id": user["id"],
             "session_id": input.session_id,
             "user_message": input.message,
             "reply": reply,
+            "has_real_data": bool(real_block),
             "ts": datetime.now(timezone.utc).isoformat(),
         })
         return ChatMessageOut(reply=reply, session_id=input.session_id)
@@ -964,6 +999,11 @@ async def list_bilanci(user: dict = Depends(current_user)):
     items = await db.bilanci.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(50)
     return items
 
+@api_router.get("/import/bilanci/latest")
+async def latest_bilancio(user: dict = Depends(current_user)):
+    item = await db.bilanci.find_one({"user_id": user["id"]}, {"_id": 0}, sort=[("created_at", -1)])
+    return item or {}
+
 @api_router.delete("/import/bilanci/{bid}")
 async def delete_bilancio(bid: str, user: dict = Depends(current_user)):
     await db.bilanci.delete_one({"id": bid, "user_id": user["id"]})
@@ -1040,19 +1080,46 @@ async def parse_banca(file: UploadFile = File(...), user: dict = Depends(current
 class BancaCommit(BaseModel):
     movimenti: List[dict]
 
+def _movimento_signature(user_id: str, m: dict) -> str:
+    import hashlib
+    s = f"{user_id}|{m.get('data','')}|{round(float(m.get('importo',0) or 0), 2)}|{(m.get('descrizione','') or '')[:80].strip().lower()}"
+    return hashlib.sha1(s.encode("utf-8")).hexdigest()
+
 @api_router.post("/import/banca/commit")
 async def commit_banca(payload: BancaCommit, user: dict = Depends(current_user)):
-    count = 0
+    created = 0
+    skipped = 0
     for m in payload.movimenti:
+        sig = _movimento_signature(user["id"], m)
+        existing = await db.movimenti_bancari.find_one({"user_id": user["id"], "signature": sig})
+        if existing:
+            skipped += 1
+            continue
+        # whitelist allowed fields
         item = {
             "id": str(uuid.uuid4()),
             "user_id": user["id"],
-            **m,
+            "data": m.get("data", ""),
+            "descrizione": m.get("descrizione", ""),
+            "importo": float(m.get("importo", 0) or 0),
+            "tipo": m.get("tipo", "uscita"),
+            "match_canone": m.get("match_canone"),
+            "signature": sig,
             "imported_at": datetime.now(timezone.utc).isoformat(),
         }
         await db.movimenti_bancari.insert_one(item)
-        count += 1
-    return {"created": count}
+        created += 1
+    return {"created": created, "skipped_duplicates": skipped}
+
+@api_router.get("/import/banca")
+async def list_movimenti_bancari(user: dict = Depends(current_user)):
+    items = await db.movimenti_bancari.find({"user_id": user["id"]}, {"_id": 0}).sort("data", -1).to_list(500)
+    return items
+
+@api_router.delete("/import/banca/{mid}")
+async def delete_movimento_bancario(mid: str, user: dict = Depends(current_user)):
+    await db.movimenti_bancari.delete_one({"id": mid, "user_id": user["id"]})
+    return {"ok": True}
 
 # ===== Mount =====
 app.include_router(api_router)
