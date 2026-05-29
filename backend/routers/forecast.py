@@ -1,0 +1,531 @@
+"""
+Forecast / Scenario Builder router.
+Lets the user define multi-year scenarios (3/5/10 anni) with operations per year
+(acquisto, vendita, ristrutturazione, rinegoziazione mutuo, sfitto, aumento canone)
+and produces yearly KPI projections. Also exposes:
+  - AI Coach chat per scenario
+  - PDF export "Piano industriale"
+  - Side-by-side comparison
+"""
+import io
+import json
+import logging
+import re
+import uuid
+from datetime import datetime, timezone
+from typing import List, Optional, Literal
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+from reportlab.platypus import Paragraph, Spacer, PageBreak
+
+from routers._shared import enrich_property
+from routers.settings import get_user_settings
+from routers._pdf_chrome import setup_doc, make_table, eur, pct
+
+
+OP_TYPES = ("acquisto", "vendita", "ristrutturazione", "rinegoziazione_mutuo", "sfitto", "aumento_canone")
+
+
+class Operation(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    anno: int  # 1..N (relative to year 0 = today)
+    tipo: Literal["acquisto", "vendita", "ristrutturazione", "rinegoziazione_mutuo", "sfitto", "aumento_canone"]
+    label: Optional[str] = ""
+    # acquisto / vendita
+    prezzo: Optional[float] = 0
+    # acquisto / ristrutturazione (lavori) / sfitto.mesi_da_canone
+    lavori: Optional[float] = 0
+    # acquisto / aumento_canone (incremento canone mensile)
+    canone_mensile: Optional[float] = 0
+    # acquisto
+    mutuo_pct: Optional[float] = 0          # 0..1 share of price financed
+    tasso_mutuo: Optional[float] = 0        # annual rate %
+    durata_mutuo: Optional[int] = 20        # years
+    # vendita / ristrutturazione / rinegoziazione → optional link to a real property
+    immobile_id: Optional[str] = None
+    # rinegoziazione_mutuo
+    nuovo_tasso: Optional[float] = 0
+    # sfitto
+    mesi: Optional[int] = 0
+    # aumento_canone — increment as % o come euro (preferiamo euro su canone_mensile)
+    pct_canone: Optional[float] = 0
+
+
+class ScenarioIn(BaseModel):
+    nome: str
+    descrizione: Optional[str] = ""
+    horizon_years: int = 5
+    use_real_baseline: bool = True
+    initial_patrimonio: Optional[float] = 0
+    initial_debito: Optional[float] = 0
+    initial_liquidita: Optional[float] = 0
+    initial_canone_mensile: Optional[float] = 0
+    initial_rata_mutui: Optional[float] = 0
+    initial_numero_immobili: Optional[int] = 0
+    # assumptions
+    inflation_rate: float = 2.0
+    rivalutazione_immobili: float = 1.5
+    istat_canoni: float = 1.5
+    tassazione_pct: float = 26.0
+    operations: List[Operation] = []
+
+
+class ScenarioOut(ScenarioIn):
+    id: str
+    user_id: str
+    created_at: str
+    updated_at: Optional[str] = None
+
+
+class CompareIn(BaseModel):
+    scenario_ids: List[str]
+
+
+class ChatIn(BaseModel):
+    message: str
+
+
+# ---------- Computation ----------
+def pmt(principal: float, rate_annual_pct: float, years: int) -> float:
+    if principal <= 0 or years <= 0:
+        return 0.0
+    if rate_annual_pct <= 0:
+        return principal / (years * 12)
+    r = rate_annual_pct / 100 / 12
+    n = years * 12
+    return principal * r * (1 + r) ** n / ((1 + r) ** n - 1)
+
+
+async def build_baseline(db, user_id: str, scenario: dict) -> dict:
+    """Year 0 state from real data or custom initial inputs."""
+    if not scenario.get("use_real_baseline"):
+        return {
+            "anno": 0, "label": "Oggi (input)",
+            "numero_immobili": int(scenario.get("initial_numero_immobili") or 0),
+            "valore_immobili": float(scenario.get("initial_patrimonio") or 0),
+            "debito_residuo": float(scenario.get("initial_debito") or 0),
+            "liquidita": float(scenario.get("initial_liquidita") or 0),
+            "canone_mensile": float(scenario.get("initial_canone_mensile") or 0),
+            "rata_mutui_mensile": float(scenario.get("initial_rata_mutui") or 0),
+            "ricavi_annui": float(scenario.get("initial_canone_mensile") or 0) * 12,
+            "costi_annui": 0.0,
+            "utile_netto": 0.0,
+            "cash_flow_annuo": 0.0,
+        }
+    props = await db.properties.find({"user_id": user_id}, {"_id": 0}).to_list(500)
+    props = [enrich_property(p) for p in props]
+    latest = await db.bilanci.find_one({"user_id": user_id}, {"_id": 0}, sort=[("created_at", -1)])
+    sp = ((latest or {}).get("stato_patrimoniale") or {})
+    ce = ((latest or {}).get("conto_economico") or {})
+
+    canone_mens = sum(float(p.get("canone_mensile", 0) or 0) for p in props)
+    valore = sp.get("valore_immobili") or sum(float(p.get("valore_stimato", p.get("prezzo_acquisto", 0)) or 0) for p in props)
+    debito = sp.get("debito_mutui") or sum(float((p.get("mutuo") or {}).get("residuo", 0) or 0) for p in props)
+    rata = sum(float((p.get("mutuo") or {}).get("rata", 0) or 0) for p in props)
+    liquidita = sp.get("liquidita") or 0
+    return {
+        "anno": 0, "label": "Oggi (reale)",
+        "numero_immobili": len(props),
+        "valore_immobili": float(valore),
+        "debito_residuo": float(debito),
+        "liquidita": float(liquidita),
+        "canone_mensile": float(canone_mens),
+        "rata_mutui_mensile": float(rata),
+        "ricavi_annui": float(ce.get("totale_ricavi") or canone_mens * 12),
+        "costi_annui": float(ce.get("totale_costi") or 0),
+        "utile_netto": float(ce.get("utile_netto") or 0),
+        "cash_flow_annuo": 0.0,
+    }
+
+
+def apply_operations(state: dict, year: int, operations: List[dict], log: list, props_by_id: dict):
+    for op in [o for o in operations if int(o.get("anno", 0)) == year]:
+        t = op.get("tipo")
+        label = op.get("label") or t
+        if t == "acquisto":
+            prezzo = float(op.get("prezzo") or 0)
+            lavori = float(op.get("lavori") or 0)
+            mutuo_pct = float(op.get("mutuo_pct") or 0)
+            tasso = float(op.get("tasso_mutuo") or 0)
+            durata = int(op.get("durata_mutuo") or 20)
+            canone = float(op.get("canone_mensile") or 0)
+            mutuo = prezzo * mutuo_pct
+            equity = prezzo + lavori - mutuo
+            rata_op = pmt(mutuo, tasso, durata)
+            state["numero_immobili"] += 1
+            state["valore_immobili"] += prezzo
+            state["debito_residuo"] += mutuo
+            state["liquidita"] -= equity
+            state["canone_mensile"] += canone
+            state["rata_mutui_mensile"] += rata_op
+            log.append(f"Acquisto «{label}»: prezzo €{prezzo:,.0f}, mutuo €{mutuo:,.0f}, rata €{rata_op:,.0f}/mese, canone €{canone}/mese")
+        elif t == "vendita":
+            prezzo_v = float(op.get("prezzo") or 0)
+            ref = op.get("immobile_id")
+            valore_libro = 0
+            debito_libero = 0
+            rata_libera = 0
+            canone_liberato = 0
+            if ref and ref in props_by_id:
+                p = props_by_id[ref]
+                valore_libro = float(p.get("valore_stimato") or p.get("prezzo_acquisto") or 0)
+                debito_libero = float((p.get("mutuo") or {}).get("residuo") or 0)
+                rata_libera = float((p.get("mutuo") or {}).get("rata") or 0)
+                canone_liberato = float(p.get("canone_mensile") or 0)
+            else:
+                valore_libro = prezzo_v * 0.95
+            state["liquidita"] += prezzo_v - debito_libero
+            state["valore_immobili"] = max(0, state["valore_immobili"] - valore_libro)
+            state["debito_residuo"] = max(0, state["debito_residuo"] - debito_libero)
+            state["rata_mutui_mensile"] = max(0, state["rata_mutui_mensile"] - rata_libera)
+            state["canone_mensile"] = max(0, state["canone_mensile"] - canone_liberato)
+            state["numero_immobili"] = max(0, state["numero_immobili"] - 1)
+            log.append(f"Vendita «{label}»: incasso €{prezzo_v:,.0f}, debito estinto €{debito_libero:,.0f}")
+        elif t == "ristrutturazione":
+            lavori = float(op.get("lavori") or 0)
+            extra_canone = float(op.get("canone_mensile") or 0)
+            state["liquidita"] -= lavori
+            state["valore_immobili"] += lavori * 1.4
+            state["canone_mensile"] += extra_canone
+            log.append(f"Ristrutturazione «{label}»: spesa €{lavori:,.0f}, +€{extra_canone}/mese canone, +€{lavori*1.4:,.0f} valore stimato")
+        elif t == "rinegoziazione_mutuo":
+            old_rate = float(op.get("tasso_mutuo") or 3.5)
+            new_rate = float(op.get("nuovo_tasso") or 2.5)
+            saving = max(0, (old_rate - new_rate) / 100 * state["debito_residuo"] / 12)
+            state["rata_mutui_mensile"] = max(0, state["rata_mutui_mensile"] - saving)
+            log.append(f"Rinegoziazione mutuo: tasso da {old_rate}% a {new_rate}%, risparmio €{saving:,.0f}/mese")
+        elif t == "sfitto":
+            mesi = int(op.get("mesi") or 0)
+            state["_one_off_revenue_loss"] = state.get("_one_off_revenue_loss", 0) + state["canone_mensile"] * mesi
+            log.append(f"Sfitto: {mesi} mesi, perdita stimata €{state['canone_mensile']*mesi:,.0f}")
+        elif t == "aumento_canone":
+            extra = float(op.get("canone_mensile") or 0)
+            pct_extra = float(op.get("pct_canone") or 0)
+            inc = extra + state["canone_mensile"] * pct_extra / 100
+            state["canone_mensile"] += inc
+            log.append(f"Aumento canone: +€{inc:,.0f}/mese")
+
+
+def simulate(baseline: dict, scenario: dict, props: list) -> dict:
+    horizon = max(1, min(15, int(scenario.get("horizon_years", 5))))
+    rival = float(scenario.get("rivalutazione_immobili") or 0)
+    istat = float(scenario.get("istat_canoni") or 0)
+    tax_pct = float(scenario.get("tassazione_pct") or 26)
+    operations = scenario.get("operations") or []
+    props_by_id = {p["id"]: p for p in props}
+
+    snapshots = [baseline.copy()]
+    yearly_logs = {0: ["Stato iniziale"]}
+    state = baseline.copy()
+
+    for y in range(1, horizon + 1):
+        # 1) automatic events
+        state["valore_immobili"] *= (1 + rival / 100)
+        state["canone_mensile"] *= (1 + istat / 100)
+        state["_one_off_revenue_loss"] = 0
+
+        # 2) operations
+        log = []
+        apply_operations(state, y, operations, log, props_by_id)
+
+        # 3) yearly P&L
+        ricavi = state["canone_mensile"] * 12 - state.get("_one_off_revenue_loss", 0)
+        costi_gestione = ricavi * 0.15
+        # approximate interest portion: assume blended 3% on outstanding debt
+        interest_rate_implied = 3.0
+        interessi_annui = state["debito_residuo"] * interest_rate_implied / 100
+        rata_annua = state["rata_mutui_mensile"] * 12
+        ammortamento_capitale = max(0, rata_annua - interessi_annui)
+        utile_lordo = ricavi - costi_gestione - interessi_annui
+        tasse = max(0, utile_lordo) * tax_pct / 100
+        utile_netto = utile_lordo - tasse
+        cash_flow = ricavi - costi_gestione - rata_annua - tasse
+
+        # 4) update state
+        state["debito_residuo"] = max(0, state["debito_residuo"] - ammortamento_capitale)
+        if state["debito_residuo"] <= 0:
+            state["rata_mutui_mensile"] = 0
+        state["liquidita"] += cash_flow
+
+        # 5) snapshot
+        snap = {
+            "anno": y, "label": f"Anno {y}",
+            "numero_immobili": state["numero_immobili"],
+            "valore_immobili": round(state["valore_immobili"], 0),
+            "debito_residuo": round(state["debito_residuo"], 0),
+            "liquidita": round(state["liquidita"], 0),
+            "patrimonio_netto": round(state["valore_immobili"] - state["debito_residuo"], 0),
+            "canone_mensile": round(state["canone_mensile"], 0),
+            "rata_mutui_mensile": round(state["rata_mutui_mensile"], 0),
+            "ricavi_annui": round(ricavi, 0),
+            "costi_annui": round(costi_gestione + interessi_annui, 0),
+            "interessi_annui": round(interessi_annui, 0),
+            "tasse": round(tasse, 0),
+            "utile_netto": round(utile_netto, 0),
+            "cash_flow_annuo": round(cash_flow, 0),
+            "ltv": round(state["debito_residuo"] / state["valore_immobili"] * 100, 2) if state["valore_immobili"] > 0 else 0,
+            "roi_anno": round(utile_netto / max(1, state["valore_immobili"] - state["debito_residuo"]) * 100, 2),
+            "logs": log,
+        }
+        snapshots.append(snap)
+        yearly_logs[y] = log
+
+    # add patrimonio_netto to baseline too
+    snapshots[0]["patrimonio_netto"] = round(snapshots[0]["valore_immobili"] - snapshots[0]["debito_residuo"], 0)
+    return {
+        "horizon_years": horizon,
+        "snapshots": snapshots,
+        "summary": {
+            "patrimonio_netto_finale": snapshots[-1]["patrimonio_netto"],
+            "patrimonio_netto_iniziale": snapshots[0]["patrimonio_netto"],
+            "crescita_pct": round(
+                (snapshots[-1]["patrimonio_netto"] - snapshots[0]["patrimonio_netto"]) /
+                max(1, snapshots[0]["patrimonio_netto"]) * 100, 1
+            ),
+            "ricavi_totali_periodo": round(sum(s["ricavi_annui"] for s in snapshots[1:]), 0),
+            "utile_totale_periodo": round(sum(s["utile_netto"] for s in snapshots[1:]), 0),
+            "cash_flow_cumulato": round(sum(s["cash_flow_annuo"] for s in snapshots[1:]), 0),
+            "ltv_finale": snapshots[-1]["ltv"],
+            "numero_immobili_finale": snapshots[-1]["numero_immobili"],
+        },
+    }
+
+
+def make_forecast_router(db, current_user, llm_key: str):
+    router = APIRouter(prefix="/api/forecast")
+
+    @router.get("/scenarios")
+    async def list_scenarios(user: dict = Depends(current_user)):
+        items = await db.scenarios.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(50)
+        return items
+
+    @router.post("/scenarios")
+    async def create_scenario(s: ScenarioIn, user: dict = Depends(current_user)):
+        item = {
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"],
+            **s.model_dump(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.scenarios.insert_one(item.copy())
+        item.pop("_id", None)
+        return item
+
+    @router.get("/scenarios/{sid}")
+    async def get_scenario(sid: str, user: dict = Depends(current_user)):
+        item = await db.scenarios.find_one({"id": sid, "user_id": user["id"]}, {"_id": 0})
+        if not item:
+            raise HTTPException(status_code=404, detail="Scenario non trovato")
+        return item
+
+    @router.put("/scenarios/{sid}")
+    async def update_scenario(sid: str, s: ScenarioIn, user: dict = Depends(current_user)):
+        data = s.model_dump()
+        data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        res = await db.scenarios.update_one({"id": sid, "user_id": user["id"]}, {"$set": data})
+        if res.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Scenario non trovato")
+        item = await db.scenarios.find_one({"id": sid, "user_id": user["id"]}, {"_id": 0})
+        return item
+
+    @router.delete("/scenarios/{sid}")
+    async def delete_scenario(sid: str, user: dict = Depends(current_user)):
+        await db.scenarios.delete_one({"id": sid, "user_id": user["id"]})
+        await db.scenario_messages.delete_many({"scenario_id": sid, "user_id": user["id"]})
+        return {"ok": True}
+
+    @router.post("/scenarios/{sid}/simulate")
+    async def simulate_scenario(sid: str, user: dict = Depends(current_user)):
+        scen = await db.scenarios.find_one({"id": sid, "user_id": user["id"]}, {"_id": 0})
+        if not scen:
+            raise HTTPException(status_code=404, detail="Scenario non trovato")
+        baseline = await build_baseline(db, user["id"], scen)
+        props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+        return simulate(baseline, scen, props)
+
+    @router.post("/scenarios/compare")
+    async def compare_scenarios(payload: CompareIn, user: dict = Depends(current_user)):
+        out = []
+        props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+        for sid in payload.scenario_ids[:4]:
+            scen = await db.scenarios.find_one({"id": sid, "user_id": user["id"]}, {"_id": 0})
+            if not scen:
+                continue
+            baseline = await build_baseline(db, user["id"], scen)
+            sim = simulate(baseline, scen, props)
+            out.append({"id": sid, "nome": scen.get("nome"), "result": sim})
+        return {"scenarios": out}
+
+    # ===== AI Coach per scenario =====
+    @router.post("/scenarios/{sid}/ai")
+    async def scenario_ai(sid: str, payload: ChatIn, user: dict = Depends(current_user)):
+        if not llm_key:
+            raise HTTPException(status_code=500, detail="LLM key non configurata")
+        scen = await db.scenarios.find_one({"id": sid, "user_id": user["id"]}, {"_id": 0})
+        if not scen:
+            raise HTTPException(status_code=404, detail="Scenario non trovato")
+        baseline = await build_baseline(db, user["id"], scen)
+        props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+        sim = simulate(baseline, scen, props)
+
+        ctx_lines = [
+            f"Scenario «{scen.get('nome')}» — orizzonte {scen.get('horizon_years')} anni",
+            f"Patrimonio netto iniziale: € {sim['summary']['patrimonio_netto_iniziale']:,.0f}",
+            f"Patrimonio netto finale:   € {sim['summary']['patrimonio_netto_finale']:,.0f}  (Δ {sim['summary']['crescita_pct']}%)",
+            f"Ricavi totali periodo:     € {sim['summary']['ricavi_totali_periodo']:,.0f}",
+            f"Utile totale periodo:      € {sim['summary']['utile_totale_periodo']:,.0f}",
+            f"Cash flow cumulato:        € {sim['summary']['cash_flow_cumulato']:,.0f}",
+            f"LTV finale:                {sim['summary']['ltv_finale']}%",
+            f"Immobili a fine periodo:   {sim['summary']['numero_immobili_finale']}",
+            "",
+            "Snapshot annuali (Anno · NumImmobili · ValPatrimonio · DebitoResiduo · CanoneMese · UtileNetto · CashFlow · LTV%):",
+        ]
+        for s in sim["snapshots"]:
+            ctx_lines.append(
+                f"  - Anno {s['anno']:>2}: {s['numero_immobili']} imm · €{s['valore_immobili']:,.0f} · "
+                f"debito €{s['debito_residuo']:,.0f} · canone €{s.get('canone_mensile',0):,.0f}/m · "
+                f"utile €{s.get('utile_netto',0):,.0f} · CF €{s.get('cash_flow_annuo',0):,.0f} · "
+                f"LTV {s.get('ltv',0)}%"
+            )
+        ctx_lines.append("\nOperazioni pianificate:")
+        for op in scen.get("operations") or []:
+            ctx_lines.append(f"  · Anno {op.get('anno')} · {op.get('tipo')} · {op.get('label') or ''} · prezzo €{op.get('prezzo') or 0:,.0f} · canone €{op.get('canone_mensile') or 0}/m")
+
+        sys_msg = (
+            "Sei AI Coach, un consulente finanziario senior specializzato in real estate. "
+            "Stai analizzando uno SCENARIO PLURI-ANNALE costruito dall'utente. "
+            "Rispondi in italiano, concreto, con numeri presi dal contesto. "
+            "Quando proponi modifiche, indica esplicitamente: anno, tipo operazione, parametri. "
+            "Quando l'utente chiede un'opinione, dai sempre una raccomandazione netta (Procedi / Modifica / Scartare lo scenario) motivata.\n\n"
+            "=== CONTESTO SCENARIO ===\n"
+            + "\n".join(ctx_lines)
+        )
+        try:
+            from emergentintegrations.llm.chat import LlmChat, UserMessage
+            chat = LlmChat(
+                api_key=llm_key,
+                session_id=f"forecast-{sid}",
+                system_message=sys_msg,
+            ).with_model("anthropic", "claude-sonnet-4-6")
+            reply = await chat.send_message(UserMessage(text=payload.message))
+        except Exception as e:
+            logging.exception("AI forecast chat error")
+            raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
+
+        await db.scenario_messages.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"], "scenario_id": sid,
+            "user_message": payload.message, "reply": reply,
+            "ts": datetime.now(timezone.utc).isoformat(),
+        })
+        return {"reply": reply}
+
+    @router.get("/scenarios/{sid}/ai/history")
+    async def ai_history(sid: str, user: dict = Depends(current_user)):
+        msgs = await db.scenario_messages.find(
+            {"user_id": user["id"], "scenario_id": sid}, {"_id": 0}
+        ).sort("ts", 1).to_list(200)
+        return msgs
+
+    # ===== PDF — Piano industriale =====
+    @router.get("/scenarios/{sid}/pdf")
+    async def scenario_pdf(sid: str, user: dict = Depends(current_user)):
+        scen = await db.scenarios.find_one({"id": sid, "user_id": user["id"]}, {"_id": 0})
+        if not scen:
+            raise HTTPException(status_code=404, detail="Scenario non trovato")
+        baseline = await build_baseline(db, user["id"], scen)
+        props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+        sim = simulate(baseline, scen, props)
+        settings = await get_user_settings(db, user["id"])
+        brand = settings.get("nome_societa") or "Real Estate Control Room"
+
+        buf, doc, h1, sub, h2, body, cb = setup_doc(
+            f"Piano Industriale · {sim['horizon_years']} anni", brand, settings.get("logo_base64")
+        )
+        story = []
+        story.append(Paragraph(f"Piano Industriale — {scen.get('nome')}", h1))
+        story.append(Paragraph(
+            f"Orizzonte: {sim['horizon_years']} anni · Generato il {datetime.now().strftime('%d/%m/%Y %H:%M')} · "
+            f"Baseline: {'dati reali società' if scen.get('use_real_baseline') else 'input manuale'}",
+            sub,
+        ))
+        if scen.get("descrizione"):
+            story.append(Paragraph(f"<i>{scen['descrizione']}</i>", body))
+            story.append(Spacer(1, 0.3 * 28))  # ~ pt
+
+        # 1) Riepilogo strategico
+        story.append(Paragraph("1 · Riepilogo strategico", h2))
+        s = sim["summary"]
+        story.append(make_table([
+            ["Indicatore", "Valore"],
+            ["Patrimonio netto iniziale", eur(s["patrimonio_netto_iniziale"])],
+            ["Patrimonio netto finale", eur(s["patrimonio_netto_finale"])],
+            ["Crescita patrimonio (%)", f"{s['crescita_pct']}%"],
+            ["Ricavi totali periodo", eur(s["ricavi_totali_periodo"])],
+            ["Utile totale periodo", eur(s["utile_totale_periodo"])],
+            ["Cash flow cumulato", eur(s["cash_flow_cumulato"])],
+            ["LTV finale", f"{s['ltv_finale']}%"],
+            ["Immobili a fine periodo", str(s["numero_immobili_finale"])],
+        ], [320, 180], highlight_last=False))
+
+        # 2) Operazioni pianificate
+        ops = scen.get("operations") or []
+        if ops:
+            story.append(Paragraph("2 · Operazioni pianificate", h2))
+            rows = [["Anno", "Tipo", "Descrizione", "Prezzo / Lavori", "Canone Δ/mese"]]
+            for op in sorted(ops, key=lambda o: (int(o.get("anno", 0)), o.get("tipo", ""))):
+                p_or_l = op.get("prezzo") or op.get("lavori") or 0
+                rows.append([
+                    str(op.get("anno", "")), (op.get("tipo") or "").replace("_", " "),
+                    (op.get("label") or "")[:38], eur(p_or_l),
+                    eur(op.get("canone_mensile") or 0),
+                ])
+            story.append(make_table(rows, [50, 110, 160, 100, 80]))
+
+        # 3) Proiezione anno per anno
+        story.append(PageBreak())
+        story.append(Paragraph("3 · Proiezione anno per anno", h2))
+        rows = [["Anno", "Immobili", "Val.Patrimonio", "Debito", "PN", "Canone/m", "Utile netto", "Cash flow", "LTV"]]
+        for snap in sim["snapshots"]:
+            rows.append([
+                str(snap["anno"]), str(snap["numero_immobili"]),
+                eur(snap["valore_immobili"]), eur(snap["debito_residuo"]),
+                eur(snap.get("patrimonio_netto", 0)),
+                eur(snap.get("canone_mensile", 0)),
+                eur(snap.get("utile_netto", 0)),
+                eur(snap.get("cash_flow_annuo", 0)),
+                f"{snap.get('ltv', 0)}%",
+            ])
+        story.append(make_table(rows, [35, 50, 75, 65, 65, 55, 65, 65, 45]))
+
+        # 4) Assunzioni di scenario
+        story.append(Paragraph("4 · Assunzioni di scenario", h2))
+        story.append(make_table([
+            ["Parametro", "Valore"],
+            ["Rivalutazione immobili annua", f"{scen.get('rivalutazione_immobili', 0)}%"],
+            ["Aggiornamento ISTAT canoni", f"{scen.get('istat_canoni', 0)}%"],
+            ["Inflazione attesa", f"{scen.get('inflation_rate', 0)}%"],
+            ["Tassazione utile (%)", f"{scen.get('tassazione_pct', 0)}%"],
+            ["Tasso di interesse implicito su debito", "3,00% (mix portafoglio)"],
+        ], [320, 180]))
+
+        # 5) Conclusioni e raccomandazioni
+        story.append(Paragraph("5 · Conclusioni", h2))
+        verdict = "Scenario di crescita sostenibile" if s["crescita_pct"] > 0 and s["ltv_finale"] < 70 else "Scenario da rivedere — verifica leva e cash flow"
+        story.append(Paragraph(
+            f"<b>{verdict}</b>. Patrimonio atteso a fine periodo: {eur(s['patrimonio_netto_finale'])}, "
+            f"con LTV finale al {s['ltv_finale']}% e {s['numero_immobili_finale']} immobili in portafoglio.",
+            body
+        ))
+
+        doc.build(story, onFirstPage=cb, onLaterPages=cb)
+        buf.seek(0)
+        return StreamingResponse(
+            io.BytesIO(buf.read()),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="piano_industriale_{sid[:8]}.pdf"'},
+        )
+
+    return router

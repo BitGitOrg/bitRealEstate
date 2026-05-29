@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 10 — Forecast / Piano Industriale backend validation. All 22 tests passed (100%) covering CRUD, simulate engine, 6 operation types (acquisto, vendita, ristrutturazione, rinegoziazione_mutuo, sfitto, aumento_canone), compare, AI Coach (Claude via Emergent LLM key), PDF export, real-data baseline, and regression on report+settings+properties endpoints.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter10_forecast.py",
+    "/app/test_reports/pytest/iter10_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "forecast.py: AI Coach endpoint correctly uses Claude Sonnet 4.6 via emergentintegrations and persists history in db.scenario_messages — good.",
+    "forecast.py simulate(): horizon is clamped to [1,15] which is safe and matches the 3/5/10 product requirement (allows up to 15).",
+    "forecast.py: snapshots[0] (baseline) is built from real DB (properties + bilanci latest) when use_real_baseline=True; gracefully defaults to 0 when no data — verified no-crash.",
+    "forecast.py acquisto: liquidità is decremented by equity (prezzo + lavori - mutuo). Note: state.liquidita may not be defined on snapshot 0 when use_real_baseline=False because build_baseline does include 'liquidita', so OK. But snapshot dict does include 'liquidita' field which is good for UI.",
+    "forecast.py: compare endpoint silently skips unknown scenario IDs (continue). Consider returning per-id error info for better UX, but not blocking.",
+    "forecast.py PDF: brand fallback to 'Real Estate Control Room' when nome_societa missing. Note prior test left nome_societa='Acme RE SRL' on ceo account so brand header will show that.",
+    "_pdf_chrome.py is correctly shared between reports.py and forecast.py — no duplication, regression on /api/report/stato-salute.pdf and /api/report/business-plan.pdf still passes.",
+    "forecast.py: rinegoziazione_mutuo uses tasso_mutuo (from same Operation model) as 'old rate' default 3.5% if not provided — semantic overload of field is workable but could be clearer (e.g., dedicated tasso_attuale).",
+    "Auth: still uses HTTPBearer(auto_error=False) — non-blocking carry-over from iter9."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter10_forecast.py"
+  ],
+  "success_rate": {
+    "backend": "100% (22/22)",
+    "frontend": "not tested (skipped per request)"
+  },
+  "test_credentials": "ceo@controlroom.it / demo1234 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Created ~16 transient scenarios with name prefix 'TEST_iter10_*' and deleted all via teardown fixture. db.scenario_messages will retain a few entries from the AI Coach test (message+reply per scenario); these were cascaded on scenario delete by the DELETE endpoint.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Forecast module is fully wired and stable. Endpoints: GET/POST/PUT/DELETE /api/forecast/scenarios, POST /api/forecast/scenarios/{id}/simulate, POST /api/forecast/scenarios/compare, POST /api/forecast/scenarios/{id}/ai, GET /api/forecast/scenarios/{id}/ai/history, GET /api/forecast/scenarios/{id}/pdf. AI Coach uses Claude Sonnet 4.6 via Emergent LLM key (real call, ~5-10s latency, set 90s timeout). PDF returns ~5-7 KB %PDF. Existing reports (stato-salute, business-plan) and settings/properties endpoints still pass — refactor to _pdf_chrome.py is regression-clean.",
+  "rca_of_the_issue": "No issues. Initial pytest collection failure was because the test process didn't have REACT_APP_BACKEND_URL in env; resolved by adding python-dotenv load of /app/frontend/.env in the test module. After that fix, all 22 tests passed on the first run."
+}

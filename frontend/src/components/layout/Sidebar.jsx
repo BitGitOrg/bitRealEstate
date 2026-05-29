@@ -2,7 +2,8 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, TrendingUp, Wallet, Building2, Map, FileText,
   Handshake, Home, ShoppingBag, Hammer, Receipt, Banknote, Calculator,
-  Bot, BellRing, FolderArchive, Settings, FileBarChart, ChevronRight, Sparkles, Database
+  Bot, BellRing, FolderArchive, Settings, FileBarChart, ChevronRight, Sparkles, Database,
+  LineChart
 } from "lucide-react";
 
 const GROUPS = [
@@ -25,6 +26,7 @@ const GROUPS = [
     { to: "/costi-ricavi", label: "Costi & Ricavi", icon: Receipt },
     { to: "/mutui", label: "Mutui & Finanziamenti", icon: Banknote },
     { to: "/simulatore", label: "Simulatore", icon: Calculator },
+    { to: "/forecast", label: "Forecast & Piano Industriale", icon: LineChart, accent: true },
   ]},
   { name: "Intelligenza", items: [
     { to: "/deal-inbox", label: "Deal Inbox", icon: Sparkles, accent: true },

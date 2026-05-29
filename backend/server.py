@@ -27,6 +27,7 @@ from routers.properties import make_properties_router
 from routers.imports import make_imports_router
 from routers.settings import make_settings_router
 from routers.reports import make_reports_router
+from routers.forecast import make_forecast_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -567,6 +568,7 @@ app.include_router(make_properties_router(db, current_user))
 app.include_router(make_imports_router(db, current_user, EMERGENT_LLM_KEY))
 app.include_router(make_settings_router(db, current_user))
 app.include_router(make_reports_router(db, current_user))
+app.include_router(make_forecast_router(db, current_user, EMERGENT_LLM_KEY))
 
 app.add_middleware(
     CORSMiddleware,
