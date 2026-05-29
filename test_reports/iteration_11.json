@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 11 — Proactive Alerts on Forecast scenarios. Authored 19 new tests in test_iter11_alerts.py and ran them against the live backend: all 19/19 PASS. Regression on iter10 (22/22) also still passes. Verified: per-snapshot alerts[] shape; all 7 alert codes fire on crafted scenarios (ltv_alto, cash_flow_negativo, liquidita_negativa, patrimonio_negativo, rata_su_canone, patrimonio_in_calo, rendimento_sotto_target / ltv_vicino_soglia); summary aggregates (alerts_critical/warning, years_with_neg_cash_flow, years_with_high_ltv, first_year_negative_liquidity, verdict, verdict_severity); high-leverage scenario yielded alerts_critical=13, verdict_severity='critical'; healthy scenario yields 0 critical and verdict 'praticabile'; settings.target_netto / settings.limite_indebitamento drive thresholds (strict run produced strictly more alerts than default); AI Coach reply mentions LTV / cash flow / liquidità; PDF for risky scenario (7.4KB+) larger than clean (≈5.4KB); compare endpoint exposes alerts fields per scenario; existing endpoints /api/auth/login, /api/forecast/scenarios, /api/report/stato-salute.pdf, /api/properties, /api/settings all 200.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter11_alerts.py",
+    "/app/test_reports/pytest/iter11_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "forecast.py compute_snapshot_alerts(): the 'patrimonio_in_calo' threshold uses the CURRENT snapshot's pn ('delta < -pn * 0.05') instead of the PREVIOUS year's pn. This means the % drop is measured against the post-drop value, which is mathematically asymmetric (a 5% drop relative to previous becomes ~5.26% threshold). Minor — consider using prev.patrimonio_netto as the denominator for clarity.",
+    "forecast.py compare endpoint: response uses {'scenarios': [{id, nome, result:{snapshots, summary}}]}, while simulate returns {snapshots, summary} at top level. The two shapes are inconsistent — consumers must branch. Consider aligning to one shape or documenting.",
+    "forecast.py: ltv_alto threshold uses settings.limite_indebitamento (default 70). The warning band 'ltv_vicino_soglia' fires at 0.9*ltv_max (i.e. 63% with default 70). Confirm the product wants this — currently the warning band only fires when ltv is between 63% and 70% (a narrow 7-point window).",
+    "forecast.py compute_snapshot_alerts(): 'rendimento_sotto_target' divides by max(1, pn). When pn is 0 or negative, the alert may show misleading rendimento. Consider guarding with 'if pn > 0' before computing rend.",
+    "forecast.py simulate(): for use_real_baseline=False, baseline snapshot uses 'rata_mutui_mensile' both as monthly rata and to compute cash flow. No new bug introduced by alerts, but the baseline (anno 0) cash_flow_annuo is hard-coded to 0 and yet alerts like cash_flow_negativo would not fire at anno 0 — by design but worth a comment in code.",
+    "PDF '5 · Alert proattivi rilevati' section growth confirmed (~5.4KB → 7.4KB on risky scenario). Verdict banner color logic (#DC2626 critical / #B45309 warning) — verify warning color is consistent with frontend's amber palette."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter11_alerts.py"
+  ],
+  "success_rate": {
+    "backend": "100% (19/19 new + 22/22 iter10 regression)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "test_credentials": "ceo@controlroom.it / demo1234 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "~10 transient scenarios with prefix 'TEST_iter11_*' created and deleted in session teardown. Settings were temporarily set to target_netto=8, limite_indebitamento=50 inside TestSettingsThresholds and reset to 5/70 both inside the test and once more in the session-level teardown fixture — defaults restored for the ceo user.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Alerts feature is stable. New summary fields confirmed: alerts_critical(int), alerts_warning(int), years_with_neg_cash_flow(list[int]), years_with_high_ltv(list[int]), first_year_negative_liquidity(int|null), verdict(str), verdict_severity('critical'|'warning'|'ok'). Each snapshot now has alerts:[{severity,code,message}]. Compare endpoint returns {scenarios:[{id,nome,result:{snapshots,summary}}]} (not flat). AI Coach receives all alerts in its context and references them. PDF includes new 'Alert proattivi rilevati' section.",
+  "rca_of_the_issue": "Two initial test-side failures (resolved): (1) test_compare used 'ids' but endpoint expects 'scenario_ids' (Pydantic 422). Fixed payload key. (2) test_patrimonio_in_calo originally relied on losses to drop PN, but PN = valore_immobili - debito_residuo, and amortization actually grows PN even with negative utile_netto since debt repayment offsets it. Fixed by using rivalutazione_immobili=-15 to depreciate property value year-over-year, which reliably drops PN > 5%. No backend code changes were required."
+}

@@ -207,7 +207,47 @@ def apply_operations(state: dict, year: int, operations: List[dict], log: list, 
             log.append(f"Aumento canone: +€{inc:,.0f}/mese")
 
 
-def simulate(baseline: dict, scenario: dict, props: list) -> dict:
+def compute_snapshot_alerts(snap: dict, prev: dict, settings: dict) -> list:
+    """Returns list of dicts {severity, code, message} based on the snapshot state."""
+    alerts = []
+    target_netto = float((settings or {}).get("target_netto") or 4)
+    ltv_max = float((settings or {}).get("limite_indebitamento") or 70)
+    ltv = snap.get("ltv", 0)
+    cf = snap.get("cash_flow_annuo", 0)
+    liq = snap.get("liquidita", 0)
+    debito = snap.get("debito_residuo", 0)
+    valore = snap.get("valore_immobili", 0)
+    canone = snap.get("canone_mensile", 0)
+    rata = snap.get("rata_mutui_mensile", 0)
+    utile = snap.get("utile_netto", 0)
+    pn = snap.get("patrimonio_netto", 0)
+
+    if ltv > ltv_max:
+        alerts.append({"severity": "critical", "code": "ltv_alto", "message": f"LTV {ltv:.1f}% sopra la soglia {ltv_max:.0f}%"})
+    elif ltv > ltv_max * 0.9:
+        alerts.append({"severity": "warning", "code": "ltv_vicino_soglia", "message": f"LTV {ltv:.1f}% vicino alla soglia {ltv_max:.0f}%"})
+    if cf < 0:
+        alerts.append({"severity": "critical", "code": "cash_flow_negativo", "message": f"Cash flow annuo negativo (€{cf:,.0f})"})
+    if liq < 0:
+        alerts.append({"severity": "critical", "code": "liquidita_negativa", "message": f"Liquidità sotto zero (€{liq:,.0f}) — tensione finanziaria"})
+    elif liq < canone * 3:
+        alerts.append({"severity": "warning", "code": "liquidita_bassa", "message": f"Liquidità inferiore a 3 mensilità di canone (€{liq:,.0f})"})
+    if debito > valore and valore > 0:
+        alerts.append({"severity": "critical", "code": "patrimonio_negativo", "message": f"Debito €{debito:,.0f} > valore immobili €{valore:,.0f}"})
+    if canone > 0 and rata > canone:
+        alerts.append({"severity": "warning", "code": "rata_su_canone", "message": f"Rata mutui €{rata:,.0f}/m > canone €{canone:,.0f}/m"})
+    if valore > 0 and utile > 0:
+        rend = utile / max(1, pn) * 100
+        if rend < target_netto:
+            alerts.append({"severity": "warning", "code": "rendimento_sotto_target", "message": f"Rendimento netto {rend:.1f}% sotto target {target_netto:.1f}%"})
+    if prev is not None and pn < prev.get("patrimonio_netto", 0):
+        delta = pn - prev.get("patrimonio_netto", 0)
+        if delta < -pn * 0.05:  # only if drop > 5%
+            alerts.append({"severity": "warning", "code": "patrimonio_in_calo", "message": f"Patrimonio netto in calo di €{abs(delta):,.0f} rispetto all'anno precedente"})
+    return alerts
+
+
+def simulate(baseline: dict, scenario: dict, props: list, settings: dict = None) -> dict:
     horizon = max(1, min(15, int(scenario.get("horizon_years", 5))))
     rival = float(scenario.get("rivalutazione_immobili") or 0)
     istat = float(scenario.get("istat_canoni") or 0)
@@ -268,11 +308,35 @@ def simulate(baseline: dict, scenario: dict, props: list) -> dict:
             "roi_anno": round(utile_netto / max(1, state["valore_immobili"] - state["debito_residuo"]) * 100, 2),
             "logs": log,
         }
+        snap["alerts"] = compute_snapshot_alerts(snap, snapshots[-1], settings)
         snapshots.append(snap)
         yearly_logs[y] = log
 
-    # add patrimonio_netto to baseline too
+    # add patrimonio_netto + alerts to baseline too
     snapshots[0]["patrimonio_netto"] = round(snapshots[0]["valore_immobili"] - snapshots[0]["debito_residuo"], 0)
+    snapshots[0]["alerts"] = compute_snapshot_alerts(snapshots[0], None, settings)
+
+    # global risk roll-up
+    all_alerts = [(s["anno"], a) for s in snapshots for a in (s.get("alerts") or [])]
+    n_critical = sum(1 for _, a in all_alerts if a["severity"] == "critical")
+    n_warning = sum(1 for _, a in all_alerts if a["severity"] == "warning")
+    years_with_neg_cf = [s["anno"] for s in snapshots[1:] if s["cash_flow_annuo"] < 0]
+    years_with_high_ltv = [s["anno"] for s in snapshots[1:] if s["ltv"] > float((settings or {}).get("limite_indebitamento") or 70)]
+    first_neg_liquidity = next((s["anno"] for s in snapshots if s.get("liquidita", 0) < 0), None)
+
+    if n_critical >= 3:
+        verdict = "Scenario critico — alta probabilità di tensione finanziaria"
+        verdict_severity = "critical"
+    elif n_critical >= 1:
+        verdict = "Scenario rischioso — richiede aggiustamenti"
+        verdict_severity = "warning"
+    elif n_warning >= 2:
+        verdict = "Scenario praticabile con punti di attenzione"
+        verdict_severity = "warning"
+    else:
+        verdict = "Scenario sostenibile"
+        verdict_severity = "ok"
+
     return {
         "horizon_years": horizon,
         "snapshots": snapshots,
@@ -288,6 +352,13 @@ def simulate(baseline: dict, scenario: dict, props: list) -> dict:
             "cash_flow_cumulato": round(sum(s["cash_flow_annuo"] for s in snapshots[1:]), 0),
             "ltv_finale": snapshots[-1]["ltv"],
             "numero_immobili_finale": snapshots[-1]["numero_immobili"],
+            "alerts_critical": n_critical,
+            "alerts_warning": n_warning,
+            "years_with_neg_cash_flow": years_with_neg_cf,
+            "years_with_high_ltv": years_with_high_ltv,
+            "first_year_negative_liquidity": first_neg_liquidity,
+            "verdict": verdict,
+            "verdict_severity": verdict_severity,
         },
     }
 
@@ -343,18 +414,20 @@ def make_forecast_router(db, current_user, llm_key: str):
             raise HTTPException(status_code=404, detail="Scenario non trovato")
         baseline = await build_baseline(db, user["id"], scen)
         props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
-        return simulate(baseline, scen, props)
+        settings = await get_user_settings(db, user["id"])
+        return simulate(baseline, scen, props, settings)
 
     @router.post("/scenarios/compare")
     async def compare_scenarios(payload: CompareIn, user: dict = Depends(current_user)):
         out = []
         props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+        settings = await get_user_settings(db, user["id"])
         for sid in payload.scenario_ids[:4]:
             scen = await db.scenarios.find_one({"id": sid, "user_id": user["id"]}, {"_id": 0})
             if not scen:
                 continue
             baseline = await build_baseline(db, user["id"], scen)
-            sim = simulate(baseline, scen, props)
+            sim = simulate(baseline, scen, props, settings)
             out.append({"id": sid, "nome": scen.get("nome"), "result": sim})
         return {"scenarios": out}
 
@@ -368,10 +441,13 @@ def make_forecast_router(db, current_user, llm_key: str):
             raise HTTPException(status_code=404, detail="Scenario non trovato")
         baseline = await build_baseline(db, user["id"], scen)
         props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
-        sim = simulate(baseline, scen, props)
+        settings = await get_user_settings(db, user["id"])
+        sim = simulate(baseline, scen, props, settings)
 
         ctx_lines = [
             f"Scenario «{scen.get('nome')}» — orizzonte {scen.get('horizon_years')} anni",
+            f"Verdetto automatico: {sim['summary']['verdict']} (severity: {sim['summary']['verdict_severity']})",
+            f"Alert totali: {sim['summary']['alerts_critical']} critici · {sim['summary']['alerts_warning']} warning",
             f"Patrimonio netto iniziale: € {sim['summary']['patrimonio_netto_iniziale']:,.0f}",
             f"Patrimonio netto finale:   € {sim['summary']['patrimonio_netto_finale']:,.0f}  (Δ {sim['summary']['crescita_pct']}%)",
             f"Ricavi totali periodo:     € {sim['summary']['ricavi_totali_periodo']:,.0f}",
@@ -379,17 +455,30 @@ def make_forecast_router(db, current_user, llm_key: str):
             f"Cash flow cumulato:        € {sim['summary']['cash_flow_cumulato']:,.0f}",
             f"LTV finale:                {sim['summary']['ltv_finale']}%",
             f"Immobili a fine periodo:   {sim['summary']['numero_immobili_finale']}",
-            "",
-            "Snapshot annuali (Anno · NumImmobili · ValPatrimonio · DebitoResiduo · CanoneMese · UtileNetto · CashFlow · LTV%):",
         ]
+        if sim['summary']['years_with_neg_cash_flow']:
+            ctx_lines.append(f"Anni con cash flow negativo: {sim['summary']['years_with_neg_cash_flow']}")
+        if sim['summary']['years_with_high_ltv']:
+            ctx_lines.append(f"Anni con LTV sopra soglia: {sim['summary']['years_with_high_ltv']}")
+        if sim['summary']['first_year_negative_liquidity']:
+            ctx_lines.append(f"Primo anno con liquidità negativa: {sim['summary']['first_year_negative_liquidity']}")
+        ctx_lines.append("")
+        ctx_lines.append("Snapshot annuali (Anno · NumImmobili · ValPatrimonio · DebitoResiduo · CanoneMese · UtileNetto · CashFlow · LTV% · #Alerts):")
         for s in sim["snapshots"]:
+            n_a = len(s.get("alerts") or [])
             ctx_lines.append(
                 f"  - Anno {s['anno']:>2}: {s['numero_immobili']} imm · €{s['valore_immobili']:,.0f} · "
                 f"debito €{s['debito_residuo']:,.0f} · canone €{s.get('canone_mensile',0):,.0f}/m · "
                 f"utile €{s.get('utile_netto',0):,.0f} · CF €{s.get('cash_flow_annuo',0):,.0f} · "
-                f"LTV {s.get('ltv',0)}%"
+                f"LTV {s.get('ltv',0)}% · alerts: {n_a}"
             )
-        ctx_lines.append("\nOperazioni pianificate:")
+        ctx_lines.append("")
+        ctx_lines.append("Alert proattivi rilevati:")
+        for s in sim["snapshots"]:
+            for a in (s.get("alerts") or []):
+                ctx_lines.append(f"  · Anno {s['anno']} [{a['severity'].upper()}] {a['message']}")
+        ctx_lines.append("")
+        ctx_lines.append("Operazioni pianificate:")
         for op in scen.get("operations") or []:
             ctx_lines.append(f"  · Anno {op.get('anno')} · {op.get('tipo')} · {op.get('label') or ''} · prezzo €{op.get('prezzo') or 0:,.0f} · canone €{op.get('canone_mensile') or 0}/m")
 
@@ -397,6 +486,7 @@ def make_forecast_router(db, current_user, llm_key: str):
             "Sei AI Coach, un consulente finanziario senior specializzato in real estate. "
             "Stai analizzando uno SCENARIO PLURI-ANNALE costruito dall'utente. "
             "Rispondi in italiano, concreto, con numeri presi dal contesto. "
+            "Cita SEMPRE gli alert proattivi quando rilevanti (LTV alto, cash flow negativo, liquidità in tensione). "
             "Quando proponi modifiche, indica esplicitamente: anno, tipo operazione, parametri. "
             "Quando l'utente chiede un'opinione, dai sempre una raccomandazione netta (Procedi / Modifica / Scartare lo scenario) motivata.\n\n"
             "=== CONTESTO SCENARIO ===\n"
@@ -437,8 +527,8 @@ def make_forecast_router(db, current_user, llm_key: str):
             raise HTTPException(status_code=404, detail="Scenario non trovato")
         baseline = await build_baseline(db, user["id"], scen)
         props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
-        sim = simulate(baseline, scen, props)
         settings = await get_user_settings(db, user["id"])
+        sim = simulate(baseline, scen, props, settings)
         brand = settings.get("nome_societa") or "Real Estate Control Room"
 
         buf, doc, h1, sub, h2, body, cb = setup_doc(
@@ -511,12 +601,25 @@ def make_forecast_router(db, current_user, llm_key: str):
             ["Tasso di interesse implicito su debito", "3,00% (mix portafoglio)"],
         ], [320, 180]))
 
-        # 5) Conclusioni e raccomandazioni
-        story.append(Paragraph("5 · Conclusioni", h2))
-        verdict = "Scenario di crescita sostenibile" if s["crescita_pct"] > 0 and s["ltv_finale"] < 70 else "Scenario da rivedere — verifica leva e cash flow"
+        # 5) Alert proattivi rilevati
+        all_alerts = []
+        for snap in sim["snapshots"]:
+            for a in (snap.get("alerts") or []):
+                all_alerts.append({"anno": snap["anno"], **a})
+        if all_alerts:
+            story.append(Paragraph(f"5 · Alert proattivi rilevati ({s['alerts_critical']} critici · {s['alerts_warning']} warning)", h2))
+            rows = [["Anno", "Severità", "Descrizione"]]
+            for a in all_alerts[:30]:
+                rows.append([str(a["anno"]), a["severity"].upper(), a["message"][:90]])
+            color = "#DC2626" if s["alerts_critical"] > 0 else "#B45309"
+            story.append(make_table(rows, [40, 70, 400], header_color=color))
+
+        # 6) Conclusioni e raccomandazioni
+        story.append(Paragraph("6 · Conclusioni", h2))
         story.append(Paragraph(
-            f"<b>{verdict}</b>. Patrimonio atteso a fine periodo: {eur(s['patrimonio_netto_finale'])}, "
-            f"con LTV finale al {s['ltv_finale']}% e {s['numero_immobili_finale']} immobili in portafoglio.",
+            f"<b>{s['verdict']}</b>. Patrimonio atteso a fine periodo: {eur(s['patrimonio_netto_finale'])}, "
+            f"con LTV finale al {s['ltv_finale']}% e {s['numero_immobili_finale']} immobili in portafoglio. "
+            f"Alert totali nello scenario: {s['alerts_critical']} critici, {s['alerts_warning']} warning.",
             body
         ))
 

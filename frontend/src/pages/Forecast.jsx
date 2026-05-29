@@ -4,7 +4,7 @@ import { SectionCard } from "../components/dashboard/SectionCard";
 import { toast } from "sonner";
 import {
   LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer, ComposedChart,
+  Tooltip, Legend, ResponsiveContainer, ComposedChart, ReferenceLine,
 } from "recharts";
 import {
   Sparkles, Plus, Trash2, Save, Calculator, FileDown, Copy, Send,
@@ -186,9 +186,9 @@ const AICoachPanel = ({ scenarioId }) => {
 
   const presets = [
     "Lo scenario è sostenibile? Indica il giudizio finale.",
-    "Quali sono i rischi principali e come posso mitigarli?",
-    "Suggerisci 2 modifiche per migliorare il rendimento.",
-    "In che anno è critica la liquidità?",
+    "Analizza gli alert critici rilevati e dimmi come risolverli.",
+    "In che anno è critica la liquidità e perché?",
+    "Suggerisci 2 modifiche per portare l'LTV sotto il 60%.",
   ];
 
   return (
@@ -734,8 +734,34 @@ const ResultsView = ({ sim, chartData, loading }) => {
   if (!sim) return <SectionCard><div className="text-center py-8 text-sm text-[#94A3B8]">Nessuna simulazione disponibile</div></SectionCard>;
   const s = sim.summary;
   const growthColor = s.crescita_pct >= 0 ? "green" : "red";
+  const verdictTone = s.verdict_severity === "critical"
+    ? { bg: "#FEF2F2", border: "#FECACA", text: "#991B1B", icon: "#DC2626" }
+    : s.verdict_severity === "warning"
+      ? { bg: "#FFFBEB", border: "#FDE68A", text: "#92400E", icon: "#B45309" }
+      : { bg: "#ECFDF5", border: "#A7F3D0", text: "#065F46", icon: "#059669" };
   return (
     <>
+      {/* Verdict + alert summary banner */}
+      <div
+        data-testid="verdict-banner"
+        className="mb-4 rounded-xl px-5 py-4 border flex items-start gap-3"
+        style={{ background: verdictTone.bg, borderColor: verdictTone.border }}
+      >
+        <AlertTriangle size={20} className="shrink-0 mt-0.5" style={{ color: verdictTone.icon }} />
+        <div className="flex-1">
+          <div className="text-sm font-semibold" style={{ color: verdictTone.text }}>{s.verdict}</div>
+          <div className="text-xs mt-1" style={{ color: verdictTone.text, opacity: 0.85 }}>
+            {s.alerts_critical} alert critici · {s.alerts_warning} warning ·
+            {s.years_with_high_ltv?.length > 0 && <> LTV sopra soglia: anni {s.years_with_high_ltv.join(", ")} ·</>}
+            {s.years_with_neg_cash_flow?.length > 0 && <> CF negativo: anni {s.years_with_neg_cash_flow.join(", ")} ·</>}
+            {s.first_year_negative_liquidity && <> liquidità negativa dall'anno {s.first_year_negative_liquidity}</>}
+            {!s.years_with_high_ltv?.length && !s.years_with_neg_cash_flow?.length && !s.first_year_negative_liquidity && (
+              <> nessuna criticità grave rilevata</>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         <KpiCard icon={TrendingUp} label="Patrimonio finale" value={eur(s.patrimonio_netto_finale)} sub={`Δ ${s.crescita_pct > 0 ? "+" : ""}${s.crescita_pct}%`} accent={growthColor} />
         <KpiCard icon={Building2} label="Immobili finali" value={s.numero_immobili_finale} sub={`da ${sim.snapshots[0].numero_immobili}`} />
@@ -785,6 +811,7 @@ const ResultsView = ({ sim, chartData, loading }) => {
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Bar yAxisId="left" dataKey="debito" fill="#DC2626" radius={[4, 4, 0, 0]} name="Debito residuo" />
               <Line yAxisId="right" type="monotone" dataKey="ltv" stroke="#B45309" strokeWidth={2} name="LTV" />
+              <ReferenceLine yAxisId="right" y={70} stroke="#DC2626" strokeDasharray="4 4" label={{ value: "Soglia LTV 70%", fill: "#DC2626", fontSize: 10, position: "insideTopRight" }} />
             </ComposedChart>
           </ResponsiveContainer>
         </SectionCard>
@@ -800,12 +827,13 @@ const ResultsView = ({ sim, chartData, loading }) => {
               <Bar dataKey="ricavi" fill="#0066FF" name="Ricavi" radius={[4, 4, 0, 0]} />
               <Bar dataKey="costi" fill="#94A3B8" name="Costi" radius={[4, 4, 0, 0]} />
               <Line type="monotone" dataKey="utile" stroke="#059669" strokeWidth={2.5} name="Utile netto" />
+              <ReferenceLine y={0} stroke="#94A3B8" strokeDasharray="3 3" />
             </ComposedChart>
           </ResponsiveContainer>
         </SectionCard>
       </div>
 
-      <SectionCard testId="yearly-table" title="Dettaglio anno per anno">
+      <SectionCard testId="yearly-table" title="Dettaglio anno per anno" subtitle="Le righe critiche sono evidenziate. Passa con il mouse sui badge alert per vedere i dettagli.">
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="border-b border-[#E2E8F0] text-[10px] uppercase tracking-wider text-[#64748B]">
@@ -819,25 +847,81 @@ const ResultsView = ({ sim, chartData, loading }) => {
                 <th className="text-right py-2 px-2">Utile netto</th>
                 <th className="text-right py-2 px-2">Cash flow</th>
                 <th className="text-right py-2 px-2">LTV</th>
+                <th className="text-left py-2 px-2">Alert</th>
               </tr>
             </thead>
             <tbody>
-              {sim.snapshots.map((s, i) => (
-                <tr key={i} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC]">
-                  <td className="py-2 px-2 font-medium">{s.anno === 0 ? "Oggi" : `Anno ${s.anno}`}</td>
-                  <td className="text-right py-2 px-2">{s.numero_immobili}</td>
-                  <td className="text-right py-2 px-2">{eur(s.valore_immobili)}</td>
-                  <td className="text-right py-2 px-2 text-[#DC2626]">{eur(s.debito_residuo)}</td>
-                  <td className="text-right py-2 px-2 font-semibold">{eur(s.patrimonio_netto)}</td>
-                  <td className="text-right py-2 px-2">{eur(s.canone_mensile)}</td>
-                  <td className={`text-right py-2 px-2 ${s.utile_netto >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{eur(s.utile_netto)}</td>
-                  <td className={`text-right py-2 px-2 ${s.cash_flow_annuo >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{eur(s.cash_flow_annuo)}</td>
-                  <td className={`text-right py-2 px-2 ${s.ltv > 70 ? "text-[#DC2626]" : "text-[#0F172A]"}`}>{s.ltv}%</td>
-                </tr>
-              ))}
+              {sim.snapshots.map((snap, i) => {
+                const alerts = snap.alerts || [];
+                const nCrit = alerts.filter((a) => a.severity === "critical").length;
+                const nWarn = alerts.filter((a) => a.severity === "warning").length;
+                const rowBg = nCrit > 0 ? "bg-[#FEF2F2]" : nWarn > 0 ? "bg-[#FFFBEB]" : "hover:bg-[#F8FAFC]";
+                return (
+                  <tr key={i} className={`border-b border-[#F1F5F9] ${rowBg}`} data-testid={`year-row-${snap.anno}`}>
+                    <td className="py-2 px-2 font-medium">{snap.anno === 0 ? "Oggi" : `Anno ${snap.anno}`}</td>
+                    <td className="text-right py-2 px-2">{snap.numero_immobili}</td>
+                    <td className="text-right py-2 px-2">{eur(snap.valore_immobili)}</td>
+                    <td className="text-right py-2 px-2 text-[#DC2626]">{eur(snap.debito_residuo)}</td>
+                    <td className="text-right py-2 px-2 font-semibold">{eur(snap.patrimonio_netto)}</td>
+                    <td className="text-right py-2 px-2">{eur(snap.canone_mensile)}</td>
+                    <td className={`text-right py-2 px-2 ${snap.utile_netto >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{eur(snap.utile_netto)}</td>
+                    <td className={`text-right py-2 px-2 ${snap.cash_flow_annuo >= 0 ? "text-[#059669]" : "text-[#DC2626] font-semibold"}`}>{eur(snap.cash_flow_annuo)}</td>
+                    <td className={`text-right py-2 px-2 ${snap.ltv > 70 ? "text-[#DC2626] font-semibold" : "text-[#0F172A]"}`}>{snap.ltv}%</td>
+                    <td className="py-2 px-2">
+                      {alerts.length === 0 ? (
+                        <span className="text-[10px] text-[#94A3B8]">—</span>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          {nCrit > 0 && (
+                            <span
+                              title={alerts.filter((a) => a.severity === "critical").map((a) => a.message).join("\n")}
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#FECACA] text-[#991B1B] cursor-help"
+                              data-testid={`alert-critical-${snap.anno}`}
+                            >
+                              <AlertTriangle size={9} /> {nCrit}
+                            </span>
+                          )}
+                          {nWarn > 0 && (
+                            <span
+                              title={alerts.filter((a) => a.severity === "warning").map((a) => a.message).join("\n")}
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#FDE68A] text-[#92400E] cursor-help"
+                              data-testid={`alert-warning-${snap.anno}`}
+                            >
+                              <AlertTriangle size={9} /> {nWarn}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+
+        {/* Detailed alert list below the table */}
+        {(s.alerts_critical > 0 || s.alerts_warning > 0) && (
+          <div className="mt-4 pt-4 border-t border-[#E2E8F0]" data-testid="alert-detail-list">
+            <div className="text-[10px] uppercase tracking-wider text-[#64748B] font-medium mb-2">Tutti gli alert proattivi rilevati</div>
+            <div className="space-y-1.5 max-h-64 overflow-y-auto">
+              {sim.snapshots.flatMap((snap) =>
+                (snap.alerts || []).map((a, idx) => (
+                  <div
+                    key={`${snap.anno}-${idx}`}
+                    className={`flex items-center gap-2 text-xs px-2.5 py-1.5 rounded ${a.severity === "critical" ? "bg-[#FEF2F2] text-[#991B1B]" : "bg-[#FFFBEB] text-[#92400E]"}`}
+                  >
+                    <span className={`shrink-0 text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${a.severity === "critical" ? "bg-[#FECACA]" : "bg-[#FDE68A]"}`}>
+                      {a.severity === "critical" ? "Critical" : "Warning"}
+                    </span>
+                    <span className="shrink-0 text-[10px] font-medium text-[#64748B]">{snap.anno === 0 ? "Oggi" : `Anno ${snap.anno}`}</span>
+                    <span className="flex-1">{a.message}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </SectionCard>
     </>
   );
