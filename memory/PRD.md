@@ -117,6 +117,18 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 43. **Frontend `/forecast`**: 4 tab — Editor (parametri + operazioni CRUD con form contestuali per tipo), Risultati (4 KPI card + 4 grafici Recharts: patrimonio netto area, cash flow bar, debito+LTV composto, ricavi/costi/utile composto + tabella anno-per-anno), AI Coach (chat persistente con preset), Confronta (multi-select scenari + grafico sovrapposto).
 44. **Voce sidebar "Forecast & Piano Industriale"** con badge AI in gruppo Finanza.
 
+## 🆕 Alert proattivi negli scenari (29 May 2026 - iter 11)
+45. **Alert proattivi nel forecast** — `simulate()` ora calcola alert per ogni snapshot annuale e li espone insieme alla simulazione:
+   - **7 tipologie**: `ltv_alto` (critical, soglia da `settings.limite_indebitamento`), `ltv_vicino_soglia` (warning), `cash_flow_negativo`, `liquidita_negativa` / `liquidita_bassa`, `patrimonio_negativo` (debito > valore), `rata_su_canone`, `rendimento_sotto_target` (vs `settings.target_netto`), `patrimonio_in_calo` (>5% YoY).
+   - **Verdict aggregato automatico** in `summary`: `verdict` (Scenario sostenibile / praticabile con attenzione / rischioso / critico) + `verdict_severity` ('ok'|'warning'|'critical') + roll-up `alerts_critical`, `alerts_warning`, `years_with_neg_cash_flow`, `years_with_high_ltv`, `first_year_negative_liquidity`.
+46. **AI Coach context-aware degli alert**: il system message ora include la lista completa di alert per anno → l'AI cita esplicitamente LTV alto/CF negativo/liquidità in tensione quando l'utente chiede pareri. Preset prompts aggiornati ("Analizza gli alert critici", "Suggerisci come portare LTV sotto 60%").
+47. **PDF Piano Industriale**: nuova sezione "5 · Alert proattivi rilevati" con tabella severità-colorata (rosso se critici presenti, ambra altrimenti) e verdict automatico nelle conclusioni.
+48. **UI Forecast Risultati**:
+   - **Banner verdict** in alto colorato per severity (rosso/ambra/verde) con conteggio alert e anni critici.
+   - **Tabella anno-per-anno** con righe tinte rosse (alert critici presenti) o ambra (solo warning), badge alert per riga con tooltip dettagli, lista completa di tutti gli alert sotto la tabella.
+   - **ReferenceLine LTV=70%** sul grafico esposizione debitoria + zero-line sul grafico utile.
+   - Soglie completamente parametrizzate da `/api/settings` (target_netto + limite_indebitamento).
+
 ## Demo accounts
 - ceo@controlroom.it / demo1234 (admin)
 - amministrazione@controlroom.it / demo1234 (amministrazione)

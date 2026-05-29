@@ -236,14 +236,14 @@ def compute_snapshot_alerts(snap: dict, prev: dict, settings: dict) -> list:
         alerts.append({"severity": "critical", "code": "patrimonio_negativo", "message": f"Debito €{debito:,.0f} > valore immobili €{valore:,.0f}"})
     if canone > 0 and rata > canone:
         alerts.append({"severity": "warning", "code": "rata_su_canone", "message": f"Rata mutui €{rata:,.0f}/m > canone €{canone:,.0f}/m"})
-    if valore > 0 and utile > 0:
-        rend = utile / max(1, pn) * 100
+    if valore > 0 and utile > 0 and pn > 0:
+        rend = utile / pn * 100
         if rend < target_netto:
             alerts.append({"severity": "warning", "code": "rendimento_sotto_target", "message": f"Rendimento netto {rend:.1f}% sotto target {target_netto:.1f}%"})
-    if prev is not None and pn < prev.get("patrimonio_netto", 0):
-        delta = pn - prev.get("patrimonio_netto", 0)
-        if delta < -pn * 0.05:  # only if drop > 5%
-            alerts.append({"severity": "warning", "code": "patrimonio_in_calo", "message": f"Patrimonio netto in calo di €{abs(delta):,.0f} rispetto all'anno precedente"})
+    if prev is not None:
+        prev_pn = prev.get("patrimonio_netto", 0)
+        if prev_pn > 0 and pn < prev_pn and (prev_pn - pn) / prev_pn > 0.05:
+            alerts.append({"severity": "warning", "code": "patrimonio_in_calo", "message": f"Patrimonio netto in calo di €{(prev_pn - pn):,.0f} ({(prev_pn - pn)/prev_pn*100:.1f}%) rispetto all'anno precedente"})
     return alerts
 
 
