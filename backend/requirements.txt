@@ -102,6 +102,7 @@ pytokens==0.4.1
 PyYAML==6.0.3
 referencing==0.37.0
 regex==2026.5.9
+reportlab==4.5.1
 requests==2.34.2
 requests-oauthlib==2.0.0
 rich==15.0.0
@@ -128,5 +129,6 @@ urllib3==2.7.0
 uvicorn==0.25.0
 watchfiles==1.2.0
 websockets==16.0
+xlsxwriter==3.2.9
 yarl==1.24.2
 zipp==4.1.0

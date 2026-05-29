@@ -999,6 +999,80 @@ async def list_bilanci(user: dict = Depends(current_user)):
     items = await db.bilanci.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(50)
     return items
 
+@api_router.get("/import/bilanci/storico")
+async def storico_bilanci(user: dict = Depends(current_user)):
+    """Bilanci storici con confronto Mese su Mese (variazioni € e %)."""
+    items = await db.bilanci.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    if not items:
+        return {"bilanci": [], "evoluzione": []}
+
+    # Sort by periodo cronologicamente (parse Italian months)
+    MESI_IT = {"gennaio":1,"febbraio":2,"marzo":3,"aprile":4,"maggio":5,"giugno":6,
+               "luglio":7,"agosto":8,"settembre":9,"ottobre":10,"novembre":11,"dicembre":12}
+    def periodo_key(b):
+        p = (b.get("periodo") or "").lower().strip()
+        # Try "Mese AAAA"
+        for name, num in MESI_IT.items():
+            if name in p:
+                m = re.search(r"(20\d{2})", p)
+                year = int(m.group(1)) if m else 0
+                return (year, num)
+        # Try "Q1 2026" / "Q2 2026"
+        m = re.search(r"q(\d)\s*(20\d{2})", p)
+        if m: return (int(m.group(2)), int(m.group(1)) * 3)
+        # Try year only "2025"
+        m = re.search(r"(20\d{2})", p)
+        if m: return (int(m.group(1)), 0)
+        return (0, 0)
+
+    items_sorted_old_to_new = sorted(items, key=periodo_key)  # ascending by periodo
+
+    METRICS_CE = ["totale_ricavi", "ricavi_affitti", "totale_costi", "utile_netto"]
+    METRICS_SP = ["valore_immobili", "debito_mutui", "liquidita", "patrimonio_netto"]
+
+    def delta(curr, prev):
+        if prev is None or prev == 0:
+            return {"abs": curr, "pct": None}
+        return {"abs": round(curr - prev, 2), "pct": round((curr - prev) / prev * 100, 2)}
+
+    enriched = []
+    sorted_old_to_new = items_sorted_old_to_new  # use period-based order
+    for i, b in enumerate(sorted_old_to_new):
+        prev = sorted_old_to_new[i - 1] if i > 0 else None
+        ce = b.get("conto_economico", {}) or {}
+        sp = b.get("stato_patrimoniale", {}) or {}
+        diff_ce = {}
+        diff_sp = {}
+        if prev:
+            prev_ce = prev.get("conto_economico", {}) or {}
+            prev_sp = prev.get("stato_patrimoniale", {}) or {}
+            for k in METRICS_CE: diff_ce[k] = delta(float(ce.get(k, 0) or 0), float(prev_ce.get(k, 0) or 0))
+            for k in METRICS_SP: diff_sp[k] = delta(float(sp.get(k, 0) or 0), float(prev_sp.get(k, 0) or 0))
+        enriched.append({
+            "id": b["id"], "periodo": b.get("periodo"), "tipo": b.get("tipo"),
+            "created_at": b.get("created_at"),
+            "conto_economico": ce, "stato_patrimoniale": sp,
+            "diff_ce": diff_ce, "diff_sp": diff_sp,
+        })
+
+    evoluzione = [
+        {
+            "periodo": b["periodo"],
+            "totale_ricavi": float((b["conto_economico"] or {}).get("totale_ricavi", 0) or 0),
+            "totale_costi": float((b["conto_economico"] or {}).get("totale_costi", 0) or 0),
+            "utile_netto": float((b["conto_economico"] or {}).get("utile_netto", 0) or 0),
+            "patrimonio_netto": float((b["stato_patrimoniale"] or {}).get("patrimonio_netto", 0) or 0),
+            "valore_immobili": float((b["stato_patrimoniale"] or {}).get("valore_immobili", 0) or 0),
+            "debito_mutui": float((b["stato_patrimoniale"] or {}).get("debito_mutui", 0) or 0),
+        }
+        for b in sorted_old_to_new
+    ]
+
+    return {
+        "bilanci": list(reversed(enriched)),  # newest first
+        "evoluzione": evoluzione,
+    }
+
 @api_router.get("/import/bilanci/latest")
 async def latest_bilancio(user: dict = Depends(current_user)):
     item = await db.bilanci.find_one({"user_id": user["id"]}, {"_id": 0}, sort=[("created_at", -1)])
@@ -1112,14 +1186,278 @@ async def commit_banca(payload: BancaCommit, user: dict = Depends(current_user))
     return {"created": created, "skipped_duplicates": skipped}
 
 @api_router.get("/import/banca")
-async def list_movimenti_bancari(user: dict = Depends(current_user)):
-    items = await db.movimenti_bancari.find({"user_id": user["id"]}, {"_id": 0}).sort("data", -1).to_list(500)
-    return items
+async def list_movimenti_bancari(
+    user: dict = Depends(current_user),
+    skip: int = 0,
+    limit: int = 100,
+    q: Optional[str] = None,
+    tipo: Optional[str] = None,
+    matched: Optional[bool] = None,
+):
+    """Server-side paginated & filterable bank movements list."""
+    query = {"user_id": user["id"]}
+    if tipo in ("entrata", "uscita"): query["tipo"] = tipo
+    if matched is True: query["match_canone"] = {"$ne": None}
+    if matched is False: query["match_canone"] = None
+    if q:
+        query["descrizione"] = {"$regex": re.escape(q), "$options": "i"}
+    total = await db.movimenti_bancari.count_documents(query)
+    limit = max(1, min(500, limit))
+    items = await db.movimenti_bancari.find(query, {"_id": 0}).sort("data", -1).skip(max(0, skip)).limit(limit).to_list(limit)
+    return {"total": total, "skip": skip, "limit": limit, "items": items, "has_more": skip + len(items) < total}
+
+@api_router.get("/import/banca/cashflow-mensile")
+async def banca_cashflow_mensile(months: int = 12, user: dict = Depends(current_user)):
+    """Aggregate bank movements by month for the Dashboard cashflow chart."""
+    cur = db.movimenti_bancari.aggregate([
+        {"$match": {"user_id": user["id"], "data": {"$ne": ""}}},
+        {"$addFields": {"ym": {"$substr": ["$data", 0, 7]}}},
+        {"$group": {
+            "_id": "$ym",
+            "incassi": {"$sum": {"$cond": [{"$gt": ["$importo", 0]}, "$importo", 0]}},
+            "uscite":  {"$sum": {"$cond": [{"$lt": ["$importo", 0]}, {"$abs": "$importo"}, 0]}},
+        }},
+        {"$sort": {"_id": -1}},
+        {"$limit": max(1, min(36, months))},
+    ])
+    rows = await cur.to_list(36)
+    rows = list(reversed(rows))
+    # Format month label in Italian
+    MESI = {1:"Gen",2:"Feb",3:"Mar",4:"Apr",5:"Mag",6:"Giu",7:"Lug",8:"Ago",9:"Set",10:"Ott",11:"Nov",12:"Dic"}
+    out = []
+    for r in rows:
+        ym = r["_id"]
+        try:
+            y, m = ym.split("-")
+            label = f"{MESI.get(int(m),'?')} '{y[-2:]}"
+        except Exception:
+            label = ym
+        inc = round(r["incassi"], 2)
+        usc = round(r["uscite"], 2)
+        out.append({"mese": label, "ym": ym, "incassi": inc, "uscite": usc, "saldo": round(inc - usc, 2)})
+    return {"count": len(out), "rows": out}
 
 @api_router.delete("/import/banca/{mid}")
 async def delete_movimento_bancario(mid: str, user: dict = Depends(current_user)):
     await db.movimenti_bancari.delete_one({"id": mid, "user_id": user["id"]})
     return {"ok": True}
+
+# ----- Report PDF / Excel generators -----
+def _eur(n):
+    try: n = float(n or 0)
+    except Exception: n = 0.0
+    return f"€ {n:,.0f}".replace(",", ".")
+
+def _build_pdf_patrimonio(props: list, bilancio: dict | None) -> bytes:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.5*cm, rightMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
+    styles = getSampleStyleSheet()
+    h1 = ParagraphStyle("h1", parent=styles["Heading1"], fontSize=18, textColor=colors.HexColor("#0F172A"), spaceAfter=4)
+    sub = ParagraphStyle("sub", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#64748B"), spaceAfter=14)
+    h2 = ParagraphStyle("h2", parent=styles["Heading2"], fontSize=12, textColor=colors.HexColor("#0066FF"), spaceBefore=12, spaceAfter=6)
+    body = ParagraphStyle("body", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#0F172A"))
+    story = []
+    story.append(Paragraph("Real Estate Control Room", h1))
+    story.append(Paragraph(f"Report Patrimonio · Generato il {datetime.now().strftime('%d/%m/%Y')}", sub))
+
+    if bilancio:
+        ce = bilancio.get("conto_economico", {}) or {}
+        sp = bilancio.get("stato_patrimoniale", {}) or {}
+        story.append(Paragraph(f"Snapshot da bilancio: {bilancio.get('periodo','')} ({bilancio.get('tipo','')})", h2))
+        data = [
+            ["Valore immobili", _eur(sp.get("valore_immobili"))],
+            ["Debito mutui", _eur(sp.get("debito_mutui"))],
+            ["Liquidità", _eur(sp.get("liquidita"))],
+            ["Patrimonio netto", _eur(sp.get("patrimonio_netto"))],
+            ["Ricavi periodo", _eur(ce.get("totale_ricavi"))],
+            ["Utile netto", _eur(ce.get("utile_netto"))],
+        ]
+        t = Table(data, colWidths=[7*cm, 5*cm])
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#F1F5F9")),
+            ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#E2E8F0")),
+            ("FONTSIZE", (0,0), (-1,-1), 9),
+            ("ALIGN", (1,0), (1,-1), "RIGHT"),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("ROWBACKGROUNDS", (0,0), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")]),
+        ]))
+        story.append(t)
+
+    story.append(Paragraph(f"Elenco immobili ({len(props)})", h2))
+    header = ["Codice", "Nome", "Città", "Tipo", "m²", "Costo tot.", "Canone", "Stato"]
+    rows = [header]
+    for p in props[:50]:
+        rows.append([
+            p.get("id","")[:14], p.get("nome","")[:30], p.get("citta",""), p.get("tipologia",""),
+            str(int(p.get("metratura",0) or 0)),
+            _eur(p.get("costo_totale", p.get("prezzo_acquisto",0))),
+            _eur(p.get("canone_mensile",0)),
+            p.get("stato",""),
+        ])
+    t = Table(rows, colWidths=[2.4*cm, 4.5*cm, 2.5*cm, 2*cm, 1.2*cm, 2.5*cm, 2.2*cm, 2.3*cm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#0066FF")),
+        ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE", (0,0), (-1,-1), 8),
+        ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#E2E8F0")),
+        ("ALIGN", (4,1), (6,-1), "RIGHT"),
+        ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")]),
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+    ]))
+    story.append(t)
+    if len(props) > 50:
+        story.append(Spacer(1, 0.3*cm))
+        story.append(Paragraph(f"... e altri {len(props)-50} immobili.", body))
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
+
+def _build_pdf_bilancio(bilancio: dict) -> bytes:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.5*cm, rightMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
+    styles = getSampleStyleSheet()
+    h1 = ParagraphStyle("h1", parent=styles["Heading1"], fontSize=18, textColor=colors.HexColor("#0F172A"))
+    sub = ParagraphStyle("sub", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#64748B"), spaceAfter=14)
+    h2 = ParagraphStyle("h2", parent=styles["Heading2"], fontSize=12, textColor=colors.HexColor("#0066FF"), spaceBefore=12, spaceAfter=6)
+    story = [Paragraph("Bilancio", h1), Paragraph(f"{bilancio.get('periodo','')} · {bilancio.get('tipo','')}", sub)]
+    ce = bilancio.get("conto_economico", {}) or {}
+    sp = bilancio.get("stato_patrimoniale", {}) or {}
+    story.append(Paragraph("Conto Economico", h2))
+    ce_rows = [
+        ["Ricavi affitti", _eur(ce.get("ricavi_affitti"))],
+        ["Ricavi vendite", _eur(ce.get("ricavi_vendite"))],
+        ["Altri ricavi", _eur(ce.get("altri_ricavi"))],
+        ["Totale ricavi", _eur(ce.get("totale_ricavi"))],
+        ["Costi gestione", _eur(ce.get("costi_gestione"))],
+        ["Manutenzione", _eur(ce.get("costi_manutenzione"))],
+        ["IMU", _eur(ce.get("imu"))],
+        ["Interessi mutui", _eur(ce.get("interessi_mutui"))],
+        ["Ammortamenti", _eur(ce.get("ammortamenti"))],
+        ["Totale costi", _eur(ce.get("totale_costi"))],
+        ["Utile netto", _eur(ce.get("utile_netto"))],
+    ]
+    t = Table(ce_rows, colWidths=[8*cm, 4*cm])
+    t.setStyle(TableStyle([
+        ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#E2E8F0")),
+        ("FONTSIZE", (0,0), (-1,-1), 9),
+        ("ALIGN", (1,0), (1,-1), "RIGHT"),
+        ("BACKGROUND", (0,3), (-1,3), colors.HexColor("#F1F5F9")),
+        ("BACKGROUND", (0,9), (-1,9), colors.HexColor("#F1F5F9")),
+        ("BACKGROUND", (0,10), (-1,10), colors.HexColor("#10B981")),
+        ("TEXTCOLOR", (0,10), (-1,10), colors.white),
+        ("FONTNAME", (0,3), (-1,3), "Helvetica-Bold"),
+        ("FONTNAME", (0,9), (-1,9), "Helvetica-Bold"),
+        ("FONTNAME", (0,10), (-1,10), "Helvetica-Bold"),
+    ]))
+    story.append(t)
+    story.append(Paragraph("Stato Patrimoniale", h2))
+    sp_rows = [
+        ["Valore immobili", _eur(sp.get("valore_immobili"))],
+        ["Liquidità", _eur(sp.get("liquidita"))],
+        ["Crediti", _eur(sp.get("crediti"))],
+        ["Totale attivo", _eur(sp.get("totale_attivo"))],
+        ["Debito mutui", _eur(sp.get("debito_mutui"))],
+        ["Altri debiti", _eur(sp.get("altri_debiti"))],
+        ["Totale passivo", _eur(sp.get("totale_passivo"))],
+        ["Patrimonio netto", _eur(sp.get("patrimonio_netto"))],
+    ]
+    t2 = Table(sp_rows, colWidths=[8*cm, 4*cm])
+    t2.setStyle(TableStyle([
+        ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#E2E8F0")),
+        ("FONTSIZE", (0,0), (-1,-1), 9),
+        ("ALIGN", (1,0), (1,-1), "RIGHT"),
+        ("BACKGROUND", (0,3), (-1,3), colors.HexColor("#F1F5F9")),
+        ("BACKGROUND", (0,6), (-1,6), colors.HexColor("#F1F5F9")),
+        ("BACKGROUND", (0,7), (-1,7), colors.HexColor("#0066FF")),
+        ("TEXTCOLOR", (0,7), (-1,7), colors.white),
+        ("FONTNAME", (0,3), (-1,3), "Helvetica-Bold"),
+        ("FONTNAME", (0,6), (-1,6), "Helvetica-Bold"),
+        ("FONTNAME", (0,7), (-1,7), "Helvetica-Bold"),
+    ]))
+    story.append(t2)
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
+
+def _build_xlsx_patrimonio(props: list) -> bytes:
+    import xlsxwriter
+    buf = io.BytesIO()
+    wb = xlsxwriter.Workbook(buf, {"in_memory": True})
+    ws = wb.add_worksheet("Patrimonio")
+    h_fmt = wb.add_format({"bold": True, "bg_color": "#0066FF", "font_color": "white", "border": 1, "align": "center"})
+    money = wb.add_format({"num_format": '#,##0 "€"'})
+    cols = ["Codice", "Nome", "Indirizzo", "Città", "Tipo", "m²", "Prezzo", "Lavori", "Costo totale", "Canone mensile", "Rend. netto", "Stato", "Score"]
+    for i, c in enumerate(cols):
+        ws.write(0, i, c, h_fmt)
+        ws.set_column(i, i, max(12, len(c) + 2))
+    for r, p in enumerate(props, 1):
+        ws.write(r, 0, p.get("id",""))
+        ws.write(r, 1, p.get("nome",""))
+        ws.write(r, 2, p.get("indirizzo",""))
+        ws.write(r, 3, p.get("citta",""))
+        ws.write(r, 4, p.get("tipologia",""))
+        ws.write(r, 5, float(p.get("metratura",0) or 0))
+        ws.write(r, 6, float(p.get("prezzo_acquisto",0) or 0), money)
+        ws.write(r, 7, float(p.get("lavori",0) or 0), money)
+        ws.write(r, 8, float(p.get("costo_totale", p.get("prezzo_acquisto",0)) or 0), money)
+        ws.write(r, 9, float(p.get("canone_mensile",0) or 0), money)
+        ws.write(r, 10, float(p.get("rendimento_netto",0) or 0))
+        ws.write(r, 11, p.get("stato",""))
+        ws.write(r, 12, float(p.get("portfolio_score",0) or 0))
+    ws.freeze_panes(1, 0)
+    wb.close()
+    buf.seek(0)
+    return buf.read()
+
+@api_router.get("/report/{report_id}.{fmt}")
+async def download_report(report_id: str, fmt: str, user: dict = Depends(current_user)):
+    if fmt not in ("pdf", "xlsx", "csv"):
+        raise HTTPException(status_code=400, detail="Formato non supportato")
+    # Fetch data
+    props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+    props = [_enrich_property(p) for p in props]
+    latest_bil = await db.bilanci.find_one({"user_id": user["id"]}, {"_id": 0}, sort=[("created_at", -1)])
+
+    if report_id == "patrimonio":
+        if fmt == "pdf":
+            blob = _build_pdf_patrimonio(props, latest_bil)
+            return StreamingResponse(io.BytesIO(blob), media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="report_patrimonio.pdf"'})
+        if fmt == "xlsx":
+            blob = _build_xlsx_patrimonio(props)
+            return StreamingResponse(io.BytesIO(blob),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f'attachment; filename="report_patrimonio.xlsx"'})
+        # CSV
+        out = io.StringIO()
+        out.write("Codice,Nome,Citta,Tipo,Prezzo,Canone,Stato\n")
+        for p in props:
+            out.write(f'{p.get("id","")},{p.get("nome","")},{p.get("citta","")},{p.get("tipologia","")},{p.get("prezzo_acquisto",0)},{p.get("canone_mensile",0)},{p.get("stato","")}\n')
+        return StreamingResponse(io.BytesIO(out.getvalue().encode("utf-8")),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="report_patrimonio.csv"'})
+
+    if report_id == "bilancio":
+        if not latest_bil:
+            raise HTTPException(status_code=404, detail="Nessun bilancio caricato. Importalo dal Centro Import.")
+        if fmt == "pdf":
+            blob = _build_pdf_bilancio(latest_bil)
+            return StreamingResponse(io.BytesIO(blob), media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="bilancio_{latest_bil.get("periodo","").replace(" ","_")}.pdf"'})
+        raise HTTPException(status_code=400, detail="Per il bilancio è disponibile solo il formato PDF (per ora).")
+
+    raise HTTPException(status_code=404, detail=f"Report '{report_id}' non disponibile")
 
 # ===== Mount =====
 app.include_router(api_router)

@@ -10,12 +10,25 @@ export default function CostiRicavi() {
   const [tipo, setTipo] = useState("tutti");
   const [origine, setOrigine] = useState("tutte"); // tutte | manuale | banca
   const [bankMovs, setBankMovs] = useState([]);
+  const [bankTotal, setBankTotal] = useState(0);
+  const [bankSkip, setBankSkip] = useState(0);
+  const [bankQ, setBankQ] = useState("");
+  const PAGE_SIZE = 50;
 
   useEffect(() => {
-    apiClient().get("/import/banca")
-      .then(r => setBankMovs(r.data || []))
+    const params = new URLSearchParams();
+    params.set("skip", String(bankSkip));
+    params.set("limit", String(PAGE_SIZE));
+    if (bankQ) params.set("q", bankQ);
+    if (origine === "manuale") {
+      // skip bank fetch entirely
+      setBankMovs([]); setBankTotal(0);
+      return;
+    }
+    apiClient().get(`/import/banca?${params.toString()}`)
+      .then(r => { setBankMovs(r.data.items || []); setBankTotal(r.data.total || 0); })
       .catch(() => {});
-  }, []);
+  }, [bankSkip, bankQ, origine]);
 
   // Normalize bank movements to the same shape as `movimenti`
   const bankNormalized = useMemo(() => bankMovs.map(m => ({
@@ -45,7 +58,7 @@ export default function CostiRicavi() {
   const totCosti = allMovs.filter(m => m.tipo === "costo").reduce((s, m) => s + m.importo, 0);
 
   return (
-    <Layout title="Costi & Ricavi" subtitle={`${allMovs.length} movimenti · ${bankMovs.length} importati da banca`}>
+    <Layout title="Costi & Ricavi" subtitle={`${allMovs.length} movimenti visibili · ${bankTotal} totali importati da banca`}>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <SectionCard testId="cr-kpi-ricavi">
           <div className="flex items-center gap-3">
@@ -80,12 +93,18 @@ export default function CostiRicavi() {
         testId="cr-table"
         action={
           <div className="flex items-center gap-2 flex-wrap">
+            <input
+              data-testid="cr-search"
+              type="text" placeholder="Cerca…" value={bankQ}
+              onChange={(e) => { setBankQ(e.target.value); setBankSkip(0); }}
+              className="bg-white border border-[#E2E8F0] text-xs rounded-lg px-3 py-1.5 outline-none w-40"
+            />
             <select data-testid="cr-filter-tipo" value={tipo} onChange={e => setTipo(e.target.value)} className="bg-white border border-[#E2E8F0] text-xs rounded-lg px-3 py-1.5 outline-none">
               <option value="tutti">Tutti i tipi</option>
               <option value="ricavo">Ricavi</option>
               <option value="costo">Costi</option>
             </select>
-            <select data-testid="cr-filter-origine" value={origine} onChange={e => setOrigine(e.target.value)} className="bg-white border border-[#E2E8F0] text-xs rounded-lg px-3 py-1.5 outline-none">
+            <select data-testid="cr-filter-origine" value={origine} onChange={e => { setOrigine(e.target.value); setBankSkip(0); }} className="bg-white border border-[#E2E8F0] text-xs rounded-lg px-3 py-1.5 outline-none">
               <option value="tutte">Tutte le origini</option>
               <option value="manuale">Manuali</option>
               <option value="banca">Da banca</option>
@@ -139,6 +158,29 @@ export default function CostiRicavi() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination for bank movements */}
+        {bankTotal > PAGE_SIZE && origine !== "manuale" && (
+          <div className="flex items-center justify-between mt-4 pt-4 border-t border-[#E2E8F0] text-xs">
+            <div className="text-[#64748B]">
+              Mostrando {bankSkip + 1}–{Math.min(bankSkip + PAGE_SIZE, bankTotal)} di {bankTotal} movimenti bancari
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                data-testid="cr-page-prev"
+                disabled={bankSkip === 0}
+                onClick={() => setBankSkip(Math.max(0, bankSkip - PAGE_SIZE))}
+                className="px-3 py-1.5 rounded-lg border border-[#E2E8F0] hover:border-[#CBD5E1] disabled:opacity-40 text-[#475569]"
+              >← Precedenti</button>
+              <button
+                data-testid="cr-page-next"
+                disabled={bankSkip + PAGE_SIZE >= bankTotal}
+                onClick={() => setBankSkip(bankSkip + PAGE_SIZE)}
+                className="px-3 py-1.5 rounded-lg border border-[#E2E8F0] hover:border-[#CBD5E1] disabled:opacity-40 text-[#475569]"
+              >Successivi →</button>
+            </div>
+          </div>
+        )}
       </SectionCard>
     </Layout>
   );

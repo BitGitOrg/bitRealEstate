@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import { apiClient } from "../lib/auth";
@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { toast } from "sonner";
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, Legend } from "recharts";
 
 const API_BASE = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -379,6 +380,100 @@ function BancaTab() {
 }
 
 // ===== Page =====
+function StoricoTab() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    apiClient().get("/import/bilanci/storico")
+      .then(r => setData(r.data))
+      .catch(() => toast.error("Errore caricamento storico"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className="flex items-center justify-center gap-2 py-12 text-sm text-[#475569]"><Loader2 size={16} className="animate-spin" /> Caricamento storico…</div>;
+  if (!data || data.bilanci.length === 0) {
+    return (
+      <SectionCard className="text-center py-12" testId="storico-empty">
+        <Database size={28} className="mx-auto text-[#64748B] mb-3" />
+        <div className="font-display font-semibold text-[#0F172A]">Nessun bilancio caricato</div>
+        <div className="text-sm text-[#475569] mt-2">Carica almeno un bilancio dalla tab "Bilanci AI" per vedere lo storico.</div>
+      </SectionCard>
+    );
+  }
+
+  const fmtDelta = (d) => {
+    if (!d || d.pct === null || d.pct === undefined) return <span className="text-[10px] text-[#64748B]">—</span>;
+    const positive = d.abs >= 0;
+    return (
+      <span className={`text-[10px] tabular font-medium ${positive ? "text-[#059669]" : "text-[#DC2626]"}`}>
+        {positive ? "▲" : "▼"} {d.pct.toFixed(1)}%
+      </span>
+    );
+  };
+
+  const Row = ({ label, b, k, kind = "ce", invertColor = false }) => {
+    const v = (kind === "ce" ? b.conto_economico : b.stato_patrimoniale)[k] || 0;
+    const d = (kind === "ce" ? b.diff_ce : b.diff_sp)[k];
+    const positive = d && d.abs >= 0;
+    const goodDirection = invertColor ? !positive : positive;
+    return (
+      <div className="flex justify-between items-center py-1.5 text-sm border-b border-[#E2E8F0] last:border-0">
+        <span className="text-[#475569]">{label}</span>
+        <div className="flex items-center gap-3">
+          {d && d.pct !== null && (
+            <span className={`text-[10px] tabular font-medium ${goodDirection ? "text-[#059669]" : "text-[#DC2626]"}`}>
+              {positive ? "+" : ""}{formatEur(d.abs)} ({positive ? "▲" : "▼"}{Math.abs(d.pct).toFixed(1)}%)
+            </span>
+          )}
+          <span className="tabular font-medium text-[#0F172A] min-w-[100px] text-right">{formatEur(v)}</span>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-4">
+      <SectionCard testId="storico-evoluzione" title="Evoluzione" subtitle={`${data.bilanci.length} bilanci · andamento dal più vecchio al più recente`}>
+        <div style={{height: 260}}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data.evoluzione} margin={{ top: 10, right: 5, left: -10, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+              <XAxis dataKey="periodo" stroke="#64748B" fontSize={11} axisLine={false} tickLine={false} />
+              <YAxis stroke="#64748B" fontSize={11} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+              <RTooltip contentStyle={{ backgroundColor: "#fff", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12 }} formatter={(v) => formatEur(v)} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Line type="monotone" dataKey="totale_ricavi" name="Ricavi" stroke="#0066FF" strokeWidth={2} dot={{r: 3}} />
+              <Line type="monotone" dataKey="totale_costi" name="Costi" stroke="#DC2626" strokeWidth={2} dot={{r: 3}} />
+              <Line type="monotone" dataKey="utile_netto" name="Utile netto" stroke="#059669" strokeWidth={2.5} dot={{r: 4}} />
+              <Line type="monotone" dataKey="patrimonio_netto" name="Patrimonio netto" stroke="#B45309" strokeWidth={2} dot={{r: 3}} strokeDasharray="4 4" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </SectionCard>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {data.bilanci.map((b, idx) => (
+          <SectionCard key={b.id} testId={`storico-bilancio-${b.id}`}
+            title={b.periodo} subtitle={`${b.tipo} · ${idx === 0 ? "ultimo caricato" : "vs precedente"}`}
+          >
+            <div className="text-[10px] uppercase tracking-widest text-[#64748B] mb-2 font-semibold">Conto Economico</div>
+            <Row label="Totale ricavi" b={b} k="totale_ricavi" />
+            <Row label="Ricavi affitti" b={b} k="ricavi_affitti" />
+            <Row label="Totale costi" b={b} k="totale_costi" invertColor />
+            <Row label="Utile netto" b={b} k="utile_netto" />
+            <div className="text-[10px] uppercase tracking-widest text-[#64748B] mt-4 mb-2 font-semibold">Stato Patrimoniale</div>
+            <Row label="Valore immobili" b={b} k="valore_immobili" kind="sp" />
+            <Row label="Debito mutui" b={b} k="debito_mutui" kind="sp" invertColor />
+            <Row label="Liquidità" b={b} k="liquidita" kind="sp" />
+            <Row label="Patrimonio netto" b={b} k="patrimonio_netto" kind="sp" />
+          </SectionCard>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function ImportCenter() {
   return (
     <Layout title="Centro Import" subtitle="Carica anagrafica immobili, bilanci dal commercialista, estratti conto bancari">
@@ -386,10 +481,12 @@ export default function ImportCenter() {
         <TabsList data-testid="import-tabs">
           <TabsTrigger value="immobili" data-testid="tab-import-immobili"><FileSpreadsheet size={14} className="mr-2"/> Immobili</TabsTrigger>
           <TabsTrigger value="bilanci" data-testid="tab-import-bilanci"><Sparkles size={14} className="mr-2"/> Bilanci AI</TabsTrigger>
+          <TabsTrigger value="storico" data-testid="tab-import-storico"><FileText size={14} className="mr-2"/> Storico (MoM)</TabsTrigger>
           <TabsTrigger value="banca" data-testid="tab-import-banca"><Banknote size={14} className="mr-2"/> Estratto conto</TabsTrigger>
         </TabsList>
         <TabsContent value="immobili" className="mt-4"><ImmobiliTab /></TabsContent>
         <TabsContent value="bilanci" className="mt-4"><BilanciTab /></TabsContent>
+        <TabsContent value="storico" className="mt-4"><StoricoTab /></TabsContent>
         <TabsContent value="banca" className="mt-4"><BancaTab /></TabsContent>
       </Tabs>
     </Layout>

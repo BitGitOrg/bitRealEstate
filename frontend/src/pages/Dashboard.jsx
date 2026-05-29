@@ -30,10 +30,14 @@ const tooltipStyle = {
 
 export default function Dashboard() {
   const [latestBilancio, setLatestBilancio] = useState(null);
+  const [bankCashflow, setBankCashflow] = useState(null);
 
   useEffect(() => {
     apiClient().get("/import/bilanci/latest")
       .then(r => setLatestBilancio(r.data && r.data.periodo ? r.data : null))
+      .catch(() => {});
+    apiClient().get("/import/banca/cashflow-mensile?months=12")
+      .then(r => setBankCashflow(r.data?.count >= 2 ? r.data.rows : null))
       .catch(() => {});
   }, []);
 
@@ -105,9 +109,9 @@ export default function Dashboard() {
 
       {/* Charts grid */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
-        <SectionCard testId="chart-cashflow" title="Andamento Cash Flow" subtitle="Ultimi 12 mesi" className="xl:col-span-2">
+        <SectionCard testId="chart-cashflow" title="Andamento Cash Flow" subtitle={bankCashflow ? `${bankCashflow.length} mesi · da movimenti bancari reali` : "Ultimi 12 mesi · dati demo"} className="xl:col-span-2">
           <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={cashFlowMensile} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+            <AreaChart data={bankCashflow || cashFlowMensile} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#0066FF" stopOpacity={0.4} />

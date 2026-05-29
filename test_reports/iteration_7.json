@@ -1,0 +1,35 @@
+{
+  "summary": "Iter 7 e2e testing — Storico bilanci MoM, Cashflow mensile, paginazione movimenti bancari, Report PDF/Excel/CSV reali. 16/16 backend pytest passing. UI verificata su /import (tab Storico con Recharts + card MoM con delta colorati), /costi-ricavi (cr-search funziona; controlli paginazione correttamente nascosti se total <= limit), /report (download CSV reale OK; mock buttons NON triggerano download), Dashboard cashflow fallback 'Ultimi 12 mesi · dati demo' quando non ci sono >=2 mesi di movimenti bancari.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/import → tab Storico (e dashboard durante tab switch)", "issues": ["Console warning Recharts: width(-1)/height(-1) when chart container is mounted while hidden (cosmetic, no functional impact)"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter7_reports.py",
+    "/app/test_reports/pytest/iter7_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now 1483 lines — consider splitting into routers (imports/, reports/, properties/) per single-responsibility. Not blocking but maintenance-impacting.",
+    "On login the frontend redirects to '/' instead of '/dashboard' — both work (Dashboard mounts at root), but inconsistent with the documented spec. Low priority.",
+    "GET /api/report/{id}.{fmt}: when fmt is unsupported (e.g. xml), error is returned BEFORE looking up report_id — so /api/report/unknownReport.xml returns 400 ('Formato non supportato') instead of 404. Per the test spec, unknownReportId.pdf → 404 (works) and patrimonio.xml → 400 (works). All acceptance criteria met but the ordering is worth noting.",
+    "Report.jsx 'patrimonio-pdf' / 'bilancio-pdf' data-testids appear twice (top AI banner buttons + grid card buttons) — Playwright .first() handles it, but unique testids per location would be cleaner."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter7_reports.py (NEW)"
+  ],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% (all 4 critical flows verified)"},
+  "test_credentials": "ceo@controlroom.it / demo1234 (login returns key 'token', not 'access_token')",
+  "seed_data_creation": "None — relied on existing seeded data (2 bilanci: Gennaio 2026 provvisorio + Dicembre 2025 definitivo; 0 movimenti bancari currently in DB for this user).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bank movements collection is currently empty for ceo@controlroom.it. To exercise the pagination controls (cr-page-prev/next) on /costi-ricavi and the bank cashflow Dashboard chart override (subtitle 'X mesi · da movimenti bancari reali'), the main agent should commit 50+ movimenti across at least 2 distinct YYYY-MM months via POST /api/import/banca/commit. All backend endpoints are functionally correct and validated.",
+  "rca of the issue": "N/A — all features working as specified"
+}
