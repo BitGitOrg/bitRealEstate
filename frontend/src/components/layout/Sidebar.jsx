@@ -42,15 +42,15 @@ const GROUPS = [
 export const Sidebar = () => {
   const loc = useLocation();
   return (
-    <aside className="w-64 shrink-0 border-r border-[#212B36] bg-[#0A0E14] h-screen sticky top-0 overflow-y-auto" data-testid="app-sidebar">
-      <div className="px-5 py-6 border-b border-[#212B36]">
+    <aside className="w-64 shrink-0 border-r border-[#E2E8F0] bg-[#FFFFFF] h-screen sticky top-0 overflow-y-auto" data-testid="app-sidebar">
+      <div className="px-5 py-6 border-b border-[#E2E8F0]">
         <Link to="/" className="flex items-center gap-2.5" data-testid="sidebar-brand">
           <div className="w-9 h-9 rounded-lg bg-[#0066FF] flex items-center justify-center">
             <Sparkles size={18} className="text-white" />
           </div>
           <div className="leading-tight">
-            <div className="font-display font-bold text-[15px] tracking-tight text-[#F3F4F6]">Control Room</div>
-            <div className="text-[10px] uppercase tracking-widest text-[#6B7280]">Real Estate · IT</div>
+            <div className="font-display font-bold text-[15px] tracking-tight text-[#0F172A]">Control Room</div>
+            <div className="text-[10px] uppercase tracking-widest text-[#64748B]">Real Estate · IT</div>
           </div>
         </Link>
       </div>
@@ -58,7 +58,7 @@ export const Sidebar = () => {
       <nav className="px-3 py-4 space-y-6">
         {GROUPS.map((g) => (
           <div key={g.name}>
-            <div className="px-3 mb-2 text-[10px] uppercase tracking-[0.14em] text-[#6B7280] font-medium">{g.name}</div>
+            <div className="px-3 mb-2 text-[10px] uppercase tracking-[0.14em] text-[#64748B] font-medium">{g.name}</div>
             <div className="space-y-0.5">
               {g.items.map((it) => {
                 const Icon = it.icon;
@@ -70,13 +70,13 @@ export const Sidebar = () => {
                     data-testid={`sidebar-nav-${it.to.replace(/\//g, '') || 'dashboard'}`}
                     className={`group flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                       active
-                        ? "bg-[#11171F] text-[#F3F4F6] border border-[#212B36]"
-                        : "text-[#9CA3AF] hover:text-[#F3F4F6] hover:bg-[#11171F]/60 border border-transparent"
+                        ? "bg-[#FFFFFF] text-[#0F172A] border border-[#E2E8F0]"
+                        : "text-[#475569] hover:text-[#0F172A] hover:bg-[#FFFFFF]/60 border border-transparent"
                     }`}
                   >
                     <Icon size={16} className={active ? "text-[#0066FF]" : ""} />
                     <span className="flex-1 truncate">{it.label}</span>
-                    {it.accent && <span className="text-[9px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded bg-[rgba(0,102,255,0.15)] text-[#60A5FA] border border-[rgba(0,102,255,0.3)]">AI</span>}
+                    {it.accent && <span className="text-[9px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded bg-[rgba(0,102,255,0.15)] text-[#2563EB] border border-[rgba(0,102,255,0.3)]">AI</span>}
                     {active && <ChevronRight size={14} className="text-[#0066FF]" />}
                   </NavLink>
                 );

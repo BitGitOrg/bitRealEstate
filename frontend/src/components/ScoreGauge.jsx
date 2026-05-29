@@ -12,7 +12,7 @@ export const ScoreGauge = ({ value = 0, size = 120, label, dataTestId }) => {
     <div className="inline-flex flex-col items-center" data-testid={dataTestId || "score-gauge"}>
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90">
-          <circle cx={size / 2} cy={size / 2} r={r} stroke="#212B36" strokeWidth="8" fill="transparent" />
+          <circle cx={size / 2} cy={size / 2} r={r} stroke="#E2E8F0" strokeWidth="8" fill="transparent" />
           <circle
             cx={size / 2} cy={size / 2} r={r}
             stroke={color} strokeWidth="8" fill="transparent"
@@ -23,10 +23,10 @@ export const ScoreGauge = ({ value = 0, size = 120, label, dataTestId }) => {
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="font-display font-bold tabular tracking-tighter" style={{ fontSize: size * 0.30, color }}>{v}</span>
-          <span className="text-[10px] uppercase tracking-wider text-[#6B7280]">/ 100</span>
+          <span className="text-[10px] uppercase tracking-wider text-[#64748B]">/ 100</span>
         </div>
       </div>
-      {label && <span className="mt-2 text-xs text-[#9CA3AF] uppercase tracking-wider">{label}</span>}
+      {label && <span className="mt-2 text-xs text-[#475569] uppercase tracking-wider">{label}</span>}
     </div>
   );
 };

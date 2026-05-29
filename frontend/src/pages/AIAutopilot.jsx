@@ -65,10 +65,10 @@ export default function AIAutopilot() {
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
         {/* Suggestions */}
         <div className="xl:col-span-1 space-y-3 order-2 xl:order-1">
-          <div className="bg-[#11171F] border border-[#212B36] rounded-xl p-5">
+          <div className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl p-5">
             <div className="flex items-center gap-2 mb-3">
-              <Sparkles size={14} className="text-[#60A5FA]" />
-              <span className="text-[10px] uppercase tracking-widest text-[#9CA3AF]">Domande suggerite</span>
+              <Sparkles size={14} className="text-[#2563EB]" />
+              <span className="text-[10px] uppercase tracking-widest text-[#475569]">Domande suggerite</span>
             </div>
             <div className="space-y-2">
               {SUGGESTIONS.map((s, i) => (
@@ -76,7 +76,7 @@ export default function AIAutopilot() {
                   key={i}
                   onClick={() => send(s)}
                   data-testid={`ai-suggestion-${i}`}
-                  className="w-full text-left text-xs px-3 py-2.5 bg-[#080C11] border border-[#212B36] rounded-lg hover:border-[#0066FF] hover:bg-[rgba(0,102,255,0.05)] transition-colors text-[#F3F4F6]"
+                  className="w-full text-left text-xs px-3 py-2.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg hover:border-[#0066FF] hover:bg-[rgba(0,102,255,0.05)] transition-colors text-[#0F172A]"
                 >
                   {s}
                 </button>
@@ -84,9 +84,9 @@ export default function AIAutopilot() {
             </div>
           </div>
 
-          <div className="bg-[#11171F] border border-[#212B36] rounded-xl p-5">
-            <div className="text-[10px] uppercase tracking-widest text-[#9CA3AF] mb-3">Contesto inviato</div>
-            <div className="text-[11px] text-[#6B7280] leading-relaxed space-y-1">
+          <div className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl p-5">
+            <div className="text-[10px] uppercase tracking-widest text-[#475569] mb-3">Contesto inviato</div>
+            <div className="text-[11px] text-[#64748B] leading-relaxed space-y-1">
               <div>• {portfolioKPI.totale_immobili} immobili totali</div>
               <div>• Capitale: {(portfolioKPI.capitale_investito/1000000).toFixed(2)}M €</div>
               <div>• Cash flow: {portfolioKPI.cash_flow_mensile} €/mese</div>
@@ -98,7 +98,7 @@ export default function AIAutopilot() {
 
         {/* Chat */}
         <div className="xl:col-span-3 order-1 xl:order-2">
-          <div className="bg-[#11171F] border border-[#212B36] rounded-xl flex flex-col h-[calc(100vh-180px)] min-h-[600px]">
+          <div className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl flex flex-col h-[calc(100vh-180px)] min-h-[600px]">
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4" data-testid="ai-chat-messages">
               {messages.length === 0 && (
                 <div className="h-full flex flex-col items-center justify-center text-center px-6">
@@ -106,10 +106,10 @@ export default function AIAutopilot() {
                     <Bot size={26} className="text-white" />
                   </div>
                   <h3 className="font-display text-2xl font-bold mb-2">Ciao, sono AI Autopilot</h3>
-                  <p className="text-sm text-[#9CA3AF] max-w-md leading-relaxed">
-                    Analizzo il tuo patrimonio in tempo reale per consigliarti su <strong className="text-[#F3F4F6]">vendite, affitti, rifinanziamenti</strong> e nuovi acquisti.
+                  <p className="text-sm text-[#475569] max-w-md leading-relaxed">
+                    Analizzo il tuo patrimonio in tempo reale per consigliarti su <strong className="text-[#0F172A]">vendite, affitti, rifinanziamenti</strong> e nuovi acquisti.
                   </p>
-                  <p className="text-xs text-[#6B7280] mt-3">Scegli una domanda dalla colonna a sinistra o scrivimi qui sotto.</p>
+                  <p className="text-xs text-[#64748B] mt-3">Scegli una domanda dalla colonna a sinistra o scrivimi qui sotto.</p>
                 </div>
               )}
 
@@ -118,7 +118,7 @@ export default function AIAutopilot() {
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${m.role === "user" ? "bg-[#0066FF]" : "bg-gradient-to-br from-[#0066FF] to-[#10B981]"}`}>
                     {m.role === "user" ? <UserIcon size={14} className="text-white" /> : <Bot size={14} className="text-white" />}
                   </div>
-                  <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${m.role === "user" ? "bg-[#0066FF] text-white" : "bg-[#161B22] border border-[#212B36] text-[#F3F4F6]"}`}>
+                  <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${m.role === "user" ? "bg-[#0066FF] text-white" : "bg-[#F1F5F9] border border-[#E2E8F0] text-[#0F172A]"}`}>
                     <div className="text-sm leading-relaxed whitespace-pre-wrap">{m.text}</div>
                   </div>
                 </div>
@@ -129,22 +129,22 @@ export default function AIAutopilot() {
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-br from-[#0066FF] to-[#10B981]">
                     <Bot size={14} className="text-white" />
                   </div>
-                  <div className="bg-[#161B22] border border-[#212B36] rounded-2xl px-4 py-3 inline-flex items-center gap-2 text-sm text-[#9CA3AF]">
+                  <div className="bg-[#F1F5F9] border border-[#E2E8F0] rounded-2xl px-4 py-3 inline-flex items-center gap-2 text-sm text-[#475569]">
                     <Loader2 size={14} className="animate-spin" /> Sto analizzando…
                   </div>
                 </div>
               )}
             </div>
 
-            <div className="border-t border-[#212B36] p-4">
-              <form onSubmit={(e) => { e.preventDefault(); send(); }} className="flex items-center gap-2 bg-[#080C11] border border-[#212B36] rounded-xl px-3 focus-within:border-[#0066FF] transition-colors" data-testid="ai-chat-form">
-                <Sparkles size={16} className="text-[#60A5FA]"/>
+            <div className="border-t border-[#E2E8F0] p-4">
+              <form onSubmit={(e) => { e.preventDefault(); send(); }} className="flex items-center gap-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl px-3 focus-within:border-[#0066FF] transition-colors" data-testid="ai-chat-form">
+                <Sparkles size={16} className="text-[#2563EB]"/>
                 <input
                   data-testid="ai-chat-input"
                   value={input} onChange={(e) => setInput(e.target.value)}
                   placeholder="Chiedi qualsiasi cosa sul tuo portafoglio…"
                   disabled={loading}
-                  className="flex-1 bg-transparent py-3 outline-none text-sm placeholder:text-[#6B7280]"
+                  className="flex-1 bg-transparent py-3 outline-none text-sm placeholder:text-[#64748B]"
                 />
                 <button
                   type="submit" disabled={loading || !input.trim()}

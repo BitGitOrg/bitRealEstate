@@ -28,7 +28,7 @@ import Watchlists from "@/pages/Watchlists";
 
 const Protected = ({ children }) => {
   const { user, loading } = useAuth();
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-[#9CA3AF]">Caricamento…</div>;
+  if (loading) return <div className="min-h-screen flex items-center justify-center text-[#475569]">Caricamento…</div>;
   if (!user) return <Navigate to="/login" replace />;
   return children;
 };

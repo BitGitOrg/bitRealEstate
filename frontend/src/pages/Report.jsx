@@ -26,19 +26,19 @@ export default function Report() {
         <div className="absolute top-0 right-0 w-64 h-64 rounded-full bg-[#0066FF]/10 blur-3xl pointer-events-none" />
         <div className="relative flex items-start justify-between gap-6 flex-wrap">
           <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-[#60A5FA] mb-2">
+            <div className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-[#2563EB] mb-2">
               <Sparkles size={11} /> Report AI Mensile · Generato il 03/02/2026
             </div>
             <h3 className="font-display text-2xl font-bold tracking-tight mb-2">Andamento di Gennaio 2026</h3>
-            <p className="text-sm text-[#9CA3AF] leading-relaxed">
-              Il portafoglio ha generato <strong className="text-[#34D399]">€3.440 di cash flow netto</strong>, in linea con la media trimestrale.
-              <strong className="text-[#F87171]"> 1 immobile critico</strong> (Monolocale Torino, sfitto da 4 mesi) e
-              <strong className="text-[#FBBF24]"> 1 cantiere fuori budget</strong> (Villa Como, +17k€).
+            <p className="text-sm text-[#475569] leading-relaxed">
+              Il portafoglio ha generato <strong className="text-[#059669]">€3.440 di cash flow netto</strong>, in linea con la media trimestrale.
+              <strong className="text-[#DC2626]"> 1 immobile critico</strong> (Monolocale Torino, sfitto da 4 mesi) e
+              <strong className="text-[#B45309]"> 1 cantiere fuori budget</strong> (Villa Como, +17k€).
               Opportunità identificate: rinegoziazione mutuo Bovisa (-280€/mese) e valutazione vendita IMM-005.
             </p>
             <div className="flex items-center gap-2 mt-4">
               <button data-testid="report-ai-pdf" onClick={() => dl("PDF", "Report AI Mensile")} className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#0066FF] hover:bg-[#2563EB] text-white"><Download size={12}/>Scarica PDF</button>
-              <button data-testid="report-ai-full" className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-[#212B36] hover:bg-[#080C11] text-[#9CA3AF] hover:text-[#F3F4F6]">Leggi analisi completa</button>
+              <button data-testid="report-ai-full" className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-[#E2E8F0] hover:bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A]">Leggi analisi completa</button>
             </div>
           </div>
         </div>
@@ -48,22 +48,22 @@ export default function Report() {
         {REPORTS.map(r => {
           const Icon = r.icon;
           return (
-            <div key={r.id} data-testid={`report-${r.id}`} className="bg-[#11171F] border border-[#212B36] rounded-xl p-5 card-hover">
+            <div key={r.id} data-testid={`report-${r.id}`} className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl p-5 card-hover">
               <div className="flex items-start gap-3 mb-4">
-                <div className="w-10 h-10 rounded-lg bg-[#080C11] border border-[#212B36] flex items-center justify-center">
-                  <Icon size={18} className="text-[#60A5FA]" />
+                <div className="w-10 h-10 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-center">
+                  <Icon size={18} className="text-[#2563EB]" />
                 </div>
                 <div>
-                  <div className="font-display font-semibold text-[#F3F4F6]">{r.nome}</div>
-                  <div className="text-xs text-[#9CA3AF] mt-0.5">{r.desc}</div>
+                  <div className="font-display font-semibold text-[#0F172A]">{r.nome}</div>
+                  <div className="text-xs text-[#475569] mt-0.5">{r.desc}</div>
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
-                <button onClick={() => dl("PDF", r.nome)} className="flex-1 text-xs px-3 py-1.5 rounded-lg bg-[#080C11] border border-[#212B36] hover:border-[#334155] text-[#F3F4F6] inline-flex items-center justify-center gap-1.5">
+                <button onClick={() => dl("PDF", r.nome)} className="flex-1 text-xs px-3 py-1.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] hover:border-[#CBD5E1] text-[#0F172A] inline-flex items-center justify-center gap-1.5">
                   <FileText size={11}/> PDF
                 </button>
-                <button onClick={() => dl("Excel", r.nome)} className="flex-1 text-xs px-3 py-1.5 rounded-lg bg-[#080C11] border border-[#212B36] hover:border-[#334155] text-[#F3F4F6]">Excel</button>
-                <button onClick={() => dl("CSV", r.nome)} className="flex-1 text-xs px-3 py-1.5 rounded-lg bg-[#080C11] border border-[#212B36] hover:border-[#334155] text-[#F3F4F6]">CSV</button>
+                <button onClick={() => dl("Excel", r.nome)} className="flex-1 text-xs px-3 py-1.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] hover:border-[#CBD5E1] text-[#0F172A]">Excel</button>
+                <button onClick={() => dl("CSV", r.nome)} className="flex-1 text-xs px-3 py-1.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] hover:border-[#CBD5E1] text-[#0F172A]">CSV</button>
               </div>
             </div>
           );

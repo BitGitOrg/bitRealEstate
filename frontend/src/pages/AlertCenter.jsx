@@ -22,9 +22,9 @@ export default function AlertCenter() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <SectionCard testId="alert-tot">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[#161B22] border border-[#212B36] flex items-center justify-center"><Bell size={18} className="text-[#F3F4F6]"/></div>
+            <div className="w-10 h-10 rounded-lg bg-[#F1F5F9] border border-[#E2E8F0] flex items-center justify-center"><Bell size={18} className="text-[#0F172A]"/></div>
             <div>
-              <div className="text-[10px] uppercase text-[#6B7280]">Notifiche totali</div>
+              <div className="text-[10px] uppercase text-[#64748B]">Notifiche totali</div>
               <div className="font-display text-2xl font-bold tabular">{alerts.length}</div>
             </div>
           </div>
@@ -38,7 +38,7 @@ export default function AlertCenter() {
                   <Icon size={18} style={{ color: m.color }} />
                 </div>
                 <div>
-                  <div className="text-[10px] uppercase text-[#6B7280]">{m.label}</div>
+                  <div className="text-[10px] uppercase text-[#64748B]">{m.label}</div>
                   <div className="font-display text-2xl font-bold tabular">{counts[k]}</div>
                 </div>
               </div>
@@ -53,7 +53,7 @@ export default function AlertCenter() {
             key={t}
             data-testid={`filter-tipo-${t}`}
             onClick={() => setTipo(t)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${tipo === t ? "bg-[#0066FF] text-white border-[#0066FF]" : "bg-[#11171F] text-[#9CA3AF] border-[#212B36] hover:border-[#334155]"}`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${tipo === t ? "bg-[#0066FF] text-white border-[#0066FF]" : "bg-[#FFFFFF] text-[#475569] border-[#E2E8F0] hover:border-[#CBD5E1]"}`}
           >
             {t === "tutti" ? "Tutti" : TIPI[t].label}
           </button>
@@ -66,20 +66,20 @@ export default function AlertCenter() {
           const Icon = meta.icon;
           const p = a.immobile_id ? properties.find(x => x.id === a.immobile_id) : null;
           return (
-            <div key={a.id} data-testid={`alert-${a.id}`} className="bg-[#11171F] border border-[#212B36] rounded-xl p-4 card-hover flex items-start gap-4">
+            <div key={a.id} data-testid={`alert-${a.id}`} className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl p-4 card-hover flex items-start gap-4">
               <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${meta.color}20`, border: `1px solid ${meta.color}40` }}>
                 <Icon size={18} style={{ color: meta.color }} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1.5">
                   <SeverityBadge severity={a.severity} />
-                  <span className="text-[10px] uppercase tracking-wider text-[#6B7280]">{meta.label}</span>
-                  <span className="text-[10px] text-[#6B7280] ml-auto">{a.ts}</span>
+                  <span className="text-[10px] uppercase tracking-wider text-[#64748B]">{meta.label}</span>
+                  <span className="text-[10px] text-[#64748B] ml-auto">{a.ts}</span>
                 </div>
-                <div className="font-display font-semibold text-[#F3F4F6]">{a.titolo}</div>
-                <div className="text-sm text-[#9CA3AF] mt-1">{a.descrizione}</div>
+                <div className="font-display font-semibold text-[#0F172A]">{a.titolo}</div>
+                <div className="text-sm text-[#475569] mt-1">{a.descrizione}</div>
                 {p && (
-                  <Link to={`/immobile/${p.id}`} className="inline-flex items-center gap-1 text-xs text-[#60A5FA] mt-2 hover:underline">
+                  <Link to={`/immobile/${p.id}`} className="inline-flex items-center gap-1 text-xs text-[#2563EB] mt-2 hover:underline">
                     Vai a {p.nome} <ChevronRight size={12} />
                   </Link>
                 )}

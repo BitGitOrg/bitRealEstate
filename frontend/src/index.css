@@ -6,49 +6,49 @@
 @tailwind utilities;
 
 :root {
-  /* Control Room palette */
-  --bg-void: #080C11;
-  --bg-card: #11171F;
-  --bg-sidebar: #0A0E14;
-  --bg-elevated: #161B22;
-  --border-default: #212B36;
-  --border-hover: #334155;
+  /* Light theme — fintech "Linear/Stripe" style */
+  --bg-void: #F8FAFC;       /* page background */
+  --bg-card: #FFFFFF;        /* card surfaces */
+  --bg-sidebar: #FFFFFF;
+  --bg-elevated: #F1F5F9;    /* icon containers, inner blocks */
+  --border-default: #E2E8F0;
+  --border-hover: #CBD5E1;
   --border-focus: #0066FF;
-  --text-primary: #F3F4F6;
-  --text-secondary: #9CA3AF;
-  --text-muted: #6B7280;
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+  --text-muted: #64748B;
   --brand: #0066FF;
   --brand-hover: #2563EB;
-  --positive: #10B981;
-  --warning: #F59E0B;
-  --critical: #EF4444;
+  --positive: #059669;
+  --warning: #B45309;
+  --critical: #DC2626;
 
-  /* shadcn vars mapped to dark control-room */
-  --background: 215 30% 5%;
-  --foreground: 220 14% 96%;
-  --card: 215 22% 9%;
-  --card-foreground: 220 14% 96%;
-  --popover: 215 28% 7%;
-  --popover-foreground: 220 14% 96%;
+  /* shadcn-mapped (LIGHT) */
+  --background: 210 40% 98%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
   --primary: 217 100% 50%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 215 18% 14%;
-  --secondary-foreground: 220 14% 96%;
-  --muted: 215 16% 14%;
-  --muted-foreground: 220 9% 60%;
-  --accent: 215 18% 14%;
-  --accent-foreground: 220 14% 96%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+  --accent: 210 40% 96%;
+  --accent-foreground: 222 47% 11%;
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 100%;
-  --border: 215 16% 17%;
-  --input: 215 16% 17%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
   --ring: 217 100% 50%;
   --radius: 0.75rem;
-  --chart-1: 217 100% 60%;
-  --chart-2: 158 64% 52%;
-  --chart-3: 38 92% 58%;
-  --chart-4: 199 89% 60%;
-  --chart-5: 0 84% 65%;
+  --chart-1: 217 100% 50%;
+  --chart-2: 158 64% 42%;
+  --chart-3: 38 92% 50%;
+  --chart-4: 199 89% 48%;
+  --chart-5: 0 84% 60%;
 }
 
 * { border-color: hsl(var(--border)); }
@@ -70,29 +70,26 @@ h1, h2, h3, h4, .font-display {
 .tabular { font-variant-numeric: tabular-nums; }
 .mono { font-family: 'IBM Plex Mono', monospace; }
 
-/* Custom scrollbar */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: var(--bg-void); }
-::-webkit-scrollbar-thumb { background: #1f2733; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #334155; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
 
-/* Subtle grid background for hero areas */
+/* Subtle grid for hero areas */
 .grid-bg {
   background-image:
-    linear-gradient(rgba(33, 43, 54, 0.4) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(33, 43, 54, 0.4) 1px, transparent 1px);
+    linear-gradient(rgba(15, 23, 42, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.04) 1px, transparent 1px);
   background-size: 32px 32px;
 }
 
-/* Glass panel */
 .glass {
-  background: rgba(8, 12, 17, 0.75);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--border-default);
 }
 
-/* Animated dot */
 .pulse-dot::before {
   content: '';
   display: inline-block;
@@ -101,22 +98,19 @@ h1, h2, h3, h4, .font-display {
   border-radius: 50%;
   background: var(--positive);
   margin-right: 8px;
-  box-shadow: 0 0 0 0 rgba(16,185,129,0.6);
+  box-shadow: 0 0 0 0 rgba(5,150,105,0.6);
   animation: pulse 2s infinite;
 }
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.5); }
-  70% { box-shadow: 0 0 0 8px rgba(16,185,129,0); }
-  100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+  0% { box-shadow: 0 0 0 0 rgba(5,150,105,0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(5,150,105,0); }
+  100% { box-shadow: 0 0 0 0 rgba(5,150,105,0); }
 }
 
-/* Card hover lift */
-.card-hover { transition: border-color 200ms ease, transform 200ms ease; }
-.card-hover:hover { border-color: var(--border-hover); }
+.card-hover { transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease; }
+.card-hover:hover { border-color: var(--border-hover); box-shadow: 0 1px 3px rgba(15,23,42,0.04), 0 4px 12px rgba(15,23,42,0.04); }
 
-/* Fade-in stagger */
 @keyframes fadeUp { from { opacity: 0; transform: translateY(8px);} to { opacity: 1; transform: translateY(0);} }
 .fade-up { animation: fadeUp 400ms ease-out both; }
 
-/* Selection */
-::selection { background: rgba(0, 102, 255, 0.35); color: #fff; }
+::selection { background: rgba(0, 102, 255, 0.2); color: #0F172A; }

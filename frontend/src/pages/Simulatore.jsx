@@ -9,15 +9,15 @@ import { toast } from "sonner";
 
 const Field = ({ label, value, onChange, suffix, type = "number", testId }) => (
   <label className="block">
-    <span className="text-[10px] uppercase tracking-wider text-[#9CA3AF] font-medium">{label}</span>
-    <div className="mt-1.5 flex items-center bg-[#080C11] border border-[#212B36] rounded-lg overflow-hidden focus-within:border-[#0066FF] transition-colors">
+    <span className="text-[10px] uppercase tracking-wider text-[#475569] font-medium">{label}</span>
+    <div className="mt-1.5 flex items-center bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg overflow-hidden focus-within:border-[#0066FF] transition-colors">
       <input
         data-testid={testId}
         type={type} value={value}
         onChange={(e) => onChange(type === "number" ? parseFloat(e.target.value) || 0 : e.target.value)}
         className="flex-1 bg-transparent px-3 py-2 outline-none text-sm tabular"
       />
-      {suffix && <span className="px-3 text-xs text-[#6B7280]">{suffix}</span>}
+      {suffix && <span className="px-3 text-xs text-[#64748B]">{suffix}</span>}
     </div>
   </label>
 );
@@ -98,7 +98,7 @@ export default function Simulatore() {
             <button
               data-testid="sim-ai-btn"
               onClick={runAi} disabled={aiLoading}
-              className="w-full mt-2 py-2.5 px-4 bg-[rgba(0,102,255,0.1)] border border-[rgba(0,102,255,0.3)] text-[#60A5FA] hover:bg-[rgba(0,102,255,0.2)] rounded-lg font-medium text-sm transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full mt-2 py-2.5 px-4 bg-[rgba(0,102,255,0.1)] border border-[rgba(0,102,255,0.3)] text-[#2563EB] hover:bg-[rgba(0,102,255,0.2)] rounded-lg font-medium text-sm transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {aiLoading ? <><Loader2 size={14} className="animate-spin"/> Analisi…</> : <><Sparkles size={14}/> Analizza con AI Autopilot</>}
             </button>
@@ -110,35 +110,35 @@ export default function Simulatore() {
             <SectionCard testId="sim-result-summary" title="Risultati operazione">
               <div className="grid grid-cols-2 gap-y-3 gap-x-4">
                 <div>
-                  <div className="text-[10px] uppercase text-[#6B7280]">Costo totale</div>
+                  <div className="text-[10px] uppercase text-[#64748B]">Costo totale</div>
                   <div className="font-display text-xl font-bold tabular">{formatEur(calc.costoTotale)}</div>
                 </div>
                 <div>
-                  <div className="text-[10px] uppercase text-[#6B7280]">Capitale proprio</div>
+                  <div className="text-[10px] uppercase text-[#64748B]">Capitale proprio</div>
                   <div className="font-display text-xl font-bold tabular">{formatEur(calc.capitaleProprio)}</div>
                 </div>
                 <div>
-                  <div className="text-[10px] uppercase text-[#6B7280]">Rendimento lordo</div>
-                  <div className="font-display text-xl font-bold tabular text-[#60A5FA]">{calc.rendLordo.toFixed(2)}%</div>
+                  <div className="text-[10px] uppercase text-[#64748B]">Rendimento lordo</div>
+                  <div className="font-display text-xl font-bold tabular text-[#2563EB]">{calc.rendLordo.toFixed(2)}%</div>
                 </div>
                 <div>
-                  <div className="text-[10px] uppercase text-[#6B7280]">Rendimento netto</div>
-                  <div className="font-display text-xl font-bold tabular text-[#34D399]">{calc.rendNetto.toFixed(2)}%</div>
+                  <div className="text-[10px] uppercase text-[#64748B]">Rendimento netto</div>
+                  <div className="font-display text-xl font-bold tabular text-[#059669]">{calc.rendNetto.toFixed(2)}%</div>
                 </div>
                 <div>
-                  <div className="text-[10px] uppercase text-[#6B7280]">Rata mutuo</div>
+                  <div className="text-[10px] uppercase text-[#64748B]">Rata mutuo</div>
                   <div className="font-display text-xl font-bold tabular">{formatEur(Math.round(calc.rata))}</div>
                 </div>
                 <div>
-                  <div className="text-[10px] uppercase text-[#6B7280]">Cash flow / mese</div>
-                  <div className={`font-display text-xl font-bold tabular ${calc.cashFlow >= 0 ? "text-[#34D399]" : "text-[#F87171]"}`}>{formatEur(Math.round(calc.cashFlow))}</div>
+                  <div className="text-[10px] uppercase text-[#64748B]">Cash flow / mese</div>
+                  <div className={`font-display text-xl font-bold tabular ${calc.cashFlow >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{formatEur(Math.round(calc.cashFlow))}</div>
                 </div>
                 <div>
-                  <div className="text-[10px] uppercase text-[#6B7280]">ROI (cash on cash)</div>
+                  <div className="text-[10px] uppercase text-[#64748B]">ROI (cash on cash)</div>
                   <div className="font-display text-xl font-bold tabular">{calc.roi.toFixed(2)}%</div>
                 </div>
                 <div>
-                  <div className="text-[10px] uppercase text-[#6B7280]">Break-even</div>
+                  <div className="text-[10px] uppercase text-[#64748B]">Break-even</div>
                   <div className="font-display text-xl font-bold tabular">{calc.breakEven ? `${calc.breakEven.toFixed(1)} anni` : "—"}</div>
                 </div>
               </div>
@@ -147,7 +147,7 @@ export default function Simulatore() {
             <SectionCard testId="sim-result-score" title="Deal Score">
               <div className="flex flex-col items-center justify-center py-4">
                 <ScoreGauge value={calc.score} size={160} dataTestId="sim-score-gauge" />
-                <div className="text-xs text-[#9CA3AF] text-center mt-4 max-w-[200px]">
+                <div className="text-xs text-[#475569] text-center mt-4 max-w-[200px]">
                   {calc.score >= 91 ? "Operazione eccellente, procedi."
                     : calc.score >= 76 ? "Buona operazione."
                     : calc.score >= 61 ? "Operazione interessante: valuta margini."
@@ -162,26 +162,26 @@ export default function Simulatore() {
             <SectionCard testId="sim-ai-result" title="AI Deal Analyzer" subtitle="Valutazione dettagliata con scenari">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2 text-sm">
-                  <div><span className="text-[#9CA3AF]">Giudizio:</span> <strong className="text-[#F3F4F6]">{aiResult.giudizio}</strong></div>
-                  <div><span className="text-[#9CA3AF]">Strategia:</span> <strong>{aiResult.strategia_consigliata}</strong></div>
-                  <div><span className="text-[#9CA3AF]">Rischio:</span> <strong className={aiResult.rischio === "Basso" ? "text-[#34D399]" : aiResult.rischio === "Medio" ? "text-[#FBBF24]" : "text-[#F87171]"}>{aiResult.rischio}</strong></div>
-                  <div><span className="text-[#9CA3AF]">Prezzo max consigliato:</span> <strong className="tabular">{formatEur(aiResult.prezzo_massimo_consigliato)}</strong></div>
+                  <div><span className="text-[#475569]">Giudizio:</span> <strong className="text-[#0F172A]">{aiResult.giudizio}</strong></div>
+                  <div><span className="text-[#475569]">Strategia:</span> <strong>{aiResult.strategia_consigliata}</strong></div>
+                  <div><span className="text-[#475569]">Rischio:</span> <strong className={aiResult.rischio === "Basso" ? "text-[#059669]" : aiResult.rischio === "Medio" ? "text-[#B45309]" : "text-[#DC2626]"}>{aiResult.rischio}</strong></div>
+                  <div><span className="text-[#475569]">Prezzo max consigliato:</span> <strong className="tabular">{formatEur(aiResult.prezzo_massimo_consigliato)}</strong></div>
                   <div className="mt-3">
-                    <div className="text-[10px] uppercase text-[#6B7280] mb-2">Punti di attenzione</div>
+                    <div className="text-[10px] uppercase text-[#64748B] mb-2">Punti di attenzione</div>
                     <ul className="space-y-1">
-                      {aiResult.punti_attenzione.map((p, i) => <li key={i} className="text-xs text-[#F3F4F6] flex gap-2"><span className="text-[#FBBF24]">·</span>{p}</li>)}
+                      {aiResult.punti_attenzione.map((p, i) => <li key={i} className="text-xs text-[#0F172A] flex gap-2"><span className="text-[#B45309]">·</span>{p}</li>)}
                     </ul>
                   </div>
                 </div>
                 <div>
-                  <div className="text-[10px] uppercase text-[#6B7280] mb-2">Scenari</div>
+                  <div className="text-[10px] uppercase text-[#64748B] mb-2">Scenari</div>
                   {Object.entries(aiResult.scenari).map(([k, v]) => (
-                    <div key={k} className="p-3 mb-2 bg-[#080C11] border border-[#212B36] rounded-lg">
+                    <div key={k} className="p-3 mb-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs uppercase tracking-wider text-[#9CA3AF]">{k}</span>
-                        <span className="tabular font-display font-bold text-sm" style={{ color: k === "ottimistico" ? "#34D399" : k === "realistico" ? "#60A5FA" : "#F87171" }}>{v.rendimento_netto}%</span>
+                        <span className="text-xs uppercase tracking-wider text-[#475569]">{k}</span>
+                        <span className="tabular font-display font-bold text-sm" style={{ color: k === "ottimistico" ? "#059669" : k === "realistico" ? "#2563EB" : "#DC2626" }}>{v.rendimento_netto}%</span>
                       </div>
-                      <div className="text-[11px] text-[#6B7280]">{v.note}</div>
+                      <div className="text-[11px] text-[#64748B]">{v.note}</div>
                     </div>
                   ))}
                 </div>

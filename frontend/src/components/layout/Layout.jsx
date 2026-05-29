@@ -3,7 +3,7 @@ import { Topbar } from "./Topbar";
 
 export const Layout = ({ children, title, subtitle, actions }) => {
   return (
-    <div className="flex min-h-screen bg-[#080C11]">
+    <div className="flex min-h-screen bg-[#F8FAFC]">
       <Sidebar />
       <main className="flex-1 min-w-0 flex flex-col">
         <Topbar title={title} subtitle={subtitle} actions={actions} />

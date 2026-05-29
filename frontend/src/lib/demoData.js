@@ -202,8 +202,8 @@ export const distribuzioneTipologia = [
   { name: "Trilocali", value: 3, color: "#10B981" },
   { name: "Ville", value: 1, color: "#F59E0B" },
   { name: "Loft", value: 1, color: "#38BDF8" },
-  { name: "Monolocali", value: 1, color: "#A3E635" },
-  { name: "Quadrilocali", value: 1, color: "#F87171" },
+  { name: "Monolocali", value: 1, color: "#4D7C0F" },
+  { name: "Quadrilocali", value: 1, color: "#DC2626" },
 ];
 
 // === Contratti affitto ===

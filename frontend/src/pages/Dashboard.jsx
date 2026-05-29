@@ -18,11 +18,11 @@ import {
 } from "../lib/demoData";
 
 const tooltipStyle = {
-  backgroundColor: "#080C11",
-  border: "1px solid #212B36",
+  backgroundColor: "#F8FAFC",
+  border: "1px solid #E2E8F0",
   borderRadius: 8,
   fontSize: 12,
-  color: "#F3F4F6",
+  color: "#0F172A",
 };
 
 export default function Dashboard() {
@@ -34,7 +34,7 @@ export default function Dashboard() {
       title="Dashboard Generale"
       subtitle="Vista sintetica del portafoglio · Aggiornato in tempo reale"
       actions={
-        <Link to="/ai-autopilot" data-testid="dashboard-ai-cta" className="hidden md:inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[rgba(0,102,255,0.1)] border border-[rgba(0,102,255,0.3)] text-[#60A5FA] hover:bg-[rgba(0,102,255,0.2)] text-sm font-medium transition-colors">
+        <Link to="/ai-autopilot" data-testid="dashboard-ai-cta" className="hidden md:inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[rgba(0,102,255,0.1)] border border-[rgba(0,102,255,0.3)] text-[#2563EB] hover:bg-[rgba(0,102,255,0.2)] text-sm font-medium transition-colors">
           <Sparkles size={14} /> Chiedi ad AI Autopilot
         </Link>
       }
@@ -66,9 +66,9 @@ export default function Dashboard() {
                   <stop offset="100%" stopColor="#0066FF" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#212B36" vertical={false} />
-              <XAxis dataKey="mese" stroke="#6B7280" fontSize={11} axisLine={false} tickLine={false} />
-              <YAxis stroke="#6B7280" fontSize={11} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+              <XAxis dataKey="mese" stroke="#64748B" fontSize={11} axisLine={false} tickLine={false} />
+              <YAxis stroke="#64748B" fontSize={11} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
               <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatEur(v)} />
               <Area type="monotone" dataKey="saldo" stroke="#0066FF" strokeWidth={2} fill="url(#g1)" />
             </AreaChart>
@@ -79,7 +79,7 @@ export default function Dashboard() {
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
               <Pie data={distribuzioneTipologia} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2}>
-                {distribuzioneTipologia.map((e, i) => <Cell key={i} fill={e.color} stroke="#11171F" strokeWidth={2} />)}
+                {distribuzioneTipologia.map((e, i) => <Cell key={i} fill={e.color} stroke="#FFFFFF" strokeWidth={2} />)}
               </Pie>
               <Tooltip contentStyle={tooltipStyle} />
             </PieChart>
@@ -88,7 +88,7 @@ export default function Dashboard() {
             {distribuzioneTipologia.map((d) => (
               <div key={d.name} className="flex items-center justify-between text-xs">
                 <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full" style={{background: d.color}}/> {d.name}</span>
-                <span className="text-[#9CA3AF] tabular">{d.value}</span>
+                <span className="text-[#475569] tabular">{d.value}</span>
               </div>
             ))}
           </div>
@@ -99,9 +99,9 @@ export default function Dashboard() {
         <SectionCard testId="chart-ricavi-costi" title="Ricavi vs Costi" subtitle="Confronto mensile" className="xl:col-span-2">
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={ricaviCostiAnnuali} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#212B36" vertical={false} />
-              <XAxis dataKey="mese" stroke="#6B7280" fontSize={11} axisLine={false} tickLine={false} />
-              <YAxis stroke="#6B7280" fontSize={11} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+              <XAxis dataKey="mese" stroke="#64748B" fontSize={11} axisLine={false} tickLine={false} />
+              <YAxis stroke="#64748B" fontSize={11} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
               <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatEur(v)} />
               <Bar dataKey="ricavi" fill="#10B981" radius={[4, 4, 0, 0]} />
               <Bar dataKey="costi" fill="#EF4444" radius={[4, 4, 0, 0]} />
@@ -113,13 +113,13 @@ export default function Dashboard() {
           <div className="flex flex-col items-center justify-center py-2">
             <ScoreGauge value={72} size={160} dataTestId="portfolio-score-main" />
             <div className="mt-4 grid grid-cols-2 gap-3 w-full">
-              <div className="text-center p-2 rounded-lg bg-[#080C11] border border-[#212B36]">
-                <div className="text-[10px] uppercase text-[#6B7280]">Profittevoli</div>
-                <div className="font-display text-lg font-bold text-[#34D399] tabular">{portfolioKPI.immobili_profittevoli}</div>
+              <div className="text-center p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
+                <div className="text-[10px] uppercase text-[#64748B]">Profittevoli</div>
+                <div className="font-display text-lg font-bold text-[#059669] tabular">{portfolioKPI.immobili_profittevoli}</div>
               </div>
-              <div className="text-center p-2 rounded-lg bg-[#080C11] border border-[#212B36]">
-                <div className="text-[10px] uppercase text-[#6B7280]">Sotto target</div>
-                <div className="font-display text-lg font-bold text-[#F87171] tabular">{portfolioKPI.immobili_sotto_target}</div>
+              <div className="text-center p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
+                <div className="text-[10px] uppercase text-[#64748B]">Sotto target</div>
+                <div className="font-display text-lg font-bold text-[#DC2626] tabular">{portfolioKPI.immobili_sotto_target}</div>
               </div>
             </div>
           </div>
@@ -128,45 +128,45 @@ export default function Dashboard() {
 
       {/* Widgets row */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        <SectionCard testId="widget-best" title="Miglior immobile" action={<Trophy size={16} className="text-[#FBBF24]" />}>
+        <SectionCard testId="widget-best" title="Miglior immobile" action={<Trophy size={16} className="text-[#B45309]" />}>
           <Link to={`/immobile/${top.id}`} className="block group">
             <img src={top.img} alt={top.nome} className="w-full h-28 object-cover rounded-lg mb-3" />
-            <div className="font-display font-semibold text-sm text-[#F3F4F6] group-hover:text-[#60A5FA] transition-colors">{top.nome}</div>
+            <div className="font-display font-semibold text-sm text-[#0F172A] group-hover:text-[#2563EB] transition-colors">{top.nome}</div>
             <div className="flex items-center justify-between text-xs mt-1.5">
-              <span className="text-[#9CA3AF] flex items-center gap-1"><MapPin size={10}/> {top.citta}</span>
-              <span className="text-[#34D399] tabular font-medium">{top.rendimento_netto}% netto</span>
+              <span className="text-[#475569] flex items-center gap-1"><MapPin size={10}/> {top.citta}</span>
+              <span className="text-[#059669] tabular font-medium">{top.rendimento_netto}% netto</span>
             </div>
           </Link>
         </SectionCard>
 
-        <SectionCard testId="widget-worst" title="Da monitorare" action={<AlertTriangle size={16} className="text-[#F87171]" />}>
+        <SectionCard testId="widget-worst" title="Da monitorare" action={<AlertTriangle size={16} className="text-[#DC2626]" />}>
           <Link to={`/immobile/${worst.id}`} className="block group">
             <img src={worst.img} alt={worst.nome} className="w-full h-28 object-cover rounded-lg mb-3 grayscale-[40%]" />
-            <div className="font-display font-semibold text-sm text-[#F3F4F6] group-hover:text-[#60A5FA] transition-colors">{worst.nome}</div>
+            <div className="font-display font-semibold text-sm text-[#0F172A] group-hover:text-[#2563EB] transition-colors">{worst.nome}</div>
             <div className="flex items-center justify-between text-xs mt-1.5">
-              <span className="text-[#9CA3AF] flex items-center gap-1"><MapPin size={10}/> {worst.citta}</span>
+              <span className="text-[#475569] flex items-center gap-1"><MapPin size={10}/> {worst.citta}</span>
               <StatusBadge stato={worst.stato} />
             </div>
           </Link>
         </SectionCard>
 
-        <SectionCard testId="widget-alerts" title="Alert recenti" action={<Link to="/alert-center" className="text-xs text-[#60A5FA] hover:underline">Vedi tutti</Link>}>
+        <SectionCard testId="widget-alerts" title="Alert recenti" action={<Link to="/alert-center" className="text-xs text-[#2563EB] hover:underline">Vedi tutti</Link>}>
           <div className="space-y-2.5">
             {alerts.slice(0, 3).map((a) => (
-              <div key={a.id} className="flex items-start gap-2.5 pb-2.5 border-b border-[#212B36] last:border-0 last:pb-0">
+              <div key={a.id} className="flex items-start gap-2.5 pb-2.5 border-b border-[#E2E8F0] last:border-0 last:pb-0">
                 <SeverityBadge severity={a.severity} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium text-[#F3F4F6] truncate">{a.titolo}</div>
-                  <div className="text-[11px] text-[#9CA3AF] line-clamp-2">{a.descrizione}</div>
+                  <div className="text-xs font-medium text-[#0F172A] truncate">{a.titolo}</div>
+                  <div className="text-[11px] text-[#475569] line-clamp-2">{a.descrizione}</div>
                 </div>
               </div>
             ))}
           </div>
         </SectionCard>
 
-        <SectionCard testId="widget-forecast" title="Liquidità 90 gg" action={<Activity size={16} className="text-[#60A5FA]" />}>
-          <div className="font-display text-3xl font-bold tabular text-[#F3F4F6]">{formatEur(168200)}</div>
-          <div className="text-xs text-[#9CA3AF] mt-1">Previsione netta forecast</div>
+        <SectionCard testId="widget-forecast" title="Liquidità 90 gg" action={<Activity size={16} className="text-[#2563EB]" />}>
+          <div className="font-display text-3xl font-bold tabular text-[#0F172A]">{formatEur(168200)}</div>
+          <div className="text-xs text-[#475569] mt-1">Previsione netta forecast</div>
           <div className="mt-4 h-12">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={[{v:142},{v:155},{v:148},{v:162},{v:168}]}>
@@ -174,17 +174,17 @@ export default function Dashboard() {
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <Link to="/cash-flow" className="text-xs text-[#60A5FA] hover:underline">Vedi forecast →</Link>
+          <Link to="/cash-flow" className="text-xs text-[#2563EB] hover:underline">Vedi forecast →</Link>
         </SectionCard>
       </div>
 
       {/* Recent properties table */}
       <SectionCard testId="dashboard-recent-properties" title="Patrimonio recente" subtitle="Ultimi immobili nel portafoglio"
-        action={<Link to="/patrimonio" className="text-xs text-[#60A5FA] hover:underline">Vedi tutti →</Link>}>
+        action={<Link to="/patrimonio" className="text-xs text-[#2563EB] hover:underline">Vedi tutti →</Link>}>
         <div className="overflow-x-auto -mx-2">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-[10px] uppercase tracking-wider text-[#6B7280] border-b border-[#212B36]">
+              <tr className="text-left text-[10px] uppercase tracking-wider text-[#64748B] border-b border-[#E2E8F0]">
                 <th className="font-medium px-2 py-2">Immobile</th>
                 <th className="font-medium px-2 py-2">Città</th>
                 <th className="font-medium px-2 py-2">Stato</th>
@@ -196,29 +196,29 @@ export default function Dashboard() {
             </thead>
             <tbody>
               {properties.slice(0, 6).map((p) => (
-                <tr key={p.id} className="border-b border-[#212B36] last:border-0 hover:bg-[#080C11]/50 transition-colors">
+                <tr key={p.id} className="border-b border-[#E2E8F0] last:border-0 hover:bg-[#F8FAFC]/50 transition-colors">
                   <td className="px-2 py-3">
-                    <Link to={`/immobile/${p.id}`} className="flex items-center gap-3 hover:text-[#60A5FA]" data-testid={`row-property-${p.id}`}>
+                    <Link to={`/immobile/${p.id}`} className="flex items-center gap-3 hover:text-[#2563EB]" data-testid={`row-property-${p.id}`}>
                       <img src={p.img} alt="" className="w-10 h-10 rounded object-cover" />
                       <div>
-                        <div className="font-medium text-[#F3F4F6]">{p.nome}</div>
-                        <div className="text-[11px] text-[#6B7280]">{p.id} · {p.metratura} m²</div>
+                        <div className="font-medium text-[#0F172A]">{p.nome}</div>
+                        <div className="text-[11px] text-[#64748B]">{p.id} · {p.metratura} m²</div>
                       </div>
                     </Link>
                   </td>
-                  <td className="px-2 py-3 text-[#9CA3AF]">{p.citta}</td>
+                  <td className="px-2 py-3 text-[#475569]">{p.citta}</td>
                   <td className="px-2 py-3"><StatusBadge stato={p.stato} /></td>
                   <td className="px-2 py-3 text-right tabular">{p.canone_mensile ? formatEur(p.canone_mensile) : "—"}</td>
                   <td className="px-2 py-3 text-right tabular">
-                    {p.rendimento_netto > 0 ? <span className="text-[#34D399]">{p.rendimento_netto}%</span> : <span className="text-[#6B7280]">—</span>}
+                    {p.rendimento_netto > 0 ? <span className="text-[#059669]">{p.rendimento_netto}%</span> : <span className="text-[#64748B]">—</span>}
                   </td>
                   <td className="px-2 py-3 text-right tabular">
-                    <span className={p.cash_flow_mensile >= 0 ? "text-[#34D399]" : "text-[#F87171]"}>
+                    <span className={p.cash_flow_mensile >= 0 ? "text-[#059669]" : "text-[#DC2626]"}>
                       {formatEur(p.cash_flow_mensile)}
                     </span>
                   </td>
                   <td className="px-2 py-3 text-right">
-                    <span className={`tabular font-medium ${p.portfolio_score >= 71 ? "text-[#34D399]" : p.portfolio_score >= 41 ? "text-[#FBBF24]" : "text-[#F87171]"}`}>
+                    <span className={`tabular font-medium ${p.portfolio_score >= 71 ? "text-[#059669]" : p.portfolio_score >= 41 ? "text-[#B45309]" : "text-[#DC2626]"}`}>
                       {p.portfolio_score}
                     </span>
                   </td>
