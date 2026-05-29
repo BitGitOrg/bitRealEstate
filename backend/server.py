@@ -2,7 +2,7 @@
 Real Estate Portfolio Control Room — Backend
 FastAPI + MongoDB + Emergent LLM (Claude Sonnet 4.6) for AI Autopilot.
 """
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -11,21 +11,22 @@ import os
 import json
 import re
 import logging
-from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict, EmailStr
-from typing import List, Optional, Literal, Any
 import uuid
+from pathlib import Path
+from typing import List, Optional, Literal
 from datetime import datetime, timezone, timedelta
+
 import bcrypt
 import jwt
 import httpx
 from bs4 import BeautifulSoup
-import io
-import openpyxl
-import pdfplumber
-import pandas as pd
-from fastapi import UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, EmailStr
+
+from routers._shared import compute_deal_score
+from routers.properties import make_properties_router
+from routers.imports import make_imports_router
+from routers.settings import make_settings_router
+from routers.reports import make_reports_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -45,28 +46,34 @@ security = HTTPBearer(auto_error=False)
 # ===== Models =====
 ROLES = Literal["admin", "ceo", "amministrazione", "commercialista", "collaboratore"]
 
+
 class UserPublic(BaseModel):
     id: str
     email: str
     name: str
     role: str
 
+
 class LoginInput(BaseModel):
     email: EmailStr
     password: str
+
 
 class TokenOut(BaseModel):
     token: str
     user: UserPublic
 
+
 class ChatMessageIn(BaseModel):
     session_id: str
     message: str
-    context: Optional[dict] = None  # optional snapshot of portfolio metrics
+    context: Optional[dict] = None
+
 
 class ChatMessageOut(BaseModel):
     reply: str
     session_id: str
+
 
 class DealAnalyzeIn(BaseModel):
     prezzo_richiesto: float
@@ -76,7 +83,8 @@ class DealAnalyzeIn(BaseModel):
     costi_accessori: Optional[float] = 0
     citta: Optional[str] = ""
     note: Optional[str] = ""
-    mutuo_pct: Optional[float] = 0  # 0..1
+    mutuo_pct: Optional[float] = 0
+
 
 class DealAnalyzeOut(BaseModel):
     deal_score: int
@@ -89,6 +97,7 @@ class DealAnalyzeOut(BaseModel):
     strategia_consigliata: str
     scenari: dict
 
+
 # ===== Demo users (seeded once) =====
 DEMO_USERS = [
     {"email": "ceo@controlroom.it", "password": "demo1234", "name": "Marco Rossi", "role": "admin"},
@@ -96,6 +105,7 @@ DEMO_USERS = [
     {"email": "commercialista@controlroom.it", "password": "demo1234", "name": "Paolo Verdi", "role": "commercialista"},
     {"email": "collaboratore@controlroom.it", "password": "demo1234", "name": "Sara Conti", "role": "collaboratore"},
 ]
+
 
 async def seed_users():
     existing = await db.users.count_documents({})
@@ -113,6 +123,7 @@ async def seed_users():
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
 
+
 # ===== Auth utilities =====
 def create_token(user: dict) -> str:
     payload = {
@@ -122,6 +133,7 @@ def create_token(user: dict) -> str:
         "exp": datetime.now(timezone.utc) + timedelta(days=7),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
+
 
 async def current_user(creds: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     if not creds:
@@ -135,10 +147,12 @@ async def current_user(creds: HTTPAuthorizationCredentials = Depends(security)) 
         raise HTTPException(status_code=401, detail="User not found")
     return user
 
+
 # ===== Routes =====
 @api_router.get("/")
 async def root():
     return {"message": "Real Estate Control Room API", "ok": True}
+
 
 @api_router.post("/auth/login", response_model=TokenOut)
 async def login(input: LoginInput):
@@ -154,13 +168,16 @@ async def login(input: LoginInput):
         user=UserPublic(id=user["id"], email=user["email"], name=user["name"], role=user["role"]),
     )
 
+
 @api_router.get("/auth/me", response_model=UserPublic)
 async def me(user: dict = Depends(current_user)):
     return UserPublic(id=user["id"], email=user["email"], name=user["name"], role=user["role"])
 
+
 @api_router.get("/auth/demo-accounts")
 async def demo_accounts():
     return [{"email": u["email"], "password": u["password"], "role": u["role"], "name": u["name"]} for u in DEMO_USERS]
+
 
 # ===== AI Autopilot — Claude Sonnet 4.6 =====
 AUTOPILOT_SYSTEM = (
@@ -172,6 +189,7 @@ AUTOPILOT_SYSTEM = (
     "Mantieni un tono da analista senior — diretto, niente fronzoli."
 )
 
+
 @api_router.post("/ai/chat", response_model=ChatMessageOut)
 async def ai_chat(input: ChatMessageIn, user: dict = Depends(current_user)):
     if not EMERGENT_LLM_KEY:
@@ -180,7 +198,6 @@ async def ai_chat(input: ChatMessageIn, user: dict = Depends(current_user)):
         from emergentintegrations.llm.chat import LlmChat, UserMessage
         sys_msg = AUTOPILOT_SYSTEM
 
-        # Enrich context with REAL data from MongoDB (overrides demo if present)
         real_props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(200)
         latest_bil = await db.bilanci.find_one({"user_id": user["id"]}, {"_id": 0}, sort=[("created_at", -1)])
         last_3_bil = await db.bilanci.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(3)
@@ -238,20 +255,19 @@ async def ai_chat(input: ChatMessageIn, user: dict = Depends(current_user)):
         logging.exception("AI chat error")
         raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
 
+
 @api_router.post("/ai/deal-analyze", response_model=DealAnalyzeOut)
 async def deal_analyze(input: DealAnalyzeIn, user: dict = Depends(current_user)):
-    # Heuristic local scoring + optional LLM enrichment for the verdict text.
     prezzo = input.prezzo_richiesto
     lavori = input.lavori_previsti or 0
     accessori = input.costi_accessori or 0
     costo_totale = prezzo + lavori + accessori
     canone = input.canone_stimato or 0
     rendimento_lordo = (canone * 12) / costo_totale * 100 if costo_totale > 0 else 0
-    # Heuristic: net ≈ lordo * 0.65 (taxes/condo/maint)
     rendimento_netto = rendimento_lordo * 0.65
 
     score = 50
-    score += min(30, max(-30, (rendimento_netto - 5) * 6))  # +/- 30 around 5% target
+    score += min(30, max(-30, (rendimento_netto - 5) * 6))
     if lavori > 0 and lavori / prezzo > 0.5:
         score -= 10
     if input.mutuo_pct and input.mutuo_pct > 0.8:
@@ -260,14 +276,18 @@ async def deal_analyze(input: DealAnalyzeIn, user: dict = Depends(current_user))
         score -= 15
     score = max(0, min(100, int(score)))
 
-    if score >= 91: giudizio, strategia = "Operazione eccellente", "Affitto a reddito"
-    elif score >= 76: giudizio, strategia = "Buona operazione", "Affitto a reddito"
-    elif score >= 61: giudizio, strategia = "Operazione interessante", "Valutare ristrutturazione+vendita"
-    elif score >= 41: giudizio, strategia = "Operazione rischiosa", "Negoziare prezzo o passare"
-    else: giudizio, strategia = "Operazione sconsigliata", "Non procedere"
+    if score >= 91:
+        giudizio, strategia = "Operazione eccellente", "Affitto a reddito"
+    elif score >= 76:
+        giudizio, strategia = "Buona operazione", "Affitto a reddito"
+    elif score >= 61:
+        giudizio, strategia = "Operazione interessante", "Valutare ristrutturazione+vendita"
+    elif score >= 41:
+        giudizio, strategia = "Operazione rischiosa", "Negoziare prezzo o passare"
+    else:
+        giudizio, strategia = "Operazione sconsigliata", "Non procedere"
 
     rischio = "Basso" if score >= 75 else ("Medio" if score >= 50 else "Alto")
-    # Prezzo max consigliato: per centrare un netto del 6%
     target_netto = 6.0
     if canone > 0:
         prezzo_max = (canone * 12) / (target_netto / 100) / 0.65 - lavori - accessori
@@ -276,11 +296,16 @@ async def deal_analyze(input: DealAnalyzeIn, user: dict = Depends(current_user))
         prezzo_max = prezzo * 0.85
 
     punti = []
-    if canone == 0: punti.append("Canone stimato mancante: difficile calcolare rendimento.")
-    if lavori / max(prezzo, 1) > 0.3: punti.append(f"Lavori importanti ({lavori/prezzo*100:.0f}% del prezzo): rischio scostamento budget.")
-    if rendimento_netto < 4: punti.append(f"Rendimento netto stimato {rendimento_netto:.1f}% sotto soglia 4%.")
-    if input.mutuo_pct and input.mutuo_pct > 0.7: punti.append(f"Leva alta ({input.mutuo_pct*100:.0f}%): rata potenzialmente vicina al canone.")
-    if not punti: punti.append("Nessuna criticità rilevata sui parametri inseriti.")
+    if canone == 0:
+        punti.append("Canone stimato mancante: difficile calcolare rendimento.")
+    if lavori / max(prezzo, 1) > 0.3:
+        punti.append(f"Lavori importanti ({lavori/prezzo*100:.0f}% del prezzo): rischio scostamento budget.")
+    if rendimento_netto < 4:
+        punti.append(f"Rendimento netto stimato {rendimento_netto:.1f}% sotto soglia 4%.")
+    if input.mutuo_pct and input.mutuo_pct > 0.7:
+        punti.append(f"Leva alta ({input.mutuo_pct*100:.0f}%): rata potenzialmente vicina al canone.")
+    if not punti:
+        punti.append("Nessuna criticità rilevata sui parametri inseriti.")
 
     scenari = {
         "ottimistico": {"rendimento_netto": round(rendimento_netto * 1.2, 2), "note": "Canone +10%, lavori a budget."},
@@ -288,16 +313,14 @@ async def deal_analyze(input: DealAnalyzeIn, user: dict = Depends(current_user))
         "pessimistico": {"rendimento_netto": round(rendimento_netto * 0.7, 2), "note": "Sfitto 2 mesi/anno, lavori +20%."},
     }
     return DealAnalyzeOut(
-        deal_score=score,
-        giudizio=giudizio,
+        deal_score=score, giudizio=giudizio,
         prezzo_massimo_consigliato=round(prezzo_max, 0),
         rendimento_lordo=round(rendimento_lordo, 2),
         rendimento_netto_stimato=round(rendimento_netto, 2),
-        rischio=rischio,
-        punti_attenzione=punti,
-        strategia_consigliata=strategia,
-        scenari=scenari,
+        rischio=rischio, punti_attenzione=punti,
+        strategia_consigliata=strategia, scenari=scenari,
     )
+
 
 @api_router.get("/ai/history/{session_id}")
 async def ai_history(session_id: str, user: dict = Depends(current_user)):
@@ -306,6 +329,7 @@ async def ai_history(session_id: str, user: dict = Depends(current_user)):
         {"_id": 0}
     ).sort("ts", 1).to_list(200)
     return msgs
+
 
 # ============================================================
 # ===== Deal Inbox + AI Scout + Watchlists =====
@@ -316,6 +340,7 @@ class DealAnalyzeRequest(BaseModel):
     text: Optional[str] = None
     note: Optional[str] = None
 
+
 class WatchlistIn(BaseModel):
     nome: str
     citta: Optional[str] = None
@@ -325,8 +350,10 @@ class WatchlistIn(BaseModel):
     rendimento_min: Optional[float] = None
     attiva: bool = True
 
+
 class DealStatusUpdate(BaseModel):
     status: Literal["nuovo", "interessato", "scartato", "in_trattativa"]
+
 
 def strip_html(html: str, limit: int = 8000) -> str:
     soup = BeautifulSoup(html, "lxml")
@@ -336,16 +363,18 @@ def strip_html(html: str, limit: int = 8000) -> str:
     text = re.sub(r"\s+", " ", text)
     return text[:limit]
 
+
 async def fetch_url_text(url: str) -> str:
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
         "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
     }
-    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, headers=headers) as client:
-        r = await client.get(url)
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, headers=headers) as cli:
+        r = await cli.get(url)
         if r.status_code >= 400:
             raise HTTPException(status_code=400, detail=f"Impossibile scaricare l'annuncio (HTTP {r.status_code}). Prova a incollare il testo dell'annuncio.")
         return strip_html(r.text)
+
 
 DEAL_EXTRACT_PROMPT = (
     "Sei un sistema di estrazione dati da annunci immobiliari italiani. "
@@ -371,47 +400,26 @@ DEAL_EXTRACT_PROMPT = (
     "Il canone_stimato deve essere SEMPRE > 0."
 )
 
-def compute_deal_score(prezzo: float, metratura: float, canone: float, citta: str) -> dict:
-    costo_totale = prezzo * 1.10  # +10% costi accessori stimati
-    rend_lordo = (canone * 12) / costo_totale * 100 if costo_totale > 0 else 0
-    rend_netto = rend_lordo * 0.65
-    score = 50 + min(30, max(-30, (rend_netto - 5) * 6))
-    if prezzo > 0 and metratura > 0:
-        prezzo_mq = prezzo / metratura
-        # Penalize >5500/mq big cities, >3500 small
-        big_city = citta.lower() in {"milano", "roma", "firenze", "venezia", "bologna"}
-        soglia = 5500 if big_city else 3500
-        if prezzo_mq > soglia * 1.3: score -= 12
-        elif prezzo_mq < soglia * 0.7: score += 8
-    score = max(0, min(100, int(score)))
-    if score >= 91: giudizio, strategia = "Operazione eccellente", "Affitto a reddito"
-    elif score >= 76: giudizio, strategia = "Buona operazione", "Affitto a reddito"
-    elif score >= 61: giudizio, strategia = "Operazione interessante", "Valutare lavori+rivendita"
-    elif score >= 41: giudizio, strategia = "Operazione rischiosa", "Negoziare prezzo"
-    else: giudizio, strategia = "Operazione sconsigliata", "Non procedere"
-    rischio = "Basso" if score >= 75 else ("Medio" if score >= 50 else "Alto")
-    return {
-        "deal_score": score,
-        "giudizio": giudizio,
-        "strategia": strategia,
-        "rischio": rischio,
-        "rendimento_lordo": round(rend_lordo, 2),
-        "rendimento_netto": round(rend_netto, 2),
-    }
 
 async def match_watchlists(user_id: str, deal: dict) -> list:
     wls = await db.watchlists.find({"user_id": user_id, "attiva": True}, {"_id": 0}).to_list(50)
     matches = []
     for w in wls:
         ok = True
-        if w.get("citta") and deal.get("citta", "").lower() != w["citta"].lower(): ok = False
-        if w.get("tipologia") and deal.get("tipologia") != w["tipologia"]: ok = False
-        if w.get("prezzo_max") and deal.get("prezzo", 0) > w["prezzo_max"]: ok = False
-        if w.get("metratura_min") and deal.get("metratura", 0) < w["metratura_min"]: ok = False
-        if w.get("rendimento_min") and deal.get("rendimento_netto", 0) < w["rendimento_min"]: ok = False
+        if w.get("citta") and deal.get("citta", "").lower() != w["citta"].lower():
+            ok = False
+        if w.get("tipologia") and deal.get("tipologia") != w["tipologia"]:
+            ok = False
+        if w.get("prezzo_max") and deal.get("prezzo", 0) > w["prezzo_max"]:
+            ok = False
+        if w.get("metratura_min") and deal.get("metratura", 0) < w["metratura_min"]:
+            ok = False
+        if w.get("rendimento_min") and deal.get("rendimento_netto", 0) < w["rendimento_min"]:
+            ok = False
         if ok:
             matches.append({"id": w["id"], "nome": w["nome"]})
     return matches
+
 
 @api_router.post("/deals/analyze")
 async def deals_analyze(req: DealAnalyzeRequest, user: dict = Depends(current_user)):
@@ -437,19 +445,19 @@ async def deals_analyze(req: DealAnalyzeRequest, user: dict = Depends(current_us
         logging.exception("LLM extract error")
         raise HTTPException(status_code=500, detail=f"Errore estrazione AI: {str(e)}")
 
-    # Robust JSON extraction
     parsed = None
     try:
         parsed = json.loads(reply)
     except Exception:
         m = re.search(r"\{[\s\S]*\}", reply)
         if m:
-            try: parsed = json.loads(m.group(0))
-            except Exception: parsed = None
+            try:
+                parsed = json.loads(m.group(0))
+            except Exception:
+                parsed = None
     if not parsed:
         raise HTTPException(status_code=500, detail="L'AI non ha restituito JSON valido. Riprova.")
 
-    # Compute deal score
     prezzo_val = float(parsed.get("prezzo", 0) or 0)
     if prezzo_val <= 0:
         raise HTTPException(
@@ -466,8 +474,7 @@ async def deals_analyze(req: DealAnalyzeRequest, user: dict = Depends(current_us
     deal = {
         "id": str(uuid.uuid4()),
         "user_id": user["id"],
-        "source_url": req.url,
-        "note": req.note,
+        "source_url": req.url, "note": req.note,
         "titolo": parsed.get("titolo", "Annuncio senza titolo"),
         "prezzo": float(parsed.get("prezzo", 0) or 0),
         "metratura": float(parsed.get("metratura", 0) or 0),
@@ -492,12 +499,15 @@ async def deals_analyze(req: DealAnalyzeRequest, user: dict = Depends(current_us
     deal.pop("_id", None)
     return deal
 
+
 @api_router.get("/deals")
 async def list_deals(status: Optional[str] = None, user: dict = Depends(current_user)):
     q = {"user_id": user["id"]}
-    if status: q["status"] = status
+    if status:
+        q["status"] = status
     items = await db.deals.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
     return items
+
 
 @api_router.patch("/deals/{deal_id}/status")
 async def update_deal_status(deal_id: str, upd: DealStatusUpdate, user: dict = Depends(current_user)):
@@ -510,15 +520,18 @@ async def update_deal_status(deal_id: str, upd: DealStatusUpdate, user: dict = D
     deal = await db.deals.find_one({"id": deal_id}, {"_id": 0})
     return deal
 
+
 @api_router.delete("/deals/{deal_id}")
 async def delete_deal(deal_id: str, user: dict = Depends(current_user)):
     await db.deals.delete_one({"id": deal_id, "user_id": user["id"]})
     return {"ok": True}
 
+
 @api_router.get("/watchlists")
 async def list_watchlists(user: dict = Depends(current_user)):
     items = await db.watchlists.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(50)
     return items
+
 
 @api_router.post("/watchlists")
 async def create_watchlist(w: WatchlistIn, user: dict = Depends(current_user)):
@@ -532,10 +545,12 @@ async def create_watchlist(w: WatchlistIn, user: dict = Depends(current_user)):
     item.pop("_id", None)
     return item
 
+
 @api_router.delete("/watchlists/{wid}")
 async def delete_watchlist(wid: str, user: dict = Depends(current_user)):
     await db.watchlists.delete_one({"id": wid, "user_id": user["id"]})
     return {"ok": True}
+
 
 @api_router.patch("/watchlists/{wid}")
 async def toggle_watchlist(wid: str, attiva: bool, user: dict = Depends(current_user)):
@@ -545,708 +560,13 @@ async def toggle_watchlist(wid: str, attiva: bool, user: dict = Depends(current_
     )
     return {"ok": True}
 
-class PropertyIn(BaseModel):
-    nome: str
-    indirizzo: Optional[str] = ""
-    citta: Optional[str] = ""
-    provincia: Optional[str] = ""
-    tipologia: Optional[str] = "Altro"
-    metratura: Optional[float] = 0
-    piano: Optional[str] = ""
-    anno_costruzione: Optional[int] = 0
-    classe_energetica: Optional[str] = ""
-    stato: Optional[str] = "acquistato"
-    operazione: Optional[str] = "reddito"
-    prezzo_acquisto: float = 0
-    notaio: Optional[float] = 0
-    agenzia: Optional[float] = 0
-    imposte: Optional[float] = 0
-    lavori: Optional[float] = 0
-    valore_stimato: Optional[float] = 0
-    canone_mensile: Optional[float] = 0
-    data_acquisto: Optional[str] = None
-    note: Optional[str] = ""
-    mutuo: Optional[dict] = None
-    img: Optional[str] = "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?crop=entropy&cs=srgb&fm=jpg&w=800"
-
-class ConvertDealIn(BaseModel):
-    # Optional overrides at conversion time
-    data_acquisto: Optional[str] = None
-    notaio: Optional[float] = 0
-    agenzia: Optional[float] = 0
-    imposte: Optional[float] = 0
-    lavori: Optional[float] = 0
-    stato: Optional[str] = "acquistato"
-    operazione: Optional[str] = "reddito"
-    mutuo: Optional[dict] = None
-    note: Optional[str] = ""
-
-def _enrich_property(p: dict) -> dict:
-    """Compute derived metrics for a property."""
-    prezzo = float(p.get("prezzo_acquisto", 0) or 0)
-    notaio = float(p.get("notaio", 0) or 0)
-    agenzia = float(p.get("agenzia", 0) or 0)
-    imposte = float(p.get("imposte", 0) or 0)
-    lavori = float(p.get("lavori", 0) or 0)
-    canone = float(p.get("canone_mensile", 0) or 0)
-    costo_totale = prezzo + notaio + agenzia + imposte + lavori
-    p["costo_totale"] = costo_totale
-    if not p.get("valore_stimato"):
-        p["valore_stimato"] = prezzo
-    rend_lordo = (canone * 12) / costo_totale * 100 if costo_totale > 0 else 0
-    rend_netto = rend_lordo * 0.65
-    p["rendimento_lordo"] = round(rend_lordo, 2)
-    p["rendimento_netto"] = round(rend_netto, 2)
-    mutuo_rata = float((p.get("mutuo") or {}).get("rata", 0) or 0)
-    p["cash_flow_mensile"] = round(canone - mutuo_rata - canone * 0.15, 0)
-    # Portfolio score reuse of deal scoring
-    sc = compute_deal_score(prezzo, float(p.get("metratura", 0) or 0), canone, p.get("citta", "") or "")
-    p["portfolio_score"] = sc["deal_score"]
-    return p
-
-@api_router.get("/properties")
-async def list_properties(user: dict = Depends(current_user)):
-    items = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
-    return [_enrich_property(p) for p in items]
-
-@api_router.get("/properties/{pid}")
-async def get_property(pid: str, user: dict = Depends(current_user)):
-    p = await db.properties.find_one({"id": pid, "user_id": user["id"]}, {"_id": 0})
-    if not p:
-        raise HTTPException(status_code=404, detail="Immobile non trovato")
-    return _enrich_property(p)
-
-@api_router.post("/properties")
-async def create_property(p: PropertyIn, user: dict = Depends(current_user)):
-    item = {
-        "id": f"IMM-{uuid.uuid4().hex[:6].upper()}",
-        "user_id": user["id"],
-        **p.model_dump(),
-        "fromDeal": False,
-        "deal_id": None,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    await db.properties.insert_one(item.copy())
-    item.pop("_id", None)
-    return _enrich_property(item)
-
-@api_router.delete("/properties/{pid}")
-async def delete_property(pid: str, user: dict = Depends(current_user)):
-    await db.properties.delete_one({"id": pid, "user_id": user["id"]})
-    return {"ok": True}
-
-@api_router.post("/deals/{deal_id}/convert")
-async def convert_deal_to_property(deal_id: str, ov: ConvertDealIn, user: dict = Depends(current_user)):
-    """Convert a deal into a real Patrimonio property — supports both one-click (no overrides)
-    and detailed (with overrides) modes."""
-    deal = await db.deals.find_one({"id": deal_id, "user_id": user["id"]}, {"_id": 0})
-    if not deal:
-        raise HTTPException(status_code=404, detail="Deal non trovato")
-    # Build property from deal + overrides
-    today = datetime.now(timezone.utc).date().isoformat()
-    item = {
-        "id": f"IMM-{uuid.uuid4().hex[:6].upper()}",
-        "user_id": user["id"],
-        "nome": deal.get("titolo", "Immobile da deal"),
-        "indirizzo": deal.get("zona", ""),
-        "citta": deal.get("citta", ""),
-        "provincia": "",
-        "tipologia": deal.get("tipologia", "Altro"),
-        "metratura": float(deal.get("metratura", 0) or 0),
-        "piano": deal.get("piano", ""),
-        "anno_costruzione": int(deal.get("anno_costruzione", 0) or 0),
-        "classe_energetica": deal.get("classe_energetica", ""),
-        "stato": ov.stato or "acquistato",
-        "operazione": ov.operazione or "reddito",
-        "prezzo_acquisto": float(deal.get("prezzo", 0) or 0),
-        "notaio": float(ov.notaio or 0),
-        "agenzia": float(ov.agenzia or 0),
-        "imposte": float(ov.imposte or 0),
-        "lavori": float(ov.lavori or 0),
-        "valore_stimato": float(deal.get("prezzo", 0) or 0),
-        "canone_mensile": float(deal.get("canone_stimato", 0) or 0),
-        "data_acquisto": ov.data_acquisto or today,
-        "mutuo": ov.mutuo,
-        "note": ov.note or deal.get("descrizione_breve", ""),
-        "img": "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?crop=entropy&cs=srgb&fm=jpg&w=800",
-        "fromDeal": True,
-        "deal_id": deal_id,
-        "deal_score": deal.get("deal_score"),
-        "punti_forza": deal.get("punti_forza", []),
-        "punti_attenzione": deal.get("punti_attenzione", []),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    await db.properties.insert_one(item.copy())
-    # Mark the deal as converted (status = acquistato-like)
-    await db.deals.update_one(
-        {"id": deal_id, "user_id": user["id"]},
-        {"$set": {"status": "convertito", "converted_property_id": item["id"], "updated_at": datetime.now(timezone.utc).isoformat()}},
-    )
-    item.pop("_id", None)
-    return _enrich_property(item)
-
-# ============================================================
-# ===== Centro Import (Immobili / Bilanci / Estratto Conto) =====
-# ============================================================
-
-IMMOBILI_COLUMNS = [
-    "Nome immobile", "Indirizzo", "Città", "Provincia", "Tipologia", "Metratura (m²)",
-    "Piano", "Anno costruzione", "Classe energetica", "Stato",
-    "Data acquisto (YYYY-MM-DD)", "Prezzo acquisto (€)", "Notaio (€)", "Agenzia (€)",
-    "Imposte (€)", "Lavori (€)", "Valore stimato (€)", "Canone mensile (€)",
-    "Banca mutuo", "Capitale residuo (€)", "Rata mutuo (€)", "Tasso mutuo (%)",
-    "Note",
-]
-
-IMMOBILI_EXAMPLE_ROW = [
-    "Bilocale Navigli", "Via Vigevano 12", "Milano", "MI", "Bilocale", 58,
-    "2", 1972, "D", "affittato",
-    "2022-03-15", 215000, 4200, 6500,
-    8900, 18000, 285000, 1450,
-    "Intesa Sanpaolo", 95000, 540, 2.8,
-    "Esempio — sostituisci con i tuoi dati",
-]
-
-@api_router.get("/import/template/immobili")
-async def download_immobili_template(user: dict = Depends(current_user)):
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Immobili"
-    # header
-    for i, col in enumerate(IMMOBILI_COLUMNS, 1):
-        c = ws.cell(row=1, column=i, value=col)
-        c.font = openpyxl.styles.Font(bold=True, color="FFFFFF")
-        c.fill = openpyxl.styles.PatternFill("solid", fgColor="0066FF")
-        c.alignment = openpyxl.styles.Alignment(horizontal="center", vertical="center", wrap_text=True)
-        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = max(16, len(col) + 2)
-    ws.row_dimensions[1].height = 32
-    # example row
-    for i, v in enumerate(IMMOBILI_EXAMPLE_ROW, 1):
-        ws.cell(row=2, column=i, value=v).font = openpyxl.styles.Font(italic=True, color="64748B")
-    # freeze header
-    ws.freeze_panes = "A2"
-    # legend sheet
-    ws2 = wb.create_sheet("Istruzioni")
-    ws2["A1"] = "Istruzioni compilazione template immobili"
-    ws2["A1"].font = openpyxl.styles.Font(bold=True, size=14)
-    notes = [
-        "1. La prima riga è la riga di intestazione: NON modificarla.",
-        "2. La seconda riga è un esempio: cancellala o sovrascrivila.",
-        "3. Campi obbligatori: Nome immobile, Prezzo acquisto.",
-        "4. Tipologia: Bilocale, Trilocale, Quadrilocale, Monolocale, Villa, Loft, Attico, Altro.",
-        "5. Stato: in_valutazione, in_trattativa, acquistato, in_ristrutturazione, disponibile, affittato, sfitto, in_vendita, venduto.",
-        "6. Date in formato YYYY-MM-DD (es. 2024-03-15).",
-        "7. Importi senza simbolo €, usa il punto come separatore decimale (es. 1450.00).",
-        "8. Se l'immobile non ha mutuo lascia vuoti i 4 campi mutuo.",
-    ]
-    for i, n in enumerate(notes, 3):
-        ws2.cell(row=i, column=1, value=n)
-    ws2.column_dimensions["A"].width = 90
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return StreamingResponse(
-        buf,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="template_immobili_control_room.xlsx"'},
-    )
-
-def _coerce_float(v):
-    if v is None or v == "": return 0.0
-    if isinstance(v, (int, float)): return float(v)
-    try: return float(str(v).replace("€", "").replace(",", ".").replace(" ", "").strip())
-    except Exception: return 0.0
-
-def _coerce_int(v):
-    try: return int(_coerce_float(v))
-    except Exception: return 0
-
-def _coerce_str(v):
-    if v is None: return ""
-    return str(v).strip()
-
-@api_router.post("/import/immobili/parse")
-async def parse_immobili(file: UploadFile = File(...), user: dict = Depends(current_user)):
-    content = await file.read()
-    try:
-        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
-        ws = wb["Immobili"] if "Immobili" in wb.sheetnames else wb.active
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"File Excel non valido: {str(e)}")
-
-    rows = []
-    errors_total = 0
-    for row_idx in range(2, ws.max_row + 1):
-        cells = [ws.cell(row=row_idx, column=i).value for i in range(1, len(IMMOBILI_COLUMNS) + 1)]
-        if not any(cells): continue  # skip empty
-        nome = _coerce_str(cells[0])
-        if not nome: continue
-        prezzo = _coerce_float(cells[11])
-        warnings = []
-        if prezzo <= 0: warnings.append("Prezzo acquisto mancante o non valido")
-        item = {
-            "_row": row_idx,
-            "nome": nome,
-            "indirizzo": _coerce_str(cells[1]),
-            "citta": _coerce_str(cells[2]),
-            "provincia": _coerce_str(cells[3]),
-            "tipologia": _coerce_str(cells[4]) or "Altro",
-            "metratura": _coerce_float(cells[5]),
-            "piano": _coerce_str(cells[6]),
-            "anno_costruzione": _coerce_int(cells[7]),
-            "classe_energetica": _coerce_str(cells[8]),
-            "stato": _coerce_str(cells[9]) or "acquistato",
-            "data_acquisto": _coerce_str(cells[10]),
-            "prezzo_acquisto": prezzo,
-            "notaio": _coerce_float(cells[12]),
-            "agenzia": _coerce_float(cells[13]),
-            "imposte": _coerce_float(cells[14]),
-            "lavori": _coerce_float(cells[15]),
-            "valore_stimato": _coerce_float(cells[16]) or prezzo,
-            "canone_mensile": _coerce_float(cells[17]),
-            "mutuo_banca": _coerce_str(cells[18]),
-            "mutuo_residuo": _coerce_float(cells[19]),
-            "mutuo_rata": _coerce_float(cells[20]),
-            "mutuo_tasso": _coerce_float(cells[21]),
-            "note": _coerce_str(cells[22]),
-            "warnings": warnings,
-            "valid": len(warnings) == 0,
-        }
-        if warnings: errors_total += 1
-        rows.append(item)
-    return {
-        "filename": file.filename,
-        "total_rows": len(rows),
-        "valid_rows": sum(1 for r in rows if r["valid"]),
-        "rows_with_warnings": errors_total,
-        "rows": rows,
-    }
-
-class ImportImmobiliCommit(BaseModel):
-    rows: List[dict]
-
-@api_router.post("/import/immobili/commit")
-async def commit_immobili(payload: ImportImmobiliCommit, user: dict = Depends(current_user)):
-    created = []
-    for r in payload.rows:
-        if not r.get("valid", True): continue
-        mutuo = None
-        if r.get("mutuo_banca") and r.get("mutuo_residuo"):
-            mutuo = {
-                "banca": r["mutuo_banca"],
-                "residuo": float(r.get("mutuo_residuo", 0) or 0),
-                "rata": float(r.get("mutuo_rata", 0) or 0),
-                "tasso": float(r.get("mutuo_tasso", 0) or 0),
-            }
-        item = {
-            "id": f"IMM-{uuid.uuid4().hex[:6].upper()}",
-            "user_id": user["id"],
-            "nome": r["nome"],
-            "indirizzo": r.get("indirizzo", ""),
-            "citta": r.get("citta", ""),
-            "provincia": r.get("provincia", ""),
-            "tipologia": r.get("tipologia", "Altro"),
-            "metratura": float(r.get("metratura", 0) or 0),
-            "piano": r.get("piano", ""),
-            "anno_costruzione": int(r.get("anno_costruzione", 0) or 0),
-            "classe_energetica": r.get("classe_energetica", ""),
-            "stato": r.get("stato", "acquistato"),
-            "operazione": "reddito" if r.get("canone_mensile", 0) > 0 else "compra_vendi",
-            "prezzo_acquisto": float(r.get("prezzo_acquisto", 0) or 0),
-            "notaio": float(r.get("notaio", 0) or 0),
-            "agenzia": float(r.get("agenzia", 0) or 0),
-            "imposte": float(r.get("imposte", 0) or 0),
-            "lavori": float(r.get("lavori", 0) or 0),
-            "valore_stimato": float(r.get("valore_stimato", 0) or 0) or float(r.get("prezzo_acquisto", 0) or 0),
-            "canone_mensile": float(r.get("canone_mensile", 0) or 0),
-            "data_acquisto": r.get("data_acquisto", ""),
-            "mutuo": mutuo,
-            "note": r.get("note", ""),
-            "img": "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?crop=entropy&cs=srgb&fm=jpg&w=800",
-            "fromDeal": False,
-            "deal_id": None,
-            "source": "import_excel",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        await db.properties.insert_one(item.copy())
-        item.pop("_id", None)
-        created.append(_enrich_property(item))
-    return {"created": len(created), "items": created}
-
-# ----- Bilanci (AI Reader) -----
-
-BILANCIO_EXTRACT_PROMPT = (
-    "Sei un sistema di estrazione dati da bilanci di società immobiliari italiane (Conto Economico + Stato Patrimoniale, "
-    "tipicamente esportati da gestionali tipo Arca, Zucchetti, TeamSystem). "
-    "Rispondi SOLO con JSON valido, niente prefissi, niente markdown. Schema:\n"
-    '{\n'
-    '  "periodo": "string es: Gennaio 2026 oppure Q1 2026 oppure 2025",\n'
-    '  "tipo": "provvisorio|definitivo",\n'
-    '  "conto_economico": {\n'
-    '    "ricavi_affitti": numero,\n'
-    '    "ricavi_vendite": numero,\n'
-    '    "altri_ricavi": numero,\n'
-    '    "totale_ricavi": numero,\n'
-    '    "costi_gestione": numero,\n'
-    '    "costi_manutenzione": numero,\n'
-    '    "imu": numero,\n'
-    '    "interessi_mutui": numero,\n'
-    '    "ammortamenti": numero,\n'
-    '    "altri_costi": numero,\n'
-    '    "totale_costi": numero,\n'
-    '    "utile_netto": numero\n'
-    '  },\n'
-    '  "stato_patrimoniale": {\n'
-    '    "valore_immobili": numero,\n'
-    '    "liquidita": numero,\n'
-    '    "crediti": numero,\n'
-    '    "totale_attivo": numero,\n'
-    '    "debito_mutui": numero,\n'
-    '    "altri_debiti": numero,\n'
-    '    "totale_passivo": numero,\n'
-    '    "patrimonio_netto": numero\n'
-    '  },\n'
-    '  "note_estrazione": "stringa breve con eventuali avvertenze"\n'
-    "}\n"
-    "Se un valore non è presente, metti 0. Gli importi sono in EUR. Se vedi importi in migliaia (k€), convertili in euro."
-)
-
-def _extract_text_from_upload(content: bytes, filename: str) -> str:
-    fl = filename.lower()
-    if fl.endswith(".pdf"):
-        try:
-            with pdfplumber.open(io.BytesIO(content)) as pdf:
-                text = "\n".join((p.extract_text() or "") for p in pdf.pages[:20])
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"PDF non leggibile: {str(e)}")
-        return text[:30000]
-    if fl.endswith((".xlsx", ".xls")):
-        try:
-            wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Excel non leggibile: {str(e)}")
-        parts = []
-        for sn in wb.sheetnames[:5]:
-            ws = wb[sn]
-            parts.append(f"## Foglio: {sn}")
-            for row in ws.iter_rows(values_only=True, max_row=200):
-                line = " | ".join(str(c) if c is not None else "" for c in row)
-                if line.strip(" |"): parts.append(line)
-        return "\n".join(parts)[:30000]
-    if fl.endswith(".csv"):
-        try:
-            text = content.decode("utf-8", errors="ignore")
-        except Exception:
-            text = content.decode("latin-1", errors="ignore")
-        return text[:30000]
-    # fallback: treat as text
-    return content.decode("utf-8", errors="ignore")[:30000]
-
-@api_router.post("/import/bilancio/parse")
-async def parse_bilancio(file: UploadFile = File(...), user: dict = Depends(current_user)):
-    if not EMERGENT_LLM_KEY:
-        raise HTTPException(status_code=500, detail="LLM key non configurata")
-    content = await file.read()
-    text = _extract_text_from_upload(content, file.filename or "")
-    if not text.strip():
-        raise HTTPException(status_code=400, detail="Impossibile estrarre testo dal file.")
-    try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"bilancio-{uuid.uuid4()}",
-            system_message=BILANCIO_EXTRACT_PROMPT,
-        ).with_model("anthropic", "claude-sonnet-4-6")
-        reply = await chat.send_message(UserMessage(text=text))
-    except Exception as e:
-        logging.exception("AI bilancio error")
-        raise HTTPException(status_code=500, detail=f"Errore AI: {str(e)}")
-    parsed = None
-    try: parsed = json.loads(reply)
-    except Exception:
-        m = re.search(r"\{[\s\S]*\}", reply)
-        if m:
-            try: parsed = json.loads(m.group(0))
-            except Exception: parsed = None
-    if not parsed:
-        raise HTTPException(status_code=500, detail="L'AI non ha restituito JSON valido.")
-    parsed["_filename"] = file.filename
-    return parsed
-
-class BilancioCommit(BaseModel):
-    periodo: str
-    tipo: Optional[str] = "provvisorio"
-    conto_economico: dict
-    stato_patrimoniale: dict
-    note_estrazione: Optional[str] = ""
-    filename: Optional[str] = ""
-
-@api_router.post("/import/bilancio/commit")
-async def commit_bilancio(b: BilancioCommit, user: dict = Depends(current_user)):
-    item = {
-        "id": str(uuid.uuid4()),
-        "user_id": user["id"],
-        **b.model_dump(),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    await db.bilanci.insert_one(item.copy())
-    item.pop("_id", None)
-    return item
-
-@api_router.get("/import/bilanci")
-async def list_bilanci(user: dict = Depends(current_user)):
-    items = await db.bilanci.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(50)
-    return items
-
-@api_router.get("/import/bilanci/storico")
-async def storico_bilanci(user: dict = Depends(current_user)):
-    """Bilanci storici con confronto Mese su Mese (variazioni € e %)."""
-    items = await db.bilanci.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(50)
-    if not items:
-        return {"bilanci": [], "evoluzione": []}
-
-    # Sort by periodo cronologicamente (parse Italian months)
-    MESI_IT = {"gennaio":1,"febbraio":2,"marzo":3,"aprile":4,"maggio":5,"giugno":6,
-               "luglio":7,"agosto":8,"settembre":9,"ottobre":10,"novembre":11,"dicembre":12}
-    def periodo_key(b):
-        p = (b.get("periodo") or "").lower().strip()
-        # Try "Mese AAAA"
-        for name, num in MESI_IT.items():
-            if name in p:
-                m = re.search(r"(20\d{2})", p)
-                year = int(m.group(1)) if m else 0
-                return (year, num)
-        # Try "Q1 2026" / "Q2 2026"
-        m = re.search(r"q(\d)\s*(20\d{2})", p)
-        if m: return (int(m.group(2)), int(m.group(1)) * 3)
-        # Try year only "2025"
-        m = re.search(r"(20\d{2})", p)
-        if m: return (int(m.group(1)), 0)
-        return (0, 0)
-
-    items_sorted_old_to_new = sorted(items, key=periodo_key)  # ascending by periodo
-
-    METRICS_CE = ["totale_ricavi", "ricavi_affitti", "totale_costi", "utile_netto"]
-    METRICS_SP = ["valore_immobili", "debito_mutui", "liquidita", "patrimonio_netto"]
-
-    def delta(curr, prev):
-        if prev is None or prev == 0:
-            return {"abs": curr, "pct": None}
-        return {"abs": round(curr - prev, 2), "pct": round((curr - prev) / prev * 100, 2)}
-
-    enriched = []
-    sorted_old_to_new = items_sorted_old_to_new  # use period-based order
-    for i, b in enumerate(sorted_old_to_new):
-        prev = sorted_old_to_new[i - 1] if i > 0 else None
-        ce = b.get("conto_economico", {}) or {}
-        sp = b.get("stato_patrimoniale", {}) or {}
-        diff_ce = {}
-        diff_sp = {}
-        if prev:
-            prev_ce = prev.get("conto_economico", {}) or {}
-            prev_sp = prev.get("stato_patrimoniale", {}) or {}
-            for k in METRICS_CE: diff_ce[k] = delta(float(ce.get(k, 0) or 0), float(prev_ce.get(k, 0) or 0))
-            for k in METRICS_SP: diff_sp[k] = delta(float(sp.get(k, 0) or 0), float(prev_sp.get(k, 0) or 0))
-        enriched.append({
-            "id": b["id"], "periodo": b.get("periodo"), "tipo": b.get("tipo"),
-            "created_at": b.get("created_at"),
-            "conto_economico": ce, "stato_patrimoniale": sp,
-            "diff_ce": diff_ce, "diff_sp": diff_sp,
-        })
-
-    evoluzione = [
-        {
-            "periodo": b["periodo"],
-            "totale_ricavi": float((b["conto_economico"] or {}).get("totale_ricavi", 0) or 0),
-            "totale_costi": float((b["conto_economico"] or {}).get("totale_costi", 0) or 0),
-            "utile_netto": float((b["conto_economico"] or {}).get("utile_netto", 0) or 0),
-            "patrimonio_netto": float((b["stato_patrimoniale"] or {}).get("patrimonio_netto", 0) or 0),
-            "valore_immobili": float((b["stato_patrimoniale"] or {}).get("valore_immobili", 0) or 0),
-            "debito_mutui": float((b["stato_patrimoniale"] or {}).get("debito_mutui", 0) or 0),
-        }
-        for b in sorted_old_to_new
-    ]
-
-    return {
-        "bilanci": list(reversed(enriched)),  # newest first
-        "evoluzione": evoluzione,
-    }
-
-@api_router.get("/import/bilanci/latest")
-async def latest_bilancio(user: dict = Depends(current_user)):
-    item = await db.bilanci.find_one({"user_id": user["id"]}, {"_id": 0}, sort=[("created_at", -1)])
-    return item or {}
-
-@api_router.delete("/import/bilanci/{bid}")
-async def delete_bilancio(bid: str, user: dict = Depends(current_user)):
-    await db.bilanci.delete_one({"id": bid, "user_id": user["id"]})
-    return {"ok": True}
-
-# ----- Estratto conto bancario -----
-
-@api_router.post("/import/banca/parse")
-async def parse_banca(file: UploadFile = File(...), user: dict = Depends(current_user)):
-    content = await file.read()
-    fl = (file.filename or "").lower()
-    try:
-        if fl.endswith(".csv"):
-            try:
-                df = pd.read_csv(io.BytesIO(content), sep=None, engine="python")
-            except Exception:
-                df = pd.read_csv(io.BytesIO(content), sep=";", engine="python", encoding="latin-1")
-        elif fl.endswith((".xlsx", ".xls")):
-            df = pd.read_excel(io.BytesIO(content))
-        else:
-            raise HTTPException(status_code=400, detail="Carica un file CSV o Excel.")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"File non leggibile: {str(e)}")
-
-    cols = {c.lower().strip(): c for c in df.columns}
-    def find_col(*keys):
-        for k in keys:
-            for cl, orig in cols.items():
-                if k in cl: return orig
-        return None
-    col_data = find_col("data")
-    col_desc = find_col("descrizione", "causale", "movimento")
-    col_imp = find_col("importo", "amount", "dare", "avere")
-
-    if not col_data or not col_imp:
-        raise HTTPException(status_code=400, detail="Colonne mancanti: serve almeno una colonna 'Data' e una 'Importo'. Trovate: " + ", ".join(df.columns.astype(str)))
-
-    movs = []
-    for _, r in df.iterrows():
-        importo = r.get(col_imp)
-        if pd.isna(importo): continue
-        try: importo = float(str(importo).replace(",", ".").replace("€", "").strip())
-        except Exception: continue
-        data = str(r.get(col_data, ""))[:10]
-        desc = str(r.get(col_desc, "") or "")[:200]
-        movs.append({
-            "data": data,
-            "descrizione": desc,
-            "importo": importo,
-            "tipo": "entrata" if importo > 0 else "uscita",
-            "match_canone": None,
-        })
-
-    # Riconciliazione: cerca per ogni "entrata" un canone atteso dai contratti immobili user
-    properties_user = await db.properties.find({"user_id": user["id"], "canone_mensile": {"$gt": 0}}, {"_id": 0}).to_list(200)
-    for m in movs:
-        if m["tipo"] != "entrata": continue
-        for p in properties_user:
-            canone = float(p.get("canone_mensile", 0) or 0)
-            if canone <= 0: continue
-            if abs(m["importo"] - canone) < 5:  # tolerance 5 EUR
-                m["match_canone"] = {"property_id": p["id"], "property_nome": p["nome"], "canone_atteso": canone}
-                break
-
-    return {
-        "filename": file.filename,
-        "total": len(movs),
-        "entrate": sum(1 for m in movs if m["tipo"] == "entrata"),
-        "uscite": sum(1 for m in movs if m["tipo"] == "uscita"),
-        "matched": sum(1 for m in movs if m["match_canone"]),
-        "movimenti": movs[:200],
-    }
-
-class BancaCommit(BaseModel):
-    movimenti: List[dict]
-
-def _movimento_signature(user_id: str, m: dict) -> str:
-    import hashlib
-    s = f"{user_id}|{m.get('data','')}|{round(float(m.get('importo',0) or 0), 2)}|{(m.get('descrizione','') or '')[:80].strip().lower()}"
-    return hashlib.sha1(s.encode("utf-8")).hexdigest()
-
-@api_router.post("/import/banca/commit")
-async def commit_banca(payload: BancaCommit, user: dict = Depends(current_user)):
-    created = 0
-    skipped = 0
-    for m in payload.movimenti:
-        sig = _movimento_signature(user["id"], m)
-        existing = await db.movimenti_bancari.find_one({"user_id": user["id"], "signature": sig})
-        if existing:
-            skipped += 1
-            continue
-        # whitelist allowed fields
-        item = {
-            "id": str(uuid.uuid4()),
-            "user_id": user["id"],
-            "data": m.get("data", ""),
-            "descrizione": m.get("descrizione", ""),
-            "importo": float(m.get("importo", 0) or 0),
-            "tipo": m.get("tipo", "uscita"),
-            "match_canone": m.get("match_canone"),
-            "signature": sig,
-            "imported_at": datetime.now(timezone.utc).isoformat(),
-        }
-        await db.movimenti_bancari.insert_one(item)
-        created += 1
-    return {"created": created, "skipped_duplicates": skipped}
-
-@api_router.get("/import/banca")
-async def list_movimenti_bancari(
-    user: dict = Depends(current_user),
-    skip: int = 0,
-    limit: int = 100,
-    q: Optional[str] = None,
-    tipo: Optional[str] = None,
-    matched: Optional[bool] = None,
-):
-    """Server-side paginated & filterable bank movements list."""
-    query = {"user_id": user["id"]}
-    if tipo in ("entrata", "uscita"): query["tipo"] = tipo
-    if matched is True: query["match_canone"] = {"$ne": None}
-    if matched is False: query["match_canone"] = None
-    if q:
-        query["descrizione"] = {"$regex": re.escape(q), "$options": "i"}
-    total = await db.movimenti_bancari.count_documents(query)
-    limit = max(1, min(500, limit))
-    items = await db.movimenti_bancari.find(query, {"_id": 0}).sort("data", -1).skip(max(0, skip)).limit(limit).to_list(limit)
-    return {"total": total, "skip": skip, "limit": limit, "items": items, "has_more": skip + len(items) < total}
-
-@api_router.get("/import/banca/cashflow-mensile")
-async def banca_cashflow_mensile(months: int = 12, user: dict = Depends(current_user)):
-    """Aggregate bank movements by month for the Dashboard cashflow chart."""
-    cur = db.movimenti_bancari.aggregate([
-        {"$match": {"user_id": user["id"], "data": {"$ne": ""}}},
-        {"$addFields": {"ym": {"$substr": ["$data", 0, 7]}}},
-        {"$group": {
-            "_id": "$ym",
-            "incassi": {"$sum": {"$cond": [{"$gt": ["$importo", 0]}, "$importo", 0]}},
-            "uscite":  {"$sum": {"$cond": [{"$lt": ["$importo", 0]}, {"$abs": "$importo"}, 0]}},
-        }},
-        {"$sort": {"_id": -1}},
-        {"$limit": max(1, min(36, months))},
-    ])
-    rows = await cur.to_list(36)
-    rows = list(reversed(rows))
-    # Format month label in Italian
-    MESI = {1:"Gen",2:"Feb",3:"Mar",4:"Apr",5:"Mag",6:"Giu",7:"Lug",8:"Ago",9:"Set",10:"Ott",11:"Nov",12:"Dic"}
-    out = []
-    for r in rows:
-        ym = r["_id"]
-        try:
-            y, m = ym.split("-")
-            label = f"{MESI.get(int(m),'?')} '{y[-2:]}"
-        except Exception:
-            label = ym
-        inc = round(r["incassi"], 2)
-        usc = round(r["uscite"], 2)
-        out.append({"mese": label, "ym": ym, "incassi": inc, "uscite": usc, "saldo": round(inc - usc, 2)})
-    return {"count": len(out), "rows": out}
-
-@api_router.delete("/import/banca/{mid}")
-async def delete_movimento_bancario(mid: str, user: dict = Depends(current_user)):
-    await db.movimenti_bancari.delete_one({"id": mid, "user_id": user["id"]})
-    return {"ok": True}
-
 
 # ===== Mount =====
-from routers.reports import make_reports_router
 app.include_router(api_router)
-app.include_router(make_reports_router(db, current_user, _enrich_property))
+app.include_router(make_properties_router(db, current_user))
+app.include_router(make_imports_router(db, current_user, EMERGENT_LLM_KEY))
+app.include_router(make_settings_router(db, current_user))
+app.include_router(make_reports_router(db, current_user))
 
 app.add_middleware(
     CORSMiddleware,
@@ -1259,10 +579,12 @@ app.add_middleware(
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
 @app.on_event("startup")
 async def on_start():
     await seed_users()
     logger.info("Backend started, users seeded.")
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

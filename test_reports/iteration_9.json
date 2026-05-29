@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 9 — Backend regression + new endpoints validation after server.py split (591 lines) and report consolidation (2 PDFs). All 24 backend tests passed (100%).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter9_refactor.py",
+    "/app/test_reports/pytest/iter9_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 591 lines — under the 700-line target. Good. Routers are well separated under /app/backend/routers/.",
+    "settings.py: logo size hard cap at 1 MB (good for Mongo doc size). content_type check uses startswith('image/') which is appropriate.",
+    "reports.py: _decode_logo wraps base64 decode in try/except → safe fallback if logo is malformed (so PDF gen never 500s on bad logo). Good defensive coding.",
+    "reports.py: chrome callback (header band + footer) is applied via onFirstPage+onLaterPages — page numbers and timestamps appear on every page as required.",
+    "Reports endpoint correctly returns 404 for unknown report_id and 400 for non-pdf fmt — matches spec.",
+    "Auth uses HTTPBearer(auto_error=False) — unauthenticated calls return 403 not 401 for some routes; not blocking, but consider standardizing to 401 for missing token."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter9_refactor.py"
+  ],
+  "success_rate": {
+    "backend": "100% (24/24)",
+    "frontend": "not tested (skipped per request)"
+  },
+  "test_credentials": "ceo@controlroom.it / demo1234 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Test created and deleted one transient property (TEST_PropIter9). Settings PUT updated nome_societa='Acme RE SRL' and target_netto=7 on the CEO's settings doc — kept (not reverted) because endpoint contract validation required it. Logo uploaded then cleared by DELETE /api/settings/logo.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All backend endpoints (auth, properties, deals, watchlists, ai/deal-analyze, imports for immobili/bilanci/banca, new /api/settings + /api/settings/logo, and new /api/report/{stato-salute|business-plan}.pdf) verified end-to-end. Logo round-trip through PDF generation works (PDF still returns 200 with embedded base64 PNG). /api/import/bilanci/storico returns {bilanci:[], evoluzione:[]} (dict, not list). Note: PUT /api/settings on the ceo user has lasting effect — nome_societa is now 'Acme RE SRL' and target_netto=7 on the demo account.",
+  "rca_of_the_issue": "No issues found. Initial test failure was a wrong client-side assumption about /api/import/bilanci/storico response shape (it returns a dict, not a list). Test was corrected; endpoint is working as intended."
+}

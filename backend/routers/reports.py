@@ -1,8 +1,9 @@
 """
-Reports router — generates PDF/XLSX/CSV for the Control Room.
-Split from server.py to keep the main file lean.
+Reports router — 2 comprehensive PDFs with branded chrome (header + logo + page footer).
+The header uses the company logo + name from Impostazioni when present.
 """
 import io
+import base64
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -10,275 +11,372 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import cm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+
+from routers._shared import enrich_property
+from routers.settings import get_user_settings
 
 
-def make_reports_router(db, current_user, enrich_property):
+def make_reports_router(db, current_user):
     router = APIRouter(prefix="/api/report")
 
     def _eur(n):
-        try: n = float(n or 0)
-        except Exception: n = 0.0
+        try:
+            n = float(n or 0)
+        except Exception:
+            n = 0.0
         return f"€ {n:,.0f}".replace(",", ".")
 
-    def _doc_setup(title: str, subtitle: str = ""):
-        buf = io.BytesIO()
-        doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=1.5*cm, rightMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=1.5*cm)
-        styles = getSampleStyleSheet()
-        h1 = ParagraphStyle("h1", parent=styles["Heading1"], fontSize=18, textColor=colors.HexColor("#0F172A"), spaceAfter=4)
-        sub = ParagraphStyle("sub", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#64748B"), spaceAfter=14)
-        h2 = ParagraphStyle("h2", parent=styles["Heading2"], fontSize=12, textColor=colors.HexColor("#0066FF"), spaceBefore=12, spaceAfter=6)
-        body = ParagraphStyle("body", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#0F172A"))
-        story = [Paragraph(title, h1), Paragraph(subtitle or f"Generato il {datetime.now().strftime('%d/%m/%Y %H:%M')}", sub)]
-        return buf, doc, story, h2, body
+    def _pct(n):
+        try:
+            return f"{float(n or 0):.2f}%"
+        except Exception:
+            return "—"
 
-    def _table(rows, col_widths, header_color="#0066FF"):
+    def _decode_logo(b64: str):
+        if not b64:
+            return None
+        try:
+            data = base64.b64decode(b64)
+            return ImageReader(io.BytesIO(data))
+        except Exception:
+            return None
+
+    def _chrome_factory(title: str, brand_name: str, logo_reader):
+        """Returns the onPage callback that draws header + footer."""
+        def _chrome(canvas, doc):
+            canvas.saveState()
+            # Header band
+            band_h = 1.4 * cm
+            y0 = A4[1] - band_h
+            canvas.setFillColor(colors.HexColor("#0066FF"))
+            canvas.rect(0, y0, A4[0], band_h, fill=1, stroke=0)
+            # Logo (left), if present — drawn inside the band, height ~1cm
+            x_text = 1.5 * cm
+            if logo_reader is not None:
+                try:
+                    iw, ih = logo_reader.getSize()
+                    target_h = 0.95 * cm
+                    target_w = target_h * (iw / max(1, ih))
+                    target_w = min(target_w, 5 * cm)
+                    canvas.drawImage(
+                        logo_reader,
+                        1.0 * cm, y0 + (band_h - target_h) / 2,
+                        width=target_w, height=target_h,
+                        mask='auto', preserveAspectRatio=True,
+                    )
+                    x_text = 1.0 * cm + target_w + 0.4 * cm
+                except Exception:
+                    pass
+            # Brand text
+            canvas.setFillColor(colors.white)
+            canvas.setFont("Helvetica-Bold", 11)
+            canvas.drawString(x_text, y0 + band_h / 2 - 1, brand_name.upper()[:60])
+            canvas.setFont("Helvetica", 9)
+            canvas.drawRightString(A4[0] - 1.5 * cm, y0 + band_h / 2 - 1, title)
+
+            # Footer
+            canvas.setFillColor(colors.HexColor("#64748B"))
+            canvas.setFont("Helvetica", 8)
+            canvas.drawString(1.5 * cm, 0.8 * cm, f"Generato il {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+            canvas.drawCentredString(A4[0] / 2, 0.8 * cm, brand_name)
+            canvas.drawRightString(A4[0] - 1.5 * cm, 0.8 * cm, f"Pagina {doc.page}")
+            canvas.setStrokeColor(colors.HexColor("#E2E8F0"))
+            canvas.setLineWidth(0.4)
+            canvas.line(1.5 * cm, 1.1 * cm, A4[0] - 1.5 * cm, 1.1 * cm)
+            canvas.restoreState()
+
+        return _chrome
+
+    def _setup(title: str, brand_name: str, logo_reader):
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buf, pagesize=A4,
+            leftMargin=1.5 * cm, rightMargin=1.5 * cm,
+            topMargin=2.3 * cm, bottomMargin=1.8 * cm,
+        )
+        styles = getSampleStyleSheet()
+        h1 = ParagraphStyle("h1", parent=styles["Heading1"], fontSize=20, textColor=colors.HexColor("#0F172A"), spaceAfter=4)
+        sub = ParagraphStyle("sub", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#64748B"), spaceAfter=14)
+        h2 = ParagraphStyle("h2", parent=styles["Heading2"], fontSize=13, textColor=colors.HexColor("#0066FF"), spaceBefore=14, spaceAfter=8)
+        body = ParagraphStyle("body", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#0F172A"), leading=13)
+        cb = _chrome_factory(title, brand_name, logo_reader)
+        return buf, doc, [], h1, h2, sub, body, cb
+
+    def _table(rows, col_widths, header_color="#0066FF", highlight_last=False):
         t = Table(rows, colWidths=col_widths)
-        t.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,0), colors.HexColor(header_color)),
-            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
-            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-            ("FONTSIZE", (0,0), (-1,-1), 8),
-            ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#E2E8F0")),
-            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")]),
-            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ]))
+        style = [
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(header_color)),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#E2E8F0")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]
+        if highlight_last:
+            style.append(("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#F1F5F9")))
+            style.append(("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"))
+        t.setStyle(TableStyle(style))
         return t
 
-    async def _props(user):
-        items = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
-        return [enrich_property(p) for p in items]
+    async def _gather(user):
+        props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+        props = [enrich_property(p) for p in props]
+        latest_bil = await db.bilanci.find_one({"user_id": user["id"]}, {"_id": 0}, sort=[("created_at", -1)])
+        bilanci_all = await db.bilanci.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(12)
+        settings = await get_user_settings(db, user["id"])
+        return props, latest_bil, bilanci_all, settings
 
-    # ===== Builder per ogni report =====
+    # ============================================================
+    # REPORT 1: STATO DI SALUTE DELLA SOCIETÀ
+    # ============================================================
+    def build_stato_salute(props, latest_bil, bilanci_all, settings):
+        brand = settings.get("nome_societa") or "Real Estate Control Room"
+        logo_reader = _decode_logo(settings.get("logo_base64"))
+        buf, doc, story, h1, h2, sub, body, cb = _setup("Stato di salute · Società", brand, logo_reader)
+        story.append(Paragraph("Stato di Salute della Società", h1))
+        period_str = latest_bil.get("periodo", "—") if latest_bil else "Nessun bilancio importato"
+        story.append(Paragraph(f"Snapshot al {datetime.now().strftime('%d/%m/%Y')} · Bilancio di riferimento: <b>{period_str}</b>", sub))
 
-    def build_patrimonio(props, bilancio):
-        buf, doc, story, h2, body = _doc_setup("Report Patrimonio", f"Real Estate Control Room · Generato il {datetime.now().strftime('%d/%m/%Y')}")
-        if bilancio:
-            ce = bilancio.get("conto_economico", {}) or {}
-            sp = bilancio.get("stato_patrimoniale", {}) or {}
-            story.append(Paragraph(f"Snapshot da bilancio: {bilancio.get('periodo','')} ({bilancio.get('tipo','')})", h2))
-            story.append(_table([
-                ["Valore immobili", _eur(sp.get("valore_immobili"))],
-                ["Debito mutui", _eur(sp.get("debito_mutui"))],
-                ["Patrimonio netto", _eur(sp.get("patrimonio_netto"))],
-                ["Utile netto", _eur(ce.get("utile_netto"))],
-            ], [7*cm, 5*cm]))
-        story.append(Paragraph(f"Elenco immobili ({len(props)})", h2))
-        rows = [["Codice", "Nome", "Città", "Tipo", "m²", "Costo tot.", "Canone", "Stato"]]
-        for p in props[:60]:
-            rows.append([p.get("id","")[:14], p.get("nome","")[:30], p.get("citta",""), p.get("tipologia",""),
-                str(int(p.get("metratura",0) or 0)), _eur(p.get("costo_totale", p.get("prezzo_acquisto",0))),
-                _eur(p.get("canone_mensile",0)), p.get("stato","")])
-        story.append(_table(rows, [2.4*cm, 4.5*cm, 2.5*cm, 2*cm, 1.2*cm, 2.5*cm, 2.2*cm, 2.3*cm]))
-        doc.build(story); buf.seek(0); return buf.read()
-
-    def build_bilancio(b):
-        buf, doc, story, h2, body = _doc_setup("Bilancio", f"{b.get('periodo','')} · {b.get('tipo','')}")
-        ce = b.get("conto_economico", {}) or {}
-        sp = b.get("stato_patrimoniale", {}) or {}
-        story.append(Paragraph("Conto Economico", h2))
-        story.append(_table([
-            ["Voce", "Importo"],
-            ["Ricavi affitti", _eur(ce.get("ricavi_affitti"))],
-            ["Ricavi vendite", _eur(ce.get("ricavi_vendite"))],
-            ["Totale ricavi", _eur(ce.get("totale_ricavi"))],
-            ["Costi gestione", _eur(ce.get("costi_gestione"))],
-            ["IMU", _eur(ce.get("imu"))],
-            ["Interessi mutui", _eur(ce.get("interessi_mutui"))],
-            ["Totale costi", _eur(ce.get("totale_costi"))],
-            ["Utile netto", _eur(ce.get("utile_netto"))],
-        ], [8*cm, 4*cm]))
-        story.append(Paragraph("Stato Patrimoniale", h2))
-        story.append(_table([
-            ["Voce", "Importo"],
-            ["Valore immobili", _eur(sp.get("valore_immobili"))],
-            ["Liquidità", _eur(sp.get("liquidita"))],
-            ["Totale attivo", _eur(sp.get("totale_attivo"))],
-            ["Debito mutui", _eur(sp.get("debito_mutui"))],
-            ["Totale passivo", _eur(sp.get("totale_passivo"))],
-            ["Patrimonio netto", _eur(sp.get("patrimonio_netto"))],
-        ], [8*cm, 4*cm]))
-        doc.build(story); buf.seek(0); return buf.read()
-
-    def build_rendimento(props):
-        buf, doc, story, h2, body = _doc_setup("Report Rendimento per Immobile", f"Ranking per rendimento netto · {datetime.now().strftime('%d/%m/%Y')}")
-        ranked = sorted(props, key=lambda p: -(p.get("rendimento_netto", 0) or 0))
-        media_netto = sum((p.get("rendimento_netto", 0) or 0) for p in props) / max(1, len(props))
-        story.append(Paragraph(f"Media netta portafoglio: <b>{media_netto:.2f}%</b> · {len(props)} immobili", h2))
-        rows = [["#", "Nome", "Città", "Costo tot.", "Canone", "Lordo %", "Netto %", "Score"]]
-        for i, p in enumerate(ranked[:80], 1):
-            rows.append([str(i), p.get("nome","")[:28], p.get("citta",""),
-                _eur(p.get("costo_totale", p.get("prezzo_acquisto",0))), _eur(p.get("canone_mensile",0)),
-                f"{p.get('rendimento_lordo',0):.2f}", f"{p.get('rendimento_netto',0):.2f}",
-                str(int(p.get("portfolio_score",0) or 0))])
-        story.append(_table(rows, [0.8*cm, 4.5*cm, 2.5*cm, 2.5*cm, 2*cm, 1.8*cm, 1.8*cm, 1.5*cm]))
-        doc.build(story); buf.seek(0); return buf.read()
-
-    def build_affitti(props):
-        buf, doc, story, h2, body = _doc_setup("Report Affitti & Locazioni", f"Immobili a reddito · {datetime.now().strftime('%d/%m/%Y')}")
-        with_canone = [p for p in props if (p.get("canone_mensile", 0) or 0) > 0]
-        tot_mensile = sum(float(p.get("canone_mensile", 0) or 0) for p in with_canone)
-        story.append(Paragraph(f"{len(with_canone)} immobili a reddito · Canone mensile totale: <b>{_eur(tot_mensile)}</b> · Annuo: <b>{_eur(tot_mensile*12)}</b>", h2))
-        rows = [["Immobile", "Città", "m²", "Canone mese", "Canone anno", "Rend. netto", "Stato"]]
-        for p in with_canone:
-            canone = float(p.get("canone_mensile", 0) or 0)
-            rows.append([p.get("nome","")[:30], p.get("citta",""), str(int(p.get("metratura",0) or 0)),
-                _eur(canone), _eur(canone * 12), f"{p.get('rendimento_netto',0):.2f}%", p.get("stato","")])
-        story.append(_table(rows, [4.5*cm, 2.5*cm, 1.2*cm, 2.3*cm, 2.3*cm, 2.2*cm, 2.5*cm]))
-        doc.build(story); buf.seek(0); return buf.read()
-
-    def build_vendite(props):
-        buf, doc, story, h2, body = _doc_setup("Report Vendite & Rivendite", f"Operazioni di vendita · {datetime.now().strftime('%d/%m/%Y')}")
+        # 1. Sintesi KPI principali
+        story.append(Paragraph("1 · Sintesi KPI", h2))
+        n_props = len(props)
+        a_reddito = [p for p in props if (p.get("canone_mensile", 0) or 0) > 0]
+        sfitti = [p for p in props if p.get("stato") == "sfitto"]
         in_vendita = [p for p in props if p.get("stato") == "in_vendita"]
-        venduti = [p for p in props if p.get("stato") == "venduto"]
-        story.append(Paragraph(f"<b>{len(in_vendita)}</b> in vendita · <b>{len(venduti)}</b> venduti", h2))
-        if in_vendita:
-            story.append(Paragraph("Attualmente in vendita", h2))
-            rows = [["Immobile", "Città", "Costo tot.", "Valore stim.", "Margine atteso"]]
-            for p in in_vendita:
-                costo = float(p.get("costo_totale", p.get("prezzo_acquisto", 0)) or 0)
-                val = float(p.get("valore_stimato", costo) or costo)
-                rows.append([p.get("nome","")[:30], p.get("citta",""), _eur(costo), _eur(val), _eur(val - costo)])
-            story.append(_table(rows, [5*cm, 3*cm, 3*cm, 3*cm, 3*cm]))
-        if venduti:
-            story.append(Paragraph("Operazioni concluse", h2))
-            rows = [["Immobile", "Costo tot.", "Prezzo vendita", "Utile netto", "Stato"]]
-            for p in venduti:
-                costo = float(p.get("costo_totale", 0) or 0)
-                pv = float(p.get("prezzo_vendita", p.get("valore_stimato", 0)) or 0)
-                utile = pv - costo
-                rows.append([p.get("nome","")[:30], _eur(costo), _eur(pv), _eur(utile), p.get("stato","")])
-            story.append(_table(rows, [5*cm, 2.8*cm, 2.8*cm, 2.8*cm, 2.5*cm]))
-        doc.build(story); buf.seek(0); return buf.read()
+        in_lavori = [p for p in props if p.get("stato") == "in_ristrutturazione"]
+        tot_canone_mese = sum(float(p.get("canone_mensile", 0) or 0) for p in props)
+        tot_costo = sum(float(p.get("costo_totale", p.get("prezzo_acquisto", 0)) or 0) for p in props)
+        tot_valore = sum(float(p.get("valore_stimato", p.get("prezzo_acquisto", 0)) or 0) for p in props)
+        tot_debito = sum(float((p.get("mutuo") or {}).get("residuo", 0) or 0) for p in props)
+        tot_rata = sum(float((p.get("mutuo") or {}).get("rata", 0) or 0) for p in props)
+        rend_medio = sum((p.get("rendimento_netto", 0) or 0) for p in a_reddito) / max(1, len(a_reddito))
+        ltv = (tot_debito / tot_valore * 100) if tot_valore > 0 else 0
 
-    def build_lavori(props):
-        buf, doc, story, h2, body = _doc_setup("Report Lavori & Ristrutturazioni", f"Cantieri attivi · {datetime.now().strftime('%d/%m/%Y')}")
-        in_lavori = [p for p in props if p.get("stato") == "in_ristrutturazione" or (p.get("lavori", 0) or 0) > 0]
-        tot_budget = sum(float(p.get("lavori", 0) or 0) for p in in_lavori)
-        story.append(Paragraph(f"{len(in_lavori)} immobili con lavori · Budget totale: <b>{_eur(tot_budget)}</b>", h2))
-        rows = [["Immobile", "Città", "Stato", "Budget lavori", "Prezzo acq.", "% lavori/prezzo"]]
-        for p in in_lavori:
-            prezzo = float(p.get("prezzo_acquisto", 0) or 0)
-            lavori = float(p.get("lavori", 0) or 0)
-            pct = (lavori / prezzo * 100) if prezzo > 0 else 0
-            rows.append([p.get("nome","")[:30], p.get("citta",""), p.get("stato",""),
-                _eur(lavori), _eur(prezzo), f"{pct:.1f}%"])
-        story.append(_table(rows, [4.5*cm, 2.5*cm, 3*cm, 2.5*cm, 2.5*cm, 2*cm]))
-        doc.build(story); buf.seek(0); return buf.read()
+        ce = (latest_bil or {}).get("conto_economico", {}) or {}
+        sp = (latest_bil or {}).get("stato_patrimoniale", {}) or {}
 
-    def build_mutui(props):
-        buf, doc, story, h2, body = _doc_setup("Report Mutui & Finanziamenti", f"Esposizione debitoria · {datetime.now().strftime('%d/%m/%Y')}")
+        story.append(_table([
+            ["Indicatore", "Valore"],
+            ["Numero immobili", str(n_props)],
+            ["Di cui a reddito", f"{len(a_reddito)} ({len(a_reddito)*100//max(1,n_props)}%)"],
+            ["Sfitti", str(len(sfitti))],
+            ["In vendita / In ristrutturazione", f"{len(in_vendita)} / {len(in_lavori)}"],
+            ["Valore patrimonio stimato", _eur(sp.get("valore_immobili") or tot_valore)],
+            ["Costo totale investito", _eur(tot_costo)],
+            ["Canone mensile complessivo", _eur(tot_canone_mese)],
+            ["Canone annuo complessivo", _eur(tot_canone_mese * 12)],
+            ["Rendimento netto medio (a reddito)", _pct(rend_medio)],
+            ["Debito residuo totale", _eur(sp.get("debito_mutui") or tot_debito)],
+            ["Rata mutui mensile", _eur(tot_rata)],
+            ["Loan-to-Value (LTV)", _pct(ltv)],
+            ["Patrimonio netto", _eur(sp.get("patrimonio_netto") or (tot_valore - tot_debito))],
+        ], [9 * cm, 4.5 * cm]))
+
+        # 2. Conto economico
+        if latest_bil:
+            story.append(Paragraph(f"2 · Conto Economico ({period_str})", h2))
+            story.append(_table([
+                ["Voce", "Importo"],
+                ["Ricavi affitti", _eur(ce.get("ricavi_affitti"))],
+                ["Ricavi vendite", _eur(ce.get("ricavi_vendite"))],
+                ["Totale ricavi", _eur(ce.get("totale_ricavi"))],
+                ["Costi di gestione", _eur(ce.get("costi_gestione"))],
+                ["Manutenzione", _eur(ce.get("costi_manutenzione"))],
+                ["IMU", _eur(ce.get("imu"))],
+                ["Interessi mutui", _eur(ce.get("interessi_mutui"))],
+                ["Ammortamenti", _eur(ce.get("ammortamenti"))],
+                ["Totale costi", _eur(ce.get("totale_costi"))],
+                ["UTILE NETTO", _eur(ce.get("utile_netto"))],
+            ], [9 * cm, 4.5 * cm], highlight_last=True))
+
+        # 3. Top / Worst
+        story.append(PageBreak())
+        story.append(Paragraph("3 · Migliori e peggiori per rendimento netto", h2))
+        ranked = sorted(a_reddito, key=lambda p: -(p.get("rendimento_netto", 0) or 0))
+        top = ranked[:5]
+        worst = ranked[-5:] if len(ranked) > 5 else []
+        if top:
+            story.append(Paragraph("<b>Top 5</b>", body))
+            rows = [["Nome", "Città", "Canone", "Rend.netto", "Score"]]
+            for p in top:
+                rows.append([p.get("nome", "")[:28], p.get("citta", ""), _eur(p.get("canone_mensile")), _pct(p.get("rendimento_netto")), str(int(p.get("portfolio_score", 0) or 0))])
+            story.append(_table(rows, [5 * cm, 3 * cm, 2.5 * cm, 2.5 * cm, 1.5 * cm], header_color="#059669"))
+        if worst:
+            story.append(Spacer(1, 0.3 * cm))
+            story.append(Paragraph("<b>Da monitorare</b>", body))
+            rows = [["Nome", "Città", "Canone", "Rend.netto", "Score"]]
+            for p in worst:
+                rows.append([p.get("nome", "")[:28], p.get("citta", ""), _eur(p.get("canone_mensile")), _pct(p.get("rendimento_netto")), str(int(p.get("portfolio_score", 0) or 0))])
+            story.append(_table(rows, [5 * cm, 3 * cm, 2.5 * cm, 2.5 * cm, 1.5 * cm], header_color="#DC2626"))
+
+        # 4. Anomalie & Alert
+        story.append(Paragraph("4 · Punti di attenzione", h2))
+        alerts = []
+        if rend_medio < 4 and a_reddito:
+            alerts.append(f"Rendimento medio netto {_pct(rend_medio)} sotto soglia 4%.")
+        if ltv > 70:
+            alerts.append(f"LTV portafoglio {_pct(ltv)} elevato (sopra 70%).")
+        if sfitti:
+            alerts.append(f"{len(sfitti)} immobili sfitti: opportunità di riposizionamento o vendita.")
+        for p in props:
+            r = (p.get("mutuo") or {}).get("rata", 0)
+            c = p.get("canone_mensile", 0)
+            if c > 0 and r > c:
+                alerts.append(f"{p.get('nome','')}: rata mutuo {_eur(r)} > canone {_eur(c)}.")
+        if not alerts:
+            alerts.append("Nessuna anomalia rilevante. Il portafoglio è in equilibrio.")
+        for a in alerts[:10]:
+            story.append(Paragraph(f"• {a}", body))
+
+        # 5. Storico bilanci sintetico
+        if len(bilanci_all) > 1:
+            story.append(Paragraph("5 · Storico bilanci recenti", h2))
+            rows = [["Periodo", "Tipo", "Ricavi", "Costi", "Utile netto", "Patrimonio netto"]]
+            for b in bilanci_all[:6]:
+                bc = b.get("conto_economico", {}) or {}
+                bs = b.get("stato_patrimoniale", {}) or {}
+                rows.append([b.get("periodo", ""), b.get("tipo", ""),
+                             _eur(bc.get("totale_ricavi")), _eur(bc.get("totale_costi")),
+                             _eur(bc.get("utile_netto")), _eur(bs.get("patrimonio_netto"))])
+            story.append(_table(rows, [3 * cm, 2 * cm, 2.5 * cm, 2.5 * cm, 2.5 * cm, 3 * cm]))
+
+        doc.build(story, onFirstPage=cb, onLaterPages=cb)
+        buf.seek(0)
+        return buf.read()
+
+    # ============================================================
+    # REPORT 2: BUSINESS PLAN (per le banche)
+    # ============================================================
+    def build_business_plan(props, latest_bil, bilanci_all, settings):
+        brand = settings.get("nome_societa") or "Real Estate Control Room"
+        logo_reader = _decode_logo(settings.get("logo_base64"))
+        buf, doc, story, h1, h2, sub, body, cb = _setup("Business Plan · Per Istituti di Credito", brand, logo_reader)
+        story.append(Paragraph("Business Plan Immobiliare", h1))
+        story.append(Paragraph(f"Documento destinato a istituti di credito · Snapshot al {datetime.now().strftime('%d/%m/%Y')}", sub))
+
+        # 1. Profilo società
+        story.append(Paragraph("1 · Profilo della società", h2))
+        story.append(Paragraph(
+            f"<b>{brand}</b> è una società immobiliare orientata alla gestione di un portafoglio "
+            "diversificato di immobili a reddito e operazioni di compravendita. Il presente Business Plan "
+            "fornisce una rappresentazione patrimoniale, economica e finanziaria a supporto di valutazioni "
+            "di affidamento e/o linee di credito.", body))
+
+        # 2. Patrimonio attuale
+        story.append(Paragraph("2 · Patrimonio attuale", h2))
+        a_reddito = [p for p in props if (p.get("canone_mensile", 0) or 0) > 0]
+        tot_valore = sum(float(p.get("valore_stimato", p.get("prezzo_acquisto", 0)) or 0) for p in props)
+        tot_debito = sum(float((p.get("mutuo") or {}).get("residuo", 0) or 0) for p in props)
+        tot_canone_anno = sum(float(p.get("canone_mensile", 0) or 0) for p in props) * 12
+        sp = (latest_bil or {}).get("stato_patrimoniale", {}) or {}
+        ce = (latest_bil or {}).get("conto_economico", {}) or {}
+        valore_patrimonio = sp.get("valore_immobili") or tot_valore
+        debito = sp.get("debito_mutui") or tot_debito
+        pn = sp.get("patrimonio_netto") or (valore_patrimonio - debito)
+        ltv = (debito / valore_patrimonio * 100) if valore_patrimonio > 0 else 0
+
+        story.append(_table([
+            ["Indicatore patrimoniale", "Valore"],
+            ["Numero immobili", str(len(props))],
+            ["Valore di mercato stimato", _eur(valore_patrimonio)],
+            ["Debito finanziario in essere", _eur(debito)],
+            ["Patrimonio netto", _eur(pn)],
+            ["Loan-to-Value (LTV)", _pct(ltv)],
+            ["Canone annuo a regime", _eur(tot_canone_anno)],
+            ["Immobili a reddito", f"{len(a_reddito)} su {len(props)}"],
+        ], [9 * cm, 4.5 * cm], highlight_last=False))
+
+        # 3. Dati economici
+        if latest_bil:
+            story.append(Paragraph(f"3 · Dati economici ({latest_bil.get('periodo','')})", h2))
+            ebitda = (ce.get("totale_ricavi", 0) or 0) - (ce.get("costi_gestione", 0) or 0) - (ce.get("costi_manutenzione", 0) or 0) - (ce.get("imu", 0) or 0)
+            story.append(_table([
+                ["Voce", "Importo"],
+                ["Ricavi totali", _eur(ce.get("totale_ricavi"))],
+                ["Costi totali", _eur(ce.get("totale_costi"))],
+                ["Oneri finanziari", _eur(ce.get("interessi_mutui"))],
+                ["Utile netto", _eur(ce.get("utile_netto"))],
+                ["EBITDA stimato", _eur(ebitda)],
+            ], [9 * cm, 4.5 * cm], highlight_last=True))
+
+        # 4. Struttura del debito
+        story.append(PageBreak())
+        story.append(Paragraph("4 · Struttura del debito in essere", h2))
         with_mutuo = [p for p in props if p.get("mutuo")]
-        tot_residuo = sum(float((p.get("mutuo") or {}).get("residuo", 0) or 0) for p in with_mutuo)
-        tot_rata = sum(float((p.get("mutuo") or {}).get("rata", 0) or 0) for p in with_mutuo)
-        tot_valore = sum(float(p.get("valore_stimato", p.get("prezzo_acquisto",0)) or 0) for p in props)
-        ltv = (tot_residuo / tot_valore * 100) if tot_valore > 0 else 0
-        story.append(Paragraph(f"Debito totale: <b>{_eur(tot_residuo)}</b> · Rata mensile: <b>{_eur(tot_rata)}</b> · LTV portafoglio: <b>{ltv:.1f}%</b>", h2))
-        rows = [["Immobile", "Banca", "Tasso", "Capitale residuo", "Rata mensile"]]
-        for p in with_mutuo:
-            m = p.get("mutuo") or {}
-            rows.append([p.get("nome","")[:30], m.get("banca","")[:20],
-                f"{float(m.get('tasso',0) or 0):.2f}%", _eur(m.get("residuo")), _eur(m.get("rata"))])
-        story.append(_table(rows, [4.5*cm, 3.5*cm, 1.8*cm, 3.5*cm, 3*cm]))
-        doc.build(story); buf.seek(0); return buf.read()
-
-    async def build_cashflow(user):
-        cur = db.movimenti_bancari.aggregate([
-            {"$match": {"user_id": user["id"], "data": {"$ne": ""}}},
-            {"$addFields": {"ym": {"$substr": ["$data", 0, 7]}}},
-            {"$group": {
-                "_id": "$ym",
-                "incassi": {"$sum": {"$cond": [{"$gt": ["$importo", 0]}, "$importo", 0]}},
-                "uscite":  {"$sum": {"$cond": [{"$lt": ["$importo", 0]}, {"$abs": "$importo"}, 0]}},
-            }},
-            {"$sort": {"_id": 1}},
-            {"$limit": 24},
-        ])
-        rows_agg = await cur.to_list(24)
-        buf, doc, story, h2, body = _doc_setup("Report Cash Flow", f"Andamento mensile · {datetime.now().strftime('%d/%m/%Y')}")
-        if not rows_agg:
-            story.append(Paragraph("Nessun movimento bancario importato. Carica un estratto conto dal Centro Import.", h2))
+        if with_mutuo:
+            tot_rata = sum(float((p.get("mutuo") or {}).get("rata", 0) or 0) for p in with_mutuo)
+            story.append(Paragraph(f"Rata complessiva mensile: <b>{_eur(tot_rata)}</b> · {len(with_mutuo)} finanziamenti attivi", body))
+            rows = [["Immobile", "Banca", "Tasso", "Capitale residuo", "Rata mensile"]]
+            for p in with_mutuo:
+                m = p.get("mutuo") or {}
+                rows.append([p.get("nome", "")[:28], (m.get("banca", "") or "")[:18], _pct(m.get("tasso")), _eur(m.get("residuo")), _eur(m.get("rata"))])
+            story.append(_table(rows, [4.5 * cm, 3 * cm, 1.8 * cm, 3.2 * cm, 3 * cm]))
         else:
-            tot_in = sum(r["incassi"] for r in rows_agg)
-            tot_out = sum(r["uscite"] for r in rows_agg)
-            story.append(Paragraph(f"{len(rows_agg)} mesi · Incassi: <b>{_eur(tot_in)}</b> · Uscite: <b>{_eur(tot_out)}</b> · Saldo: <b>{_eur(tot_in - tot_out)}</b>", h2))
-            table_rows = [["Mese", "Incassi", "Uscite", "Saldo netto"]]
-            for r in rows_agg:
-                saldo = r["incassi"] - r["uscite"]
-                table_rows.append([r["_id"], _eur(r["incassi"]), _eur(r["uscite"]), _eur(saldo)])
-            story.append(_table(table_rows, [3*cm, 3.5*cm, 3.5*cm, 3.5*cm]))
-        doc.build(story); buf.seek(0); return buf.read()
+            story.append(Paragraph("Nessun finanziamento bancario attualmente in essere.", body))
+
+        # 5. Piano di crescita / Fabbisogno finanziario
+        story.append(Paragraph("5 · Piano di sviluppo · scenari", h2))
+        canone_medio = (tot_canone_anno / 12 / max(1, len(a_reddito))) if a_reddito else 1100
+        costo_medio = (sum(float(p.get("costo_totale", 0) or 0) for p in a_reddito) / max(1, len(a_reddito))) if a_reddito else 200000
+        for n in [2, 5, 10]:
+            cap_richiesto = n * costo_medio * 0.3
+            mutuo_necessario = n * costo_medio * 0.7
+            ricavo_aggiuntivo = n * canone_medio * 12
+            story.append(Paragraph(
+                f"<b>Scenario +{n} immobili/anno</b>: capitale proprio richiesto <b>{_eur(cap_richiesto)}</b>, "
+                f"linea mutui necessaria <b>{_eur(mutuo_necessario)}</b>, ricavo annuo aggiuntivo atteso <b>{_eur(ricavo_aggiuntivo)}</b>.",
+                body))
+            story.append(Spacer(1, 0.15 * cm))
+
+        # 6. Indici di solidità
+        story.append(Paragraph("6 · Indici di solidità e affidabilità", h2))
+        copertura = (ce.get("utile_netto", 0) or 0) / max(1, ce.get("interessi_mutui", 1) or 1)
+        rend_medio = sum((p.get('rendimento_netto', 0) or 0) for p in a_reddito) / max(1, len(a_reddito))
+        story.append(_table([
+            ["Indice", "Valore", "Soglia attesa"],
+            ["LTV (Loan-to-Value)", _pct(ltv), "< 70%"],
+            ["Copertura interessi (utile / oneri fin.)", f"{copertura:.2f}x", "> 1,5x"],
+            ["Patrimonio netto / Debito", f"{(pn/debito):.2f}x" if debito > 0 else "n/a", "> 1,0x"],
+            ["Rendimento netto medio portafoglio", _pct(rend_medio), "> 4,5%"],
+        ], [7.5 * cm, 3.5 * cm, 2.5 * cm]))
+
+        # 7. Allegato: elenco immobili
+        story.append(Paragraph("Allegato A · Elenco immobili", h2))
+        rows = [["Codice", "Nome", "Città", "m²", "Valore", "Canone"]]
+        for p in props[:60]:
+            rows.append([p.get("id", "")[:14], p.get("nome", "")[:26], p.get("citta", ""),
+                         str(int(p.get("metratura", 0) or 0)),
+                         _eur(p.get("valore_stimato", p.get("prezzo_acquisto", 0))),
+                         _eur(p.get("canone_mensile", 0))])
+        story.append(_table(rows, [2.4 * cm, 4.5 * cm, 2.5 * cm, 1.2 * cm, 2.7 * cm, 2.5 * cm]))
+
+        doc.build(story, onFirstPage=cb, onLaterPages=cb)
+        buf.seek(0)
+        return buf.read()
 
     # ===== Endpoint =====
     @router.get("/{report_id}.{fmt}")
     async def download_report(report_id: str, fmt: str, user: dict = Depends(current_user)):
-        if fmt not in ("pdf", "csv", "xlsx"):
-            raise HTTPException(status_code=400, detail="Formato non supportato")
-        props = await _props(user)
-        latest_bil = await db.bilanci.find_one({"user_id": user["id"]}, {"_id": 0}, sort=[("created_at", -1)])
-
-        # PDF reports
-        if fmt == "pdf":
-            try:
-                if report_id == "patrimonio":   blob = build_patrimonio(props, latest_bil)
-                elif report_id == "bilancio":
-                    if not latest_bil: raise HTTPException(status_code=404, detail="Nessun bilancio caricato. Importalo dal Centro Import.")
-                    blob = build_bilancio(latest_bil)
-                elif report_id == "rendimento": blob = build_rendimento(props)
-                elif report_id == "affitti":    blob = build_affitti(props)
-                elif report_id == "vendite":    blob = build_vendite(props)
-                elif report_id == "lavori":     blob = build_lavori(props)
-                elif report_id == "mutui":      blob = build_mutui(props)
-                elif report_id == "cashflow":   blob = await build_cashflow(user)
-                else: raise HTTPException(status_code=404, detail=f"Report '{report_id}' non disponibile")
-            except HTTPException: raise
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Errore generazione PDF: {str(e)}")
-            return StreamingResponse(io.BytesIO(blob), media_type="application/pdf",
-                headers={"Content-Disposition": f'attachment; filename="{report_id}.pdf"'})
-
-        # XLSX / CSV (basic for patrimonio + rendimento)
-        if report_id in ("patrimonio", "rendimento"):
-            if fmt == "csv":
-                import csv
-                out = io.StringIO()
-                w = csv.writer(out)
-                w.writerow(["Codice","Nome","Citta","Tipo","Prezzo","Canone","Rend.lordo","Rend.netto","Stato"])
-                for p in props:
-                    w.writerow([p.get("id",""), p.get("nome",""), p.get("citta",""), p.get("tipologia",""),
-                        p.get("prezzo_acquisto",0), p.get("canone_mensile",0),
-                        p.get("rendimento_lordo",0), p.get("rendimento_netto",0), p.get("stato","")])
-                return StreamingResponse(io.BytesIO(out.getvalue().encode("utf-8")), media_type="text/csv",
-                    headers={"Content-Disposition": f'attachment; filename="{report_id}.csv"'})
-            if fmt == "xlsx":
-                import xlsxwriter
-                buf = io.BytesIO()
-                wb = xlsxwriter.Workbook(buf, {"in_memory": True})
-                ws = wb.add_worksheet(report_id.title())
-                h = wb.add_format({"bold": True, "bg_color": "#0066FF", "font_color": "white", "border": 1, "align": "center"})
-                money = wb.add_format({"num_format": '#,##0 "€"'})
-                cols = ["Codice","Nome","Indirizzo","Città","Tipo","m²","Prezzo","Costo totale","Canone","Rend. netto","Stato"]
-                for i, c in enumerate(cols):
-                    ws.write(0, i, c, h)
-                    ws.set_column(i, i, max(12, len(c) + 2))
-                for r, p in enumerate(props, 1):
-                    ws.write(r, 0, p.get("id",""))
-                    ws.write(r, 1, p.get("nome",""))
-                    ws.write(r, 2, p.get("indirizzo",""))
-                    ws.write(r, 3, p.get("citta",""))
-                    ws.write(r, 4, p.get("tipologia",""))
-                    ws.write(r, 5, float(p.get("metratura",0) or 0))
-                    ws.write(r, 6, float(p.get("prezzo_acquisto",0) or 0), money)
-                    ws.write(r, 7, float(p.get("costo_totale", p.get("prezzo_acquisto",0)) or 0), money)
-                    ws.write(r, 8, float(p.get("canone_mensile",0) or 0), money)
-                    ws.write(r, 9, float(p.get("rendimento_netto",0) or 0))
-                    ws.write(r, 10, p.get("stato",""))
-                ws.freeze_panes(1, 0)
-                wb.close(); buf.seek(0)
-                return StreamingResponse(io.BytesIO(buf.read()),
-                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    headers={"Content-Disposition": f'attachment; filename="{report_id}.xlsx"'})
-
-        raise HTTPException(status_code=400, detail=f"Formato {fmt} non disponibile per il report '{report_id}' (PDF disponibile)")
+        if fmt != "pdf":
+            raise HTTPException(status_code=400, detail="Solo formato PDF disponibile per questi report")
+        props, latest_bil, bilanci_all, settings = await _gather(user)
+        try:
+            if report_id == "stato-salute":
+                blob = build_stato_salute(props, latest_bil, bilanci_all, settings)
+                fname = "stato_salute_societa.pdf"
+            elif report_id == "business-plan":
+                blob = build_business_plan(props, latest_bil, bilanci_all, settings)
+                fname = "business_plan.pdf"
+            else:
+                raise HTTPException(status_code=404, detail=f"Report '{report_id}' non disponibile")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Errore generazione: {str(e)}")
+        return StreamingResponse(io.BytesIO(blob), media_type="application/pdf",
+                                 headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
     return router
