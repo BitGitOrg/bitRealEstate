@@ -1,0 +1,66 @@
+{
+  "summary": "Iter 15 — Multi-shot AI Strategist (202/job pattern + 3 plans Conservativo/Bilanciato/Aggressivo). Backend: 16/17 pytest passed (~118s). Frontend: blocked by a React Rules-of-Hooks crash in AIStrategistModal which I fixed (early return placed before useEffect). After fix, the full UX works end-to-end and all 4 screenshots were captured. Backend job lifecycle (queued→running→done), 3-plan generation, save/save-all, compare, and 404 paths all behave correctly. Legacy single-shot /auto-optimize regression passes. One real semantic concern: aggressivo plan simulation produced ltv_finale=110.05% vs cap=75 (35pp overshoot beyond +5pp tolerance) — AI proposes ops that violate its own LTV cap.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/forecast/auto-optimize/jobs (aggressivo plan)",
+        "issue": "Plan goal_summary.ltv_max correctly capped at 75, but simulation.summary.ltv_finale = 110.05% — AI proposes operations that materially exceed its own LTV cap. ltv_rispettato flag would be false. Spec says best-effort with +5pp tolerance; observed overshoot is +35pp. Consider post-validation: reject/retry the plan if simulated ltv_finale exceeds profile cap + tolerance, or downscale acquisition amounts."
+      },
+      {
+        "endpoint": "save naming",
+        "issue": "Saved scenarios are named with propensione (e.g. 'AI Plan alta/media/bassa ...') rather than profile_label (Conservativo/Bilanciato/Aggressivo). Compare tab labels are therefore less self-explanatory."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AIStrategistModal",
+        "issue": "React Rules-of-Hooks violation crashed the modal on open. Line 162 had `if (!open) return null;` placed BEFORE two useEffect hooks (lines 165, 181). Author had silenced the eslint warnings with eslint-disable comments. When `open` toggled, the number of hooks changed between renders, producing 'Rendered more hooks than during the previous render' and the modal failed to render any content. FIXED: moved the early return after both hooks; useEffect now guards with `if (!open) return undefined;` and adds `open` to deps. Verified: modal opens, polling progresses, 3 plans render, save-all flows to Compare tab.",
+        "selector": "[data-testid='ai-strategist-modal']",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "AIStrategistModal polling state",
+        "issues": [
+          "Visual: works well. Progress bar, % indicator, '1 di 3 piani pronti', and Conservativo/Bilanciato/Aggressivo stage markers (with check / spinner / pending) render correctly."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter15_multishot.py",
+    "/app/test_reports/pytest/iter15_results.xml",
+    "/app/frontend/public/screenshots/10_strategist_form_v2.png",
+    "/app/frontend/public/screenshots/11_strategist_polling.png",
+    "/app/frontend/public/screenshots/12_strategist_3plans.png",
+    "/app/frontend/public/screenshots/13_strategist_compare.png"
+  ],
+  "action_items": [
+    "Review AIStrategistModal.jsx hook ordering fix I applied (lines ~160-186). Keep the eslint-disable-next-line block off; the hooks are now unconditionally called and the early `if (!open) return null;` is placed AFTER them. Verify no regressions.",
+    "Backend: aggressivo plan can simulate LTV well above its declared cap (observed 110% vs 75%). Consider validating simulation.summary.ltv_finale <= profile cap + tolerance inside _generate_strategist_plan and retrying (or downscaling acquisitions) before returning. Currently goal_summary.ltv_rispettato is correctly computed but the user-facing 'Obiettivo raggiunto' badge may mislead because target raggiunto is true but ltv is breached.",
+    "(Optional UX) Save scenarios using profile_label (Conservativo/Bilanciato/Aggressivo) instead of propensione (alta/media/bassa) so the Compare tab is more obvious."
+  ],
+  "critical_code_review_comments": [
+    "AIStrategistModal had silenced React Rules-of-Hooks via eslint-disable comments instead of fixing the actual ordering — a code-smell. Author appears to have known about the issue.",
+    "_run_multishot_job (forecast.py) catches generic Exception per profile but if Claude returns malformed JSON for one profile the job still marks done with fewer plans — consider explicit 'partial' status, or fail the whole job if any profile fails (currently we observed 3/3 success in tests so this is theoretical)."
+  ],
+  "updated_files": [
+    "/app/frontend/src/components/forecast/AIStrategistModal.jsx",
+    "/app/backend/tests/test_iter15_multishot.py"
+  ],
+  "success_rate": {
+    "backend": "94% (16/17 — only LTV simulation tolerance assertion failed, which is a real backend semantic issue, not a test bug)",
+    "frontend": "100% after hook-ordering fix (4/4 screenshots captured, full save→compare flow works)"
+  },
+  "test_credentials": "ceo@controlroom.it / demo1234 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Created 4 AI scenarios during testing (1 bilanciato + 3 save-all). All cleaned up afterwards. Final scenarios remaining: 'Crescita controllata 5 anni' + 3 'Nuovo scenario'. NOTE: pre-existing 'Nuovo scenario' count is 3 (not 2 as request suggested). No production data touched.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend tests live in /app/backend/tests/test_iter15_multishot.py. Total runtime ~120s. Set REACT_APP_BACKEND_URL env var when invoking pytest manually. The aggressivo LTV-overshoot test is a soft business assertion (best-effort) — once main agent adds cap enforcement in _generate_strategist_plan, re-run to confirm. The frontend fix in AIStrategistModal.jsx (hook ordering) should be retained.",
+  "rca of the issue": "AIStrategistModal crash RCA: React requires the SAME number of hooks called on every render. The code had `if (!open) return null;` at line 162, BEFORE two `useEffect` calls at lines 165 and 181. The first render (open=false) returned early and executed 5 hooks (4 useState + 1 useRef). The second render (open=true) executed those 5 plus 2 useEffect = 7 hooks. React threw 'Rendered more hooks than during the previous render.' The eslint-disable comments silenced the lint warning but the runtime bug remained. Mitigation applied: moved the early return AFTER both useEffects, added `if (!open) return undefined;` inside the first useEffect, and added `open` to its dependency array."
+}

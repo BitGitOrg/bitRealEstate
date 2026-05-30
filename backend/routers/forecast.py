@@ -10,6 +10,7 @@ and produces yearly KPI projections. Also exposes:
 import io
 import json
 import logging
+import asyncio
 import re
 import uuid
 from datetime import datetime, timezone
@@ -96,6 +97,16 @@ class AutoOptimizeIn(BaseModel):
     vincoli_extra: Optional[str] = ""
     save: bool = False
     nome: Optional[str] = None
+
+
+class AutoOptimizeJobIn(BaseModel):
+    """Multi-shot async optimization. Generates 3 alternative plans (conservativo / bilanciato / aggressivo)."""
+    target_patrimonio_netto: float
+    horizon_years: int = 5
+    max_ltv: float = 60.0
+    capitale_disponibile: Optional[float] = None
+    strategia: Literal["reddito", "rivendita", "mista"] = "mista"
+    vincoli_extra: Optional[str] = ""
 
 
 # ---------- Computation ----------
@@ -375,6 +386,264 @@ def simulate(baseline: dict, scenario: dict, props: list, settings: dict = None)
     }
 
 
+async def _generate_strategist_plan(
+    db, llm_key: str, user_id: str,
+    target_patrimonio_netto: float, horizon_years: int, max_ltv: float,
+    capitale_disponibile: Optional[float], strategia: str, propensione_rischio: str,
+    vincoli_extra: str = "",
+    baseline: Optional[dict] = None, props: Optional[list] = None, settings: Optional[dict] = None,
+) -> dict:
+    """Run a single Claude call → parse → normalize → simulate → return plan dict.
+    Reused by both /auto-optimize (single shot) and /auto-optimize/jobs (multi-shot, 3 variants).
+    Raises HTTPException on hard errors."""
+    if settings is None:
+        settings = await get_user_settings(db, user_id)
+    capitale = capitale_disponibile if capitale_disponibile is not None else float(settings.get("capitale_disponibile") or 0)
+    ltv_cap = float(settings.get("limite_indebitamento") or 70)
+    target_netto = float(settings.get("target_netto") or 5)
+
+    if baseline is None:
+        baseline = await build_baseline(db, user_id, {"use_real_baseline": True, "horizon_years": horizon_years})
+    if props is None:
+        props = await db.properties.find({"user_id": user_id}, {"_id": 0}).to_list(500)
+
+    pn_iniziale = baseline.get("valore_immobili", 0) - baseline.get("debito_residuo", 0)
+    ctx_lines = [
+        "=== STATO ATTUALE SOCIETÀ ===",
+        f"Immobili in portafoglio: {baseline.get('numero_immobili', 0)}",
+        f"Valore immobili: €{baseline.get('valore_immobili', 0):,.0f}",
+        f"Debito residuo: €{baseline.get('debito_residuo', 0):,.0f}",
+        f"Patrimonio netto iniziale: €{pn_iniziale:,.0f}",
+        f"Liquidità: €{baseline.get('liquidita', 0):,.0f}",
+        f"Canone mensile attuale: €{baseline.get('canone_mensile', 0):,.0f}/m",
+        f"Rata mutui mensile: €{baseline.get('rata_mutui_mensile', 0):,.0f}/m",
+        "",
+        "=== OBIETTIVO ===",
+        f"Patrimonio netto target a {horizon_years} anni: €{target_patrimonio_netto:,.0f}",
+        f"Crescita richiesta: {((target_patrimonio_netto - pn_iniziale) / max(1, pn_iniziale) * 100):.1f}%",
+        f"LTV massimo accettato: {max_ltv}% (cap società: {ltv_cap}%)",
+        f"Capitale proprio disponibile: €{capitale:,.0f}",
+        f"Strategia preferita: {strategia}",
+        f"Propensione al rischio: {propensione_rischio}",
+        f"Target rendimento netto società: {target_netto}%",
+    ]
+    if vincoli_extra:
+        ctx_lines.append(f"Vincoli extra dell'utente: {vincoli_extra}")
+    if props:
+        ctx_lines.append("")
+        ctx_lines.append("=== IMMOBILI ESISTENTI (potenziali candidati a vendita/ristrutturazione) ===")
+        for p in props[:25]:
+            ctx_lines.append(
+                f"- id={p.get('id')} · {p.get('nome','')} ({p.get('citta','')}) · "
+                f"valore €{p.get('valore_stimato', p.get('prezzo_acquisto', 0)):,.0f} · "
+                f"canone €{p.get('canone_mensile', 0):,.0f}/m · stato {p.get('stato','')}"
+            )
+
+    sys_msg = (
+        "Sei AI Strategist, un consulente di portafoglio immobiliare con licenza fiduciaria. "
+        "Riceverai lo stato attuale di una società immobiliare italiana e un obiettivo di crescita pluri-annuale. "
+        "Il tuo compito: progettare il PIANO OPERATIVO OTTIMALE — la sequenza di operazioni (anno per anno) che "
+        "raggiunge il target rispettando i vincoli di leva (LTV), capitale disponibile e propensione al rischio.\n\n"
+        "Rispondi SOLO con JSON valido (niente prefissi, niente markdown, niente backticks).\n\n"
+        "Schema obbligatorio:\n"
+        "{\n"
+        '  "strategy_summary": "string 2-4 frasi in italiano che spiegano la strategia",\n'
+        '  "expected_outcome": "string 1-2 frasi su patrimonio finale atteso e LTV finale",\n'
+        '  "key_risks": ["3-5 bullet brevi"],\n'
+        '  "assumptions": {\n'
+        '    "rivalutazione_immobili": float (default 2.0),\n'
+        '    "istat_canoni": float (default 1.8),\n'
+        '    "tassazione_pct": float (default 26)\n'
+        "  },\n"
+        '  "operations": [\n'
+        "    {\n"
+        '      "anno": int (1..horizon),\n'
+        '      "tipo": "acquisto"|"vendita"|"ristrutturazione"|"rinegoziazione_mutuo"|"aumento_canone",\n'
+        '      "label": "string descrittiva 30-60 caratteri (es. Bilocale Bologna Navile, 60m²)",\n'
+        '      "prezzo": float (solo per acquisto/vendita — prezzo realistico mercato italiano),\n'
+        '      "lavori": float (per acquisto/ristrutturazione — 0 se non servono),\n'
+        '      "canone_mensile": float (per acquisto = canone atteso; per ristrutturazione/aumento_canone = INCREMENTO €/mese),\n'
+        '      "mutuo_pct": float 0..0.8 (frazione finanziata, default 0.6 — RISPETTA il vincolo max_ltv),\n'
+        '      "tasso_mutuo": float (3.0-4.0 tipico oggi),\n'
+        '      "durata_mutuo": int 15-25,\n'
+        '      "nuovo_tasso": float (solo per rinegoziazione_mutuo),\n'
+        '      "immobile_id": "string (solo per vendita/ristrutturazione su immobile esistente — usa id reale dalla lista)"\n'
+        "    }\n"
+        "  ]\n"
+        "}\n\n"
+        "REGOLE:\n"
+        "- Distribuisci le operazioni nell'orizzonte (no tutto nell'anno 1).\n"
+        "- L'investimento di capitale proprio cumulato non deve superare il capitale disponibile finché non rientra dai cash flow.\n"
+        "- Se la propensione è BASSA: leva massima 50%, max 1 acquisto/anno, no operazioni speculative.\n"
+        "- Se la propensione è MEDIA: leva 50-65%, 1-2 operazioni/anno.\n"
+        "- Se la propensione è ALTA: leva fino a max_ltv, anche 2-3 op/anno.\n"
+        "- Strategia RIVENDITA: usa più acquisto+ristrutturazione+vendita short-term (24 mesi).\n"
+        "- Strategia REDDITO: usa acquisti tenuti a reddito, no vendite, considera aumento_canone su immobili esistenti.\n"
+        "- Strategia MISTA: bilancia.\n"
+        "- Considera l'effetto delle operazioni sull'LTV: dopo ogni acquisto verifica che il debito totale resti < max_ltv del valore totale.\n"
+        "- Prezzi mercato italiano: bilocale 130-220k Milano/Roma 180-350k, trilocale +50%, etc.\n"
+        "- Canoni realistici: bilocale 700-1100€, trilocale 900-1500€.\n\n"
+        "=== INPUT ===\n"
+        + "\n".join(ctx_lines)
+    )
+
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(
+            api_key=llm_key,
+            session_id=f"strategist-{uuid.uuid4()}",
+            system_message=sys_msg,
+        ).with_model("anthropic", "claude-sonnet-4-6")
+        reply = await chat.send_message(UserMessage(text="Progetta il piano ottimale rispettando vincoli e obiettivo."))
+    except Exception as e:
+        logging.exception("AI Strategist error")
+        raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
+
+    parsed = None
+    try:
+        parsed = json.loads(reply)
+    except Exception:
+        m = re.search(r"\{[\s\S]*\}", reply)
+        if m:
+            try:
+                parsed = json.loads(m.group(0))
+            except Exception:
+                parsed = None
+    if not parsed or "operations" not in parsed:
+        raise HTTPException(status_code=500, detail="L'AI Strategist non ha restituito un piano valido. Riprova.")
+
+    clean_ops = []
+    for op in parsed.get("operations") or []:
+        try:
+            anno = max(1, min(horizon_years, int(op.get("anno", 1))))
+        except Exception:
+            anno = 1
+        tipo = op.get("tipo", "acquisto")
+        if tipo not in ("acquisto", "vendita", "ristrutturazione", "rinegoziazione_mutuo", "sfitto", "aumento_canone"):
+            continue
+        clean_ops.append({
+            "id": str(uuid.uuid4()),
+            "anno": anno, "tipo": tipo,
+            "label": (op.get("label") or "")[:80],
+            "prezzo": float(op.get("prezzo") or 0),
+            "lavori": float(op.get("lavori") or 0),
+            "canone_mensile": float(op.get("canone_mensile") or 0),
+            "mutuo_pct": min(0.9, max(0.0, float(op.get("mutuo_pct") or 0))),
+            "tasso_mutuo": float(op.get("tasso_mutuo") or 0),
+            "durata_mutuo": int(op.get("durata_mutuo") or 20),
+            "nuovo_tasso": float(op.get("nuovo_tasso") or 0),
+            "mesi": int(op.get("mesi") or 0),
+            "pct_canone": float(op.get("pct_canone") or 0),
+            "immobile_id": op.get("immobile_id"),
+        })
+
+    assumptions = parsed.get("assumptions") or {}
+    draft_scenario = {
+        "nome": f"AI Plan {propensione_rischio} · target €{target_patrimonio_netto/1000:.0f}k @ {horizon_years}y",
+        "descrizione": parsed.get("strategy_summary", "")[:500],
+        "horizon_years": horizon_years,
+        "use_real_baseline": True,
+        "initial_patrimonio": 0, "initial_debito": 0, "initial_liquidita": 0,
+        "initial_canone_mensile": 0, "initial_rata_mutui": 0, "initial_numero_immobili": 0,
+        "inflation_rate": 2.0,
+        "rivalutazione_immobili": float(assumptions.get("rivalutazione_immobili", 2.0)),
+        "istat_canoni": float(assumptions.get("istat_canoni", 1.8)),
+        "tassazione_pct": float(assumptions.get("tassazione_pct", 26.0)),
+        "operations": clean_ops,
+    }
+
+    sim = simulate(baseline, draft_scenario, props, settings)
+    pn_finale = sim["summary"]["patrimonio_netto_finale"]
+    ltv_finale = sim["summary"]["ltv_finale"]
+    goal_summary = {
+        "target_pn": target_patrimonio_netto,
+        "pn_finale_simulato": pn_finale,
+        "gap_pct": round((pn_finale - target_patrimonio_netto) / max(1, target_patrimonio_netto) * 100, 1),
+        "target_raggiunto": pn_finale >= target_patrimonio_netto * 0.95,
+        "ltv_max": max_ltv,
+        "ltv_finale": ltv_finale,
+        "ltv_rispettato": ltv_finale <= max_ltv,
+    }
+
+    return {
+        "draft_scenario": draft_scenario,
+        "simulation": sim,
+        "strategy_summary": parsed.get("strategy_summary", ""),
+        "expected_outcome": parsed.get("expected_outcome", ""),
+        "key_risks": parsed.get("key_risks") or [],
+        "goal_summary": goal_summary,
+    }
+
+
+async def _run_multishot_job(db, llm_key: str, user_id: str, job_id: str, payload: dict):
+    """Background runner: generates 3 alternative plans (conservativo/bilanciato/aggressivo), updating job progress."""
+    try:
+        # shared baseline + settings — fetched once
+        settings = await get_user_settings(db, user_id)
+        baseline = await build_baseline(db, user_id, {"use_real_baseline": True, "horizon_years": payload["horizon_years"]})
+        props = await db.properties.find({"user_id": user_id}, {"_id": 0}).to_list(500)
+
+        profiles = [
+            {"id": "conservativo", "label": "Conservativo", "color": "#059669",
+             "propensione": "bassa", "max_ltv": min(payload["max_ltv"], 50.0)},
+            {"id": "bilanciato",  "label": "Bilanciato",  "color": "#0066FF",
+             "propensione": "media", "max_ltv": min(payload["max_ltv"], 60.0)},
+            {"id": "aggressivo",  "label": "Aggressivo",  "color": "#B45309",
+             "propensione": "alta",  "max_ltv": min(payload["max_ltv"], 75.0)},
+        ]
+
+        await db.strategist_jobs.update_one(
+            {"id": job_id},
+            {"$set": {"status": "running", "progress": 5, "current_step": "Preparazione dati portafoglio"}},
+        )
+
+        plans = []
+        n = len(profiles)
+        for i, prof in enumerate(profiles):
+            await db.strategist_jobs.update_one(
+                {"id": job_id},
+                {"$set": {
+                    "progress": 10 + int(i * 80 / n),
+                    "current_step": f"Generazione piano {prof['label']} ({i+1}/{n})…",
+                }},
+            )
+            plan = await _generate_strategist_plan(
+                db, llm_key, user_id,
+                target_patrimonio_netto=payload["target_patrimonio_netto"],
+                horizon_years=payload["horizon_years"],
+                max_ltv=prof["max_ltv"],
+                capitale_disponibile=payload.get("capitale_disponibile"),
+                strategia=payload.get("strategia", "mista"),
+                propensione_rischio=prof["propensione"],
+                vincoli_extra=payload.get("vincoli_extra", ""),
+                baseline=baseline, props=props, settings=settings,
+            )
+            plan["profile_id"] = prof["id"]
+            plan["profile_label"] = prof["label"]
+            plan["profile_color"] = prof["color"]
+            plan["profile_propensione"] = prof["propensione"]
+            plans.append(plan)
+            await db.strategist_jobs.update_one(
+                {"id": job_id},
+                {"$set": {"plans": plans, "progress": 10 + int((i + 1) * 80 / n)}},
+            )
+
+        await db.strategist_jobs.update_one(
+            {"id": job_id},
+            {"$set": {
+                "status": "done", "progress": 100,
+                "current_step": "Completato",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            }},
+        )
+    except Exception as e:
+        logging.exception("Multi-shot job error")
+        await db.strategist_jobs.update_one(
+            {"id": job_id},
+            {"$set": {"status": "error", "error": str(e), "progress": 100}},
+        )
+
+
 def make_forecast_router(db, current_user, llm_key: str):
     router = APIRouter(prefix="/api/forecast")
 
@@ -531,215 +800,124 @@ def make_forecast_router(db, current_user, llm_key: str):
         ).sort("ts", 1).to_list(200)
         return msgs
 
-    # ===== AI Strategist — Auto-Optimize =====
+    # ===== AI Strategist — Single-shot Auto-Optimize (legacy/sync) =====
     @router.post("/auto-optimize")
     async def auto_optimize(payload: AutoOptimizeIn, user: dict = Depends(current_user)):
         if not llm_key:
             raise HTTPException(status_code=500, detail="LLM key non configurata")
-        settings = await get_user_settings(db, user["id"])
-        capitale = payload.capitale_disponibile if payload.capitale_disponibile is not None else float(settings.get("capitale_disponibile") or 0)
-        ltv_cap = float(settings.get("limite_indebitamento") or 70)
-        target_netto = float(settings.get("target_netto") or 5)
-
-        # baseline from real data
-        baseline_scen = {"use_real_baseline": True, "horizon_years": payload.horizon_years}
-        baseline = await build_baseline(db, user["id"], baseline_scen)
-        props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
-
-        # context for the strategist
-        pn_iniziale = baseline.get("valore_immobili", 0) - baseline.get("debito_residuo", 0)
-        ctx_lines = [
-            "=== STATO ATTUALE SOCIETÀ ===",
-            f"Immobili in portafoglio: {baseline.get('numero_immobili', 0)}",
-            f"Valore immobili: €{baseline.get('valore_immobili', 0):,.0f}",
-            f"Debito residuo: €{baseline.get('debito_residuo', 0):,.0f}",
-            f"Patrimonio netto iniziale: €{pn_iniziale:,.0f}",
-            f"Liquidità: €{baseline.get('liquidita', 0):,.0f}",
-            f"Canone mensile attuale: €{baseline.get('canone_mensile', 0):,.0f}/m",
-            f"Rata mutui mensile: €{baseline.get('rata_mutui_mensile', 0):,.0f}/m",
-            "",
-            "=== OBIETTIVO ===",
-            f"Patrimonio netto target a {payload.horizon_years} anni: €{payload.target_patrimonio_netto:,.0f}",
-            f"Crescita richiesta: {((payload.target_patrimonio_netto - pn_iniziale) / max(1, pn_iniziale) * 100):.1f}%",
-            f"LTV massimo accettato: {payload.max_ltv}% (cap società: {ltv_cap}%)",
-            f"Capitale proprio disponibile: €{capitale:,.0f}",
-            f"Strategia preferita: {payload.strategia}",
-            f"Propensione al rischio: {payload.propensione_rischio}",
-            f"Target rendimento netto società: {target_netto}%",
-        ]
-        if payload.vincoli_extra:
-            ctx_lines.append(f"Vincoli extra dell'utente: {payload.vincoli_extra}")
-        if props:
-            ctx_lines.append("")
-            ctx_lines.append("=== IMMOBILI ESISTENTI (potenziali candidati a vendita/ristrutturazione) ===")
-            for p in props[:25]:
-                ctx_lines.append(
-                    f"- id={p.get('id')} · {p.get('nome','')} ({p.get('citta','')}) · "
-                    f"valore €{p.get('valore_stimato', p.get('prezzo_acquisto', 0)):,.0f} · "
-                    f"canone €{p.get('canone_mensile', 0):,.0f}/m · stato {p.get('stato','')}"
-                )
-
-        sys_msg = (
-            "Sei AI Strategist, un consulente di portafoglio immobiliare con licenza fiduciaria. "
-            "Riceverai lo stato attuale di una società immobiliare italiana e un obiettivo di crescita pluri-annuale. "
-            "Il tuo compito: progettare il PIANO OPERATIVO OTTIMALE — la sequenza di operazioni (anno per anno) che "
-            "raggiunge il target rispettando i vincoli di leva (LTV), capitale disponibile e propensione al rischio.\n\n"
-            "Rispondi SOLO con JSON valido (niente prefissi, niente markdown, niente backticks).\n\n"
-            "Schema obbligatorio:\n"
-            "{\n"
-            '  "strategy_summary": "string 2-4 frasi in italiano che spiegano la strategia",\n'
-            '  "expected_outcome": "string 1-2 frasi su patrimonio finale atteso e LTV finale",\n'
-            '  "key_risks": ["3-5 bullet brevi"],\n'
-            '  "assumptions": {\n'
-            '    "rivalutazione_immobili": float (default 2.0),\n'
-            '    "istat_canoni": float (default 1.8),\n'
-            '    "tassazione_pct": float (default 26)\n'
-            "  },\n"
-            '  "operations": [\n'
-            "    {\n"
-            '      "anno": int (1..horizon),\n'
-            '      "tipo": "acquisto"|"vendita"|"ristrutturazione"|"rinegoziazione_mutuo"|"aumento_canone",\n'
-            '      "label": "string descrittiva 30-60 caratteri (es. Bilocale Bologna Navile, 60m²)",\n'
-            '      "prezzo": float (solo per acquisto/vendita — prezzo realistico mercato italiano),\n'
-            '      "lavori": float (per acquisto/ristrutturazione — 0 se non servono),\n'
-            '      "canone_mensile": float (per acquisto = canone atteso; per ristrutturazione/aumento_canone = INCREMENTO €/mese),\n'
-            '      "mutuo_pct": float 0..0.8 (frazione finanziata, default 0.6 — RISPETTA il vincolo max_ltv),\n'
-            '      "tasso_mutuo": float (3.0-4.0 tipico oggi),\n'
-            '      "durata_mutuo": int 15-25,\n'
-            '      "nuovo_tasso": float (solo per rinegoziazione_mutuo),\n'
-            '      "immobile_id": "string (solo per vendita/ristrutturazione su immobile esistente — usa id reale dalla lista)"\n'
-            "    }\n"
-            "  ]\n"
-            "}\n\n"
-            "REGOLE:\n"
-            "- Distribuisci le operazioni nell'orizzonte (no tutto nell'anno 1).\n"
-            "- L'investimento di capitale proprio cumulato non deve superare il capitale disponibile finché non rientra dai cash flow.\n"
-            "- Se la propensione è BASSA: leva massima 50%, max 1 acquisto/anno, no operazioni speculative.\n"
-            "- Se la propensione è MEDIA: leva 50-65%, 1-2 operazioni/anno.\n"
-            "- Se la propensione è ALTA: leva fino a max_ltv, anche 2-3 op/anno.\n"
-            "- Strategia RIVENDITA: usa più acquisto+ristrutturazione+vendita short-term (24 mesi).\n"
-            "- Strategia REDDITO: usa acquisti tenuti a reddito, no vendite, considera aumento_canone su immobili esistenti.\n"
-            "- Strategia MISTA: bilancia.\n"
-            "- Considera l'effetto delle operazioni sull'LTV: dopo ogni acquisto verifica che il debito totale resti < max_ltv del valore totale.\n"
-            "- Prezzi mercato italiano: bilocale 130-220k Milano/Roma 180-350k, trilocale +50%, etc.\n"
-            "- Canoni realistici: bilocale 700-1100€, trilocale 900-1500€.\n\n"
-            "=== INPUT ===\n"
-            + "\n".join(ctx_lines)
+        plan = await _generate_strategist_plan(
+            db, llm_key, user["id"],
+            target_patrimonio_netto=payload.target_patrimonio_netto,
+            horizon_years=payload.horizon_years,
+            max_ltv=payload.max_ltv,
+            capitale_disponibile=payload.capitale_disponibile,
+            strategia=payload.strategia,
+            propensione_rischio=payload.propensione_rischio,
+            vincoli_extra=payload.vincoli_extra or "",
         )
-
-        try:
-            from emergentintegrations.llm.chat import LlmChat, UserMessage
-            chat = LlmChat(
-                api_key=llm_key,
-                session_id=f"strategist-{uuid.uuid4()}",
-                system_message=sys_msg,
-            ).with_model("anthropic", "claude-sonnet-4-6")
-            reply = await chat.send_message(UserMessage(text="Progetta il piano ottimale rispettando vincoli e obiettivo."))
-        except Exception as e:
-            logging.exception("AI Strategist error")
-            raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
-
-        parsed = None
-        try:
-            parsed = json.loads(reply)
-        except Exception:
-            m = re.search(r"\{[\s\S]*\}", reply)
-            if m:
-                try:
-                    parsed = json.loads(m.group(0))
-                except Exception:
-                    parsed = None
-        if not parsed or "operations" not in parsed:
-            raise HTTPException(status_code=500, detail="L'AI Strategist non ha restituito un piano valido. Riprova.")
-
-        # Normalize operations and assign ids/anno bounds
-        clean_ops = []
-        for i, op in enumerate(parsed.get("operations") or []):
-            try:
-                anno = max(1, min(payload.horizon_years, int(op.get("anno", 1))))
-            except Exception:
-                anno = 1
-            tipo = op.get("tipo", "acquisto")
-            if tipo not in ("acquisto", "vendita", "ristrutturazione", "rinegoziazione_mutuo", "sfitto", "aumento_canone"):
-                continue
-            clean_ops.append({
-                "id": str(uuid.uuid4()),
-                "anno": anno,
-                "tipo": tipo,
-                "label": (op.get("label") or "")[:80],
-                "prezzo": float(op.get("prezzo") or 0),
-                "lavori": float(op.get("lavori") or 0),
-                "canone_mensile": float(op.get("canone_mensile") or 0),
-                "mutuo_pct": min(0.9, max(0.0, float(op.get("mutuo_pct") or 0))),
-                "tasso_mutuo": float(op.get("tasso_mutuo") or 0),
-                "durata_mutuo": int(op.get("durata_mutuo") or 20),
-                "nuovo_tasso": float(op.get("nuovo_tasso") or 0),
-                "mesi": int(op.get("mesi") or 0),
-                "pct_canone": float(op.get("pct_canone") or 0),
-                "immobile_id": op.get("immobile_id"),
-            })
-
-        assumptions = parsed.get("assumptions") or {}
-        draft_scenario = {
-            "nome": payload.nome or f"AI Plan · target €{payload.target_patrimonio_netto/1000:.0f}k @ {payload.horizon_years}y",
-            "descrizione": parsed.get("strategy_summary", "")[:500],
-            "horizon_years": payload.horizon_years,
-            "use_real_baseline": True,
-            "initial_patrimonio": 0,
-            "initial_debito": 0,
-            "initial_liquidita": 0,
-            "initial_canone_mensile": 0,
-            "initial_rata_mutui": 0,
-            "initial_numero_immobili": 0,
-            "inflation_rate": 2.0,
-            "rivalutazione_immobili": float(assumptions.get("rivalutazione_immobili", 2.0)),
-            "istat_canoni": float(assumptions.get("istat_canoni", 1.8)),
-            "tassazione_pct": float(assumptions.get("tassazione_pct", 26.0)),
-            "operations": clean_ops,
-        }
-
-        # Simulate the proposed scenario to give immediate feedback
-        sim = simulate(baseline, draft_scenario, props, settings)
-
-        # Verdict on goal achievement
-        pn_finale = sim["summary"]["patrimonio_netto_finale"]
-        ltv_finale = sim["summary"]["ltv_finale"]
-        target_raggiunto = pn_finale >= payload.target_patrimonio_netto * 0.95  # 5% tolerance
-        ltv_rispettato = ltv_finale <= payload.max_ltv
-        goal_summary = {
-            "target_pn": payload.target_patrimonio_netto,
-            "pn_finale_simulato": pn_finale,
-            "gap_pct": round((pn_finale - payload.target_patrimonio_netto) / max(1, payload.target_patrimonio_netto) * 100, 1),
-            "target_raggiunto": target_raggiunto,
-            "ltv_max": payload.max_ltv,
-            "ltv_finale": ltv_finale,
-            "ltv_rispettato": ltv_rispettato,
-        }
-
         saved_id = None
         if payload.save:
             item = {
                 "id": str(uuid.uuid4()),
                 "user_id": user["id"],
-                **draft_scenario,
+                **plan["draft_scenario"],
+                "nome": payload.nome or plan["draft_scenario"]["nome"],
                 "ai_generated": True,
-                "ai_strategy_summary": parsed.get("strategy_summary", ""),
-                "ai_key_risks": parsed.get("key_risks") or [],
+                "ai_strategy_summary": plan["strategy_summary"],
+                "ai_key_risks": plan["key_risks"],
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             await db.scenarios.insert_one(item.copy())
             saved_id = item["id"]
+        return {**plan, "saved_id": saved_id}
 
-        return {
-            "draft_scenario": draft_scenario,
-            "simulation": sim,
-            "strategy_summary": parsed.get("strategy_summary", ""),
-            "expected_outcome": parsed.get("expected_outcome", ""),
-            "key_risks": parsed.get("key_risks") or [],
-            "goal_summary": goal_summary,
-            "saved_id": saved_id,
+    # ===== AI Strategist — Multi-shot Async Jobs =====
+    @router.post("/auto-optimize/jobs", status_code=202)
+    async def create_auto_optimize_job(payload: AutoOptimizeJobIn, user: dict = Depends(current_user)):
+        if not llm_key:
+            raise HTTPException(status_code=500, detail="LLM key non configurata")
+        job = {
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"],
+            "status": "queued",
+            "progress": 0,
+            "current_step": "In coda…",
+            "payload": payload.model_dump(),
+            "plans": [],
+            "error": None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
+        await db.strategist_jobs.insert_one(job.copy())
+        # spawn background task (asyncio.create_task survives because event loop is shared with FastAPI)
+        asyncio.create_task(_run_multishot_job(db, llm_key, user["id"], job["id"], payload.model_dump()))
+        return {"job_id": job["id"], "status": "queued"}
+
+    @router.get("/auto-optimize/jobs/{job_id}")
+    async def get_auto_optimize_job(job_id: str, user: dict = Depends(current_user)):
+        job = await db.strategist_jobs.find_one(
+            {"id": job_id, "user_id": user["id"]},
+            {"_id": 0},
+        )
+        if not job:
+            raise HTTPException(status_code=404, detail="Job non trovato")
+        return job
+
+    @router.post("/auto-optimize/jobs/{job_id}/save")
+    async def save_plan_from_job(
+        job_id: str,
+        profile_id: str,
+        nome: Optional[str] = None,
+        user: dict = Depends(current_user),
+    ):
+        job = await db.strategist_jobs.find_one({"id": job_id, "user_id": user["id"]}, {"_id": 0})
+        if not job:
+            raise HTTPException(status_code=404, detail="Job non trovato")
+        if job.get("status") != "done":
+            raise HTTPException(status_code=400, detail="Job non ancora completato")
+        plan = next((p for p in (job.get("plans") or []) if p.get("profile_id") == profile_id), None)
+        if not plan:
+            raise HTTPException(status_code=404, detail=f"Profilo '{profile_id}' non trovato nel job")
+        item = {
+            "id": str(uuid.uuid4()),
+            "user_id": user["id"],
+            **plan["draft_scenario"],
+            "nome": nome or plan["draft_scenario"]["nome"],
+            "ai_generated": True,
+            "ai_profile": plan.get("profile_label"),
+            "ai_strategy_summary": plan.get("strategy_summary", ""),
+            "ai_key_risks": plan.get("key_risks") or [],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.scenarios.insert_one(item.copy())
+        return {"saved_id": item["id"], "nome": item["nome"]}
+
+    @router.post("/auto-optimize/jobs/{job_id}/save-all")
+    async def save_all_plans_from_job(job_id: str, user: dict = Depends(current_user)):
+        job = await db.strategist_jobs.find_one({"id": job_id, "user_id": user["id"]}, {"_id": 0})
+        if not job:
+            raise HTTPException(status_code=404, detail="Job non trovato")
+        if job.get("status") != "done":
+            raise HTTPException(status_code=400, detail="Job non ancora completato")
+        saved = []
+        for plan in (job.get("plans") or []):
+            item = {
+                "id": str(uuid.uuid4()),
+                "user_id": user["id"],
+                **plan["draft_scenario"],
+                "nome": plan["draft_scenario"]["nome"],
+                "ai_generated": True,
+                "ai_profile": plan.get("profile_label"),
+                "ai_strategy_summary": plan.get("strategy_summary", ""),
+                "ai_key_risks": plan.get("key_risks") or [],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.scenarios.insert_one(item.copy())
+            saved.append({"id": item["id"], "nome": item["nome"], "profile_id": plan.get("profile_id")})
+        return {"saved": saved, "count": len(saved)}
 
 
     # ===== PDF — Piano industriale =====

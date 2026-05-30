@@ -731,6 +731,22 @@ export default function Forecast() {
           if (newId) setSelectedId(newId);
           setActiveTab("risultati");
         }}
+        onAllAccepted={async (newIds) => {
+          // refresh list, pre-select all 3 for comparison and switch to Compare tab
+          const list = await (await fetch(`${API}/scenarios`, { headers: authHeaders() })).json();
+          setScenarios(list);
+          setCompareIds(newIds);
+          // immediately run compare
+          try {
+            const r = await fetch(`${API}/scenarios/compare`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", ...authHeaders() },
+              body: JSON.stringify({ scenario_ids: newIds }),
+            });
+            setCompareResult(await r.json());
+          } catch (_) { /* no-op */ }
+          setActiveTab("compare");
+        }}
       />
     </Layout>
   );
