@@ -8,8 +8,9 @@ import {
 } from "recharts";
 import {
   Sparkles, Plus, Trash2, Save, Calculator, FileDown, Copy, Send,
-  Bot, GitCompare, TrendingUp, Building2, Wallet, AlertTriangle,
+  Bot, GitCompare, TrendingUp, Building2, Wallet, AlertTriangle, Wand2,
 } from "lucide-react";
+import AIStrategistModal from "../components/forecast/AIStrategistModal";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api/forecast`;
 const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem("crr_token")}` });
@@ -264,6 +265,7 @@ export default function Forecast() {
   const [compareIds, setCompareIds] = useState([]);
   const [compareResult, setCompareResult] = useState(null);
   const [activeTab, setActiveTab] = useState("editor");
+  const [strategistOpen, setStrategistOpen] = useState(false);
 
   // ----- load scenarios on mount
   useEffect(() => {
@@ -473,6 +475,13 @@ export default function Forecast() {
       subtitle="Simulazione pluri-annuale con operazioni, AI Coach e confronto scenari"
       actions={
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            data-testid="open-ai-strategist"
+            onClick={() => setStrategistOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-[#0066FF] to-[#7C3AED] hover:from-[#2563EB] hover:to-[#6D28D9] text-white text-sm font-semibold shadow-sm transition"
+          >
+            <Wand2 size={14} /> AI Strategist
+          </button>
           <select
             data-testid="scenario-picker"
             value={selectedId || ""}
@@ -711,6 +720,18 @@ export default function Forecast() {
           )}
         </>
       )}
+
+      <AIStrategistModal
+        open={strategistOpen}
+        onClose={() => setStrategistOpen(false)}
+        onAccepted={async (newId) => {
+          // refresh list & switch to the new scenario
+          const list = await (await fetch(`${API}/scenarios`, { headers: authHeaders() })).json();
+          setScenarios(list);
+          if (newId) setSelectedId(newId);
+          setActiveTab("risultati");
+        }}
+      />
     </Layout>
   );
 }
