@@ -30,6 +30,24 @@ class PropertyIn(BaseModel):
     note: Optional[str] = ""
     mutuo: Optional[dict] = None
     img: Optional[str] = "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?crop=entropy&cs=srgb&fm=jpg&w=800"
+    # Locazione
+    inquilino: Optional[str] = None
+    data_inizio_contratto: Optional[str] = None
+    scadenza_contratto: Optional[str] = None
+    deposito_cauzionale: Optional[float] = 0
+    durata_contratto_anni: Optional[int] = 0
+    rinnovo_automatico: Optional[bool] = False
+
+
+class LocazioneIn(BaseModel):
+    inquilino: Optional[str] = None
+    data_inizio_contratto: Optional[str] = None
+    scadenza_contratto: Optional[str] = None
+    deposito_cauzionale: Optional[float] = None
+    durata_contratto_anni: Optional[int] = None
+    rinnovo_automatico: Optional[bool] = None
+    canone_mensile: Optional[float] = None
+    note_locazione: Optional[str] = None
 
 
 class ConvertDealIn(BaseModel):
@@ -77,6 +95,22 @@ def make_properties_router(db, current_user):
     async def delete_property(pid: str, user: dict = Depends(current_user)):
         await db.properties.delete_one({"id": pid, "user_id": user["id"]})
         return {"ok": True}
+
+    @router.patch("/properties/{pid}/locazione")
+    async def update_locazione(pid: str, payload: LocazioneIn, user: dict = Depends(current_user)):
+        data = {k: v for k, v in payload.model_dump().items() if v is not None}
+        if not data:
+            raise HTTPException(status_code=400, detail="Nessun campo fornito")
+        data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        res = await db.properties.update_one(
+            {"id": pid, "user_id": user["id"]},
+            {"$set": data},
+        )
+        if res.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Immobile non trovato")
+        p = await db.properties.find_one({"id": pid, "user_id": user["id"]}, {"_id": 0})
+        return _enrich_property(p)
+
 
     @router.post("/deals/{deal_id}/convert")
     async def convert_deal_to_property(deal_id: str, ov: ConvertDealIn, user: dict = Depends(current_user)):
