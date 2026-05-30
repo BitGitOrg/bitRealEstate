@@ -129,6 +129,15 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
    - **ReferenceLine LTV=70%** sul grafico esposizione debitoria + zero-line sul grafico utile.
    - Soglie completamente parametrizzate da `/api/settings` (target_netto + limite_indebitamento).
 
+## 🆕 AI Strategist Auto-Optimize (30 May 2026 - iter 14)
+49. **Nuovo endpoint `POST /api/forecast/auto-optimize`** (`routers/forecast.py`):
+   - Input: target patrimonio netto, orizzonte (3/5/10), max LTV, capitale disponibile (o fallback su `settings.capitale_disponibile`), strategia (reddito/rivendita/mista), propensione (bassa/media/alta), vincoli testuali extra, flag `save`.
+   - Costruisce baseline reale dei dati società + system prompt strutturato → Claude Sonnet 4.6 genera JSON con `strategy_summary`, `expected_outcome`, `key_risks[]`, `assumptions{}`, `operations[]` aderenti allo schema Operation.
+   - Backend valida e normalizza ogni operazione (id uuid, anno bounded, mutuo_pct 0..0.9, tipi enum) → poi **simula immediatamente** con `simulate()` per fornire `goal_summary` (`target_raggiunto`, `ltv_rispettato`, `gap_pct`).
+   - Con `save=true` persiste come scenario con tag `ai_generated:true`, `ai_strategy_summary`, `ai_key_risks`.
+50. **UI `AIStrategistModal.jsx`**: pulsante gradient blu→viola "AI Strategist" nell'header di `/forecast`. Modal a 3 step (Form → Loading 20-40s → Result) con banner goal verde/ambra + strategia + outcome + lista operazioni colorate per tipo + rischi chiave + 4 KPI mini. Pulsanti "Modifica obiettivo", "Scarta", "Salva come scenario" (persiste + switcha automatico alla tab Risultati). ESC + click-outside per chiudere.
+51. **Test coverage**: 20/20 backend test (auth, validation, response shape, profili rischio, strategie, target irraggiungibile, vincoli extra, normalizzazione op, save flag, regression). Test file riusabile: `/app/backend/tests/test_iter14_auto_optimize.py`.
+
 ## Demo accounts
 - ceo@controlroom.it / demo1234 (admin)
 - amministrazione@controlroom.it / demo1234 (amministrazione)
