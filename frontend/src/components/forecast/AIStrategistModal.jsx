@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Wand2, X, CheckCircle2, AlertTriangle, Loader2, ListChecks, Target, Save, Sparkles } from "lucide-react";
 
@@ -58,6 +58,22 @@ export default function AIStrategistModal({ open, onClose, onAccepted }) {
 
   if (!open) return null;
 
+  // ESC-to-close + lock body scroll while open
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape" && step !== "loading") close();
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
   const reset = () => {
     setStep("form");
     setResult(null);
@@ -97,13 +113,16 @@ export default function AIStrategistModal({ open, onClose, onAccepted }) {
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ ...form, save: true }),
       });
-      if (!r.ok) throw new Error("Errore salvataggio");
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: "Errore salvataggio" }));
+        throw new Error(err.detail || "Errore salvataggio");
+      }
       const data = await r.json();
       toast.success("Piano salvato come nuovo scenario");
       onAccepted?.(data.saved_id);
       close();
-    } catch {
-      toast.error("Errore salvataggio scenario");
+    } catch (e) {
+      toast.error(e.message || "Errore salvataggio scenario");
     } finally {
       setSavingAccept(false);
     }
@@ -113,7 +132,13 @@ export default function AIStrategistModal({ open, onClose, onAccepted }) {
   const goalOk = goal?.target_raggiunto && goal?.ltv_rispettato;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[rgba(15,23,42,0.45)] backdrop-blur-sm" data-testid="ai-strategist-modal">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[rgba(15,23,42,0.45)] backdrop-blur-sm"
+      data-testid="ai-strategist-modal"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && step !== "loading") close();
+      }}
+    >
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between bg-gradient-to-r from-[#EFF6FF] to-white">
