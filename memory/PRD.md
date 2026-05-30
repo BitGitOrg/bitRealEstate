@@ -155,6 +155,17 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 56. **Fix critico**: React Rules-of-Hooks violation nel modal (early return prima di useEffect) → moved early return AFTER hooks, guard inside first useEffect. Risolto in iter 15.
 57. **Test coverage**: 16/17 backend test passati (1 fallimento atteso era l'LTV overshoot, ora mitigato dal retry). File: `/app/backend/tests/test_iter15_multishot.py`.
 
+## 🆕 Investor Book PDF report (30 May 2026 - iter 16)
+58. **Terzo report nella sezione Report Direzionali** — `GET /api/report/investor-book.pdf`:
+   - **Cover page** con KPI portafoglio: numero immobili, % a reddito, tasso occupazione, sfitti, valore mercato totale, costo totale, **plusvalenza latente**, canone mensile/annuo, rendimento medio lordo/netto, debito residuo, patrimonio netto.
+   - **Una scheda PDF per immobile**: foto reale (scaricata async da URL via httpx con fallback graceful "Foto non disponibile"), anagrafica completa (codice, indirizzo, comune, tipologia, m², anno, classe energetica, stato, data acquisto), dati economici (prezzo acquisto, costo totale, valore stimato, plusvalenza, canone mensile/annuo, rendimento lordo/netto, cash flow, portfolio score), sezione finanziamento se presente mutuo (banca, residuo, rata, tasso), sezione locazione in corso (inquilino, data inizio, scadenza contratto, deposito cauzionale).
+   - **Recap finale** con tabella sinottica di tutti gli immobili (#, Nome, Città, Acquisto, Valore attuale, Canone, Rend. netto, Inquilino).
+   - Header brand+logo società + footer pagine (riusa `_pdf_chrome.py`).
+59. **Frontend**: terzo card violet (#7C3AED) con icona BookOpen nella griglia `/report`. Grid ora `lg:grid-cols-3`.
+60. **Campi opzionali immobili** letti dal report (popolabili via Mongo direct o futuro endpoint dedicato): `inquilino`, `scadenza_contratto`, `data_inizio_contratto`, `deposito_cauzionale`. Quando assenti, mostra "—".
+61. **Helper async `_fetch_property_images()`**: scarica in parallelo le foto degli immobili (timeout 6s, follow_redirects, supporta sia URL HTTP che data: base64), passa BytesIO al builder ReportLab. Errori loggati a DEBUG, foto fallback graziosa.
+62. **Test coverage**: 15/15 backend+frontend passati. File: `/app/backend/tests/test_iter16_investor_book.py` con assertion su contenuto PDF via pdfplumber (KPI values, section headers, tenant names, scadenze dates).
+
 ## Demo accounts
 - ceo@controlroom.it / demo1234 (admin)
 - amministrazione@controlroom.it / demo1234 (amministrazione)
