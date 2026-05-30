@@ -1,0 +1,38 @@
+{
+  "summary": "Iter 16 — Investor Book PDF report (3rd report) fully tested both backend & frontend. 15/15 pytest passed (100%). PDF is 107,835 bytes, 6 pages, contains brand+Investor Book title, complete KPI table (Numero immobili=2, Canone 3.550, Valore 705.000, Debito 275.000, Plusvalenza), per-property pages with Bilocale Navigli + Trilocale Isola headers, Dati economici / Finanziamento / Locazione in corso sections including tenant names (Mario e Laura Bianchi, Studio Legale Verdi & Partners) and scadenze (2026-03-14, 2027-06-09), plus final recap table with all 8 columns (#, Nome, Città, Acquisto, Valore attuale, Canone, Rend. netto, Inquilino). Regression: stato-salute and business-plan PDFs still 200 OK. Auth gating works (401 without token), unknown report id → 404, fmt != pdf → 400. Frontend /report renders 3 cards in lg:grid-cols-3, violet (#7C3AED) Investor Book card with BookOpen icon present, click on data-testid='report-investor-book-pdf' triggers actual browser download of investor-book.pdf (107KB). Screenshot saved to /app/frontend/public/screenshots/14_report_3cards.png.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter16_investor_book.py",
+    "/app/test_reports/pytest/iter16_results.xml",
+    "/app/frontend/public/screenshots/14_report_3cards.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "reports.py is now 469 lines — still under the 700-line guideline but approaching it. If a 4th report is added, consider splitting each build_* function into its own module under routers/reports/ to keep cognitive load manageable.",
+    "_fetch_property_images() catches all exceptions silently (logging at DEBUG only). For ops visibility, prefer logging.warning when an external image URL fails so production issues surface in logs. Current behavior is functionally correct (graceful fallback works).",
+    "The PDF download handler returns 500 with raw str(e) on unexpected exceptions — fine for an internal tool, but if this app ever goes multi-tenant consider scrubbing exception details from client-facing errors.",
+    "build_investor_book embeds RLImage from an io.BytesIO without verifying the image bytes are decodable; on a malformed image content-type=image/* but corrupt body, reportlab may raise. Currently wrapped in try/except so it falls through silently — good. No action needed."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter16_investor_book.py",
+    "/app/frontend/public/screenshots/14_report_3cards.png"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15)",
+    "frontend": "100% (3-cards grid + violet card + click→PDF download all verified)"
+  },
+  "test_credentials": "ceo@controlroom.it / demo1234 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "No new data created. Verified existing 2 demo properties (Bilocale Navigli IMM-BE20E5 + Trilocale Isola IMM-836DA0) appear correctly in the rendered PDF. Aggregate KPI numbers (3.550 canone, 705.000 valore, 275.000 debito) all match expected values.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Investor Book endpoint: GET /api/report/investor-book.pdf (auth required). Generation takes ~1-2s including async unsplash image fetch (httpx, 6s timeout, graceful fallback to 'Foto non disponibile' on failure). PDF is ~108KB with images, ~50KB without. Test file at /app/backend/tests/test_iter16_investor_book.py uses pdfplumber to extract text and validate KPI/section content — reusable for future report regression. Frontend: data-testid='report-investor-book' wraps the card, data-testid='report-investor-book-pdf' is the download button.",
+  "rca of the issue": "No issues found — feature works end-to-end as specified."
+}

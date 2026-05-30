@@ -1,6 +1,6 @@
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
-import { FileBarChart, Download, Building2, Landmark, Sparkles } from "lucide-react";
+import { FileBarChart, Download, Building2, Landmark, Sparkles, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 
 const API_BASE = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -19,6 +19,13 @@ const REPORTS = [
     desc: "Documento destinato a istituti di credito: profilo, patrimonio, struttura del debito, scenari di crescita, indici di solidità, allegato con elenco immobili.",
     icon: Landmark,
     color: "#059669",
+  },
+  {
+    id: "investor-book",
+    nome: "Investor Book",
+    desc: "Catalogo visivo di tutti gli immobili: per ogni asset una scheda dedicata con foto, anagrafica, dati economici, mutuo, locazione attiva e inquilino. Più pagina di KPI portafoglio e recap finale. Perfetto da condividere con investitori e advisor.",
+    icon: BookOpen,
+    color: "#7C3AED",
   },
 ];
 
@@ -42,8 +49,8 @@ export default function Report() {
   };
 
   return (
-    <Layout title="Report Direzionali" subtitle="Solo i report che contano · PDF con header e footer brandizzati">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <Layout title="Report Direzionali" subtitle="3 report comprensivi · PDF brandizzati con logo società">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {REPORTS.map(r => {
           const Icon = r.icon;
           return (
