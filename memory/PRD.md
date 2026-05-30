@@ -138,6 +138,23 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 50. **UI `AIStrategistModal.jsx`**: pulsante gradient blu→viola "AI Strategist" nell'header di `/forecast`. Modal a 3 step (Form → Loading 20-40s → Result) con banner goal verde/ambra + strategia + outcome + lista operazioni colorate per tipo + rischi chiave + 4 KPI mini. Pulsanti "Modifica obiettivo", "Scarta", "Salva come scenario" (persiste + switcha automatico alla tab Risultati). ESC + click-outside per chiudere.
 51. **Test coverage**: 20/20 backend test (auth, validation, response shape, profili rischio, strategie, target irraggiungibile, vincoli extra, normalizzazione op, save flag, regression). Test file riusabile: `/app/backend/tests/test_iter14_auto_optimize.py`.
 
+## 🆕 AI Strategist v2 — Multi-Shot Async (30 May 2026 - iter 15)
+52. **Pattern 202/Job per chiamate AI lunghe** — il singolo endpoint sync (60s blocking) è stato sostituito da:
+   - `POST /api/forecast/auto-optimize/jobs` → 202 `{job_id, status:"queued"}` + `asyncio.create_task` spawn del background runner.
+   - `GET /api/forecast/auto-optimize/jobs/{id}` → polling (3s lato client) con `{status, progress 0-100, current_step, plans[]}`. Stato persistito in `db.strategist_jobs`.
+   - `POST /api/forecast/auto-optimize/jobs/{id}/save?profile_id=` → salva un singolo piano come scenario.
+   - `POST /api/forecast/auto-optimize/jobs/{id}/save-all` → salva tutti e 3 i piani in un colpo.
+   - Endpoint legacy sync `POST /auto-optimize` mantenuto per backward compat (refactor a usare helper `_generate_strategist_plan`).
+53. **Multi-Shot — 3 piani alternativi simulati in parallelo logico** (sequenziale per LLM):
+   - **Conservativo** (propensione bassa, LTV cap min(input, 50%), color #059669)
+   - **Bilanciato** (propensione media, LTV cap min(input, 60%), color #0066FF)
+   - **Aggressivo** (propensione alta, LTV cap min(input, 75%), color #B45309)
+   - Ogni piano riceve nome compatto "AI Conservativo/Bilanciato/Aggressivo · target €Xk @ Ny" per Compare tab leggibile.
+54. **LTV cap enforcement con retry** in `_generate_strategist_plan`: se la simulazione produce `ltv_finale > max_ltv + 10pp`, retry singolo con prompt più stringente. Il risultato del retry viene accettato solo se migliora effettivamente l'LTV. (Mitigazione del bug semantico individuato in iter 15: aggressivo overshoot 110% vs cap 75%.)
+55. **UI rewrite `AIStrategistModal.jsx`** — 3 step: Form → Polling (progress bar gradient + 3 marker Conservativo/Bilanciato/Aggressivo con check/spinner/pending) → Result (3 PlanCard side-by-side con header colorato profilo, badge goal verde/ambra, 4 KPI mini, strategia text, lista top 6 op + bottone "Salva questo piano"). Pulsante globale "Salva tutti e confronta" → salva tutti i 3 e switcha automaticamente alla tab Compare con confronto già caricato.
+56. **Fix critico**: React Rules-of-Hooks violation nel modal (early return prima di useEffect) → moved early return AFTER hooks, guard inside first useEffect. Risolto in iter 15.
+57. **Test coverage**: 16/17 backend test passati (1 fallimento atteso era l'LTV overshoot, ora mitigato dal retry). File: `/app/backend/tests/test_iter15_multishot.py`.
+
 ## Demo accounts
 - ceo@controlroom.it / demo1234 (admin)
 - amministrazione@controlroom.it / demo1234 (amministrazione)

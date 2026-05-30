@@ -539,7 +539,7 @@ async def _generate_strategist_plan(
 
     assumptions = parsed.get("assumptions") or {}
     draft_scenario = {
-        "nome": f"AI Plan {propensione_rischio} · target €{target_patrimonio_netto/1000:.0f}k @ {horizon_years}y",
+        "nome": f"AI Plan {propensione_rischio.capitalize()} · target €{target_patrimonio_netto/1000:.0f}k @ {horizon_years}y",
         "descrizione": parsed.get("strategy_summary", "")[:500],
         "horizon_years": horizon_years,
         "use_real_baseline": True,
@@ -555,6 +555,84 @@ async def _generate_strategist_plan(
     sim = simulate(baseline, draft_scenario, props, settings)
     pn_finale = sim["summary"]["patrimonio_netto_finale"]
     ltv_finale = sim["summary"]["ltv_finale"]
+
+    # ===== LTV cap enforcement: if simulated LTV materially breaches the profile cap,
+    # retry ONCE with a stricter prompt asking AI to reduce leverage / acquisitions.
+    if ltv_finale > max_ltv + 10 and not getattr(_generate_strategist_plan, "_in_retry", False):
+        try:
+            _generate_strategist_plan._in_retry = True  # type: ignore[attr-defined]
+            retry_msg = (
+                f"Il tuo piano precedente ha prodotto un LTV finale del {ltv_finale:.1f}%, "
+                f"ben oltre il vincolo dichiarato di {max_ltv:.0f}%. "
+                "Rigeneralo riducendo gli acquisti finanziati con mutuo, abbassando mutuo_pct e/o introducendo "
+                "vendite che liberino debito. RISPETTA TASSATIVAMENTE l'LTV massimo."
+            )
+            try:
+                from emergentintegrations.llm.chat import LlmChat, UserMessage
+                chat = LlmChat(
+                    api_key=llm_key,
+                    session_id=f"strategist-retry-{uuid.uuid4()}",
+                    system_message=sys_msg + "\n\n=== RETRY ===\n" + retry_msg,
+                ).with_model("anthropic", "claude-sonnet-4-6")
+                reply2 = await chat.send_message(UserMessage(text=retry_msg))
+                parsed2 = None
+                try:
+                    parsed2 = json.loads(reply2)
+                except Exception:
+                    m2 = re.search(r"\{[\s\S]*\}", reply2)
+                    if m2:
+                        try:
+                            parsed2 = json.loads(m2.group(0))
+                        except Exception:
+                            parsed2 = None
+                if parsed2 and "operations" in parsed2:
+                    clean_ops2 = []
+                    for op in parsed2.get("operations") or []:
+                        try:
+                            anno = max(1, min(horizon_years, int(op.get("anno", 1))))
+                        except Exception:
+                            anno = 1
+                        tipo = op.get("tipo", "acquisto")
+                        if tipo not in ("acquisto", "vendita", "ristrutturazione", "rinegoziazione_mutuo", "sfitto", "aumento_canone"):
+                            continue
+                        clean_ops2.append({
+                            "id": str(uuid.uuid4()), "anno": anno, "tipo": tipo,
+                            "label": (op.get("label") or "")[:80],
+                            "prezzo": float(op.get("prezzo") or 0),
+                            "lavori": float(op.get("lavori") or 0),
+                            "canone_mensile": float(op.get("canone_mensile") or 0),
+                            "mutuo_pct": min(0.9, max(0.0, float(op.get("mutuo_pct") or 0))),
+                            "tasso_mutuo": float(op.get("tasso_mutuo") or 0),
+                            "durata_mutuo": int(op.get("durata_mutuo") or 20),
+                            "nuovo_tasso": float(op.get("nuovo_tasso") or 0),
+                            "mesi": int(op.get("mesi") or 0),
+                            "pct_canone": float(op.get("pct_canone") or 0),
+                            "immobile_id": op.get("immobile_id"),
+                        })
+                    a2 = parsed2.get("assumptions") or {}
+                    draft_retry = {
+                        **draft_scenario,
+                        "descrizione": (parsed2.get("strategy_summary") or parsed.get("strategy_summary") or "")[:500],
+                        "rivalutazione_immobili": float(a2.get("rivalutazione_immobili", draft_scenario["rivalutazione_immobili"])),
+                        "istat_canoni": float(a2.get("istat_canoni", draft_scenario["istat_canoni"])),
+                        "tassazione_pct": float(a2.get("tassazione_pct", draft_scenario["tassazione_pct"])),
+                        "operations": clean_ops2,
+                    }
+                    sim_retry = simulate(baseline, draft_retry, props, settings)
+                    # Use the retry only if it actually improved LTV
+                    if sim_retry["summary"]["ltv_finale"] < ltv_finale:
+                        draft_scenario = draft_retry
+                        sim = sim_retry
+                        pn_finale = sim["summary"]["patrimonio_netto_finale"]
+                        ltv_finale = sim["summary"]["ltv_finale"]
+                        parsed["strategy_summary"] = parsed2.get("strategy_summary") or parsed.get("strategy_summary")
+                        parsed["expected_outcome"] = parsed2.get("expected_outcome") or parsed.get("expected_outcome")
+                        parsed["key_risks"] = parsed2.get("key_risks") or parsed.get("key_risks")
+            except Exception:
+                logging.exception("Strategist retry failed")
+        finally:
+            _generate_strategist_plan._in_retry = False  # type: ignore[attr-defined]
+
     goal_summary = {
         "target_pn": target_patrimonio_netto,
         "pn_finale_simulato": pn_finale,
@@ -617,6 +695,10 @@ async def _run_multishot_job(db, llm_key: str, user_id: str, job_id: str, payloa
                 propensione_rischio=prof["propensione"],
                 vincoli_extra=payload.get("vincoli_extra", ""),
                 baseline=baseline, props=props, settings=settings,
+            )
+            # Rename draft using the profile label (clearer in Compare tab)
+            plan["draft_scenario"]["nome"] = (
+                f"AI {prof['label']} · €{payload['target_patrimonio_netto']/1000:.0f}k @ {payload['horizon_years']}y"
             )
             plan["profile_id"] = prof["id"]
             plan["profile_label"] = prof["label"]
