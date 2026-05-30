@@ -166,6 +166,23 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 61. **Helper async `_fetch_property_images()`**: scarica in parallelo le foto degli immobili (timeout 6s, follow_redirects, supporta sia URL HTTP che data: base64), passa BytesIO al builder ReportLab. Errori loggati a DEBUG, foto fallback graziosa.
 62. **Test coverage**: 15/15 backend+frontend passati. File: `/app/backend/tests/test_iter16_investor_book.py` con assertion su contenuto PDF via pdfplumber (KPI values, section headers, tenant names, scadenze dates).
 
+## 🆕 Locazione editable nella Scheda Immobile (30 May 2026 - iter 17)
+63. **Nuovo endpoint `PATCH /api/properties/{pid}/locazione`** (`routers/properties.py`):
+   - Body `LocazioneIn` con tutti i campi opzionali — `inquilino`, `data_inizio_contratto`, `scadenza_contratto`, `deposito_cauzionale`, `durata_contratto_anni`, `rinnovo_automatico`, `canone_mensile`, `note_locazione`.
+   - Solo i campi forniti vengono `$set` (partial update); body vuoto dopo filtro → 400; immobile non trovato → 404.
+   - Restituisce immobile arricchito con metriche ricalcolate (rendimento/cash flow aggiornati se cambia il canone).
+   - `PropertyIn` esteso con gli stessi campi → ora anche POST `/api/properties` li accetta.
+64. **Nuovo tab "Locazione"** nella scheda immobile (`/immobile/{id}`):
+   - Form completo: inquilino, date contratto, canone, deposito, durata, rinnovo automatico (checkbox), note libere.
+   - **Status badge dinamico** computato lato client da `scadenza_contratto`:
+     - 🟢 Verde "In corso · scade tra N giorni" (>90 giorni)
+     - 🟡 Ambra "Scade tra N giorni" (<90 giorni)
+     - 🔴 Rosso "Contratto SCADUTO" (data passata)
+     - ⚪ Grigio "Nessuna locazione attiva"
+   - KPI riepilogo a colonna destra: canone annuo, rendimento lordo/netto auto-aggiornati dal `_enrich_property()` lato backend.
+65. **Loop chiuso end-to-end**: i dati salvati dal form fluiscono automaticamente in `Investor Book` PDF (sezione "Locazione in corso" per ogni immobile) + nei calcoli `KPI` portafoglio (canone annuo complessivo) + nelle proiezioni `Forecast` (canone_mensile è la baseline).
+66. **Test coverage**: 6/6 backend pytest + frontend e2e (toast success, persistenza dopo reload, screenshot). File: `/app/backend/tests/test_iter17_locazione.py`.
+
 ## Demo accounts
 - ceo@controlroom.it / demo1234 (admin)
 - amministrazione@controlroom.it / demo1234 (amministrazione)
