@@ -1,0 +1,32 @@
+{
+  "summary": "Iter19 — Tested the NEW simplified /forecast page (ForecastSimple.jsx) and POST /api/forecast/quick endpoint. Both prompt-only (LLM, claude-sonnet-4-6) and params-only (deterministic) modes work. UI renders verdict banner, 4 KPI cards, 4 charts (PN/CF/Debt+LTV/Ricavi-Utile), year-by-year table, action buttons (variant/compare/pdf) and AI chat. Old /forecast/advanced page still loads with 4 tabs (Editor/Risultati/AI Coach/Confronta).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter19_forecast_quick.py",
+    "/app/test_reports/pytest/iter19_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ForecastSimple.jsx always sends save:true (line 51) — every Simula click persists a scenario silently. Consider exposing a save toggle in UI or auto-cleaning quick-mode scenarios older than N days; otherwise the user's scenario list will fill up with 'Forecast rapido @ Xy' entries each time they iterate parameters.",
+    "forecast.py quick_forecast endpoint duplicates the operation construction loop that already exists in the main scenarios create flow (~lines 1000-1032 vs the AI plan endpoint above). Extracting a normalize_operation(dict) helper would reduce duplication.",
+    "Cleanup endpoint pattern: GET /api/forecast/scenarios works but the testing-style 'list with filter' is missing — adding a query param (?quick=true) would simplify future regression cleanup."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter19_forecast_quick.py (new)"
+  ],
+  "success_rate": {"backend": "100% (3/3, 1 skipped cleanup)", "frontend": "100% (all 16 data-testids found, simulation completed, both pages render)"},
+  "test_credentials": "ceo@controlroom.it / demo1234",
+  "seed_data_creation": "Test temporarily created 1 'Forecast rapido @ 5y' scenario via UI (ForecastSimple always saves) — deleted via DELETE /api/forecast/scenarios/{id}. Other pre-existing scenarios ('Nuovo scenario' x4, 'Crescita controllata 5 anni') left untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend uses /api/forecast/scenarios (NOT /api/scenarios). ForecastSimple page sends save:true unconditionally on every Simula click. The /api/forecast/quick endpoint accepts {prompt?, params?, horizon_years, save, nome} — at least one of prompt/params required (else 400). LLM (claude-sonnet-4-6) takes ~10-20s in prompt-only mode. Verdict shape lives at simulation.summary, not simulation.verdict directly.",
+  "rca_of_the_issue": "N/A — no bugs found. Smoke claim from main agent (10 ops, prompt-mode LLM works) is confirmed by automated tests; LLM produced 5+ valid operations for the bilocale Bologna prompt as required."
+}

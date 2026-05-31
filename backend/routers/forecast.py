@@ -109,6 +109,23 @@ class AutoOptimizeJobIn(BaseModel):
     vincoli_extra: Optional[str] = ""
 
 
+class QuickForecastParams(BaseModel):
+    acquisti_per_anno: Optional[int] = None
+    prezzo_medio: Optional[float] = None
+    canone_medio: Optional[float] = None
+    citta_preferita: Optional[str] = None
+    leva_pct: Optional[float] = None  # 0..100
+    tipologia: Optional[str] = None  # bilocale/trilocale/...
+
+
+class QuickForecastIn(BaseModel):
+    horizon_years: int = 5
+    prompt: Optional[str] = ""
+    params: Optional[QuickForecastParams] = None
+    save: bool = True
+    nome: Optional[str] = None
+
+
 # ---------- Computation ----------
 def pmt(principal: float, rate_annual_pct: float, years: int) -> float:
     if principal <= 0 or years <= 0:
@@ -913,6 +930,138 @@ def make_forecast_router(db, current_user, llm_key: str):
             await db.scenarios.insert_one(item.copy())
             saved_id = item["id"]
         return {**plan, "saved_id": saved_id}
+
+    # ===== Quick Forecast — Simple prompt/params endpoint for the simplified page =====
+    @router.post("/quick")
+    async def quick_forecast(payload: QuickForecastIn, user: dict = Depends(current_user)):
+        """Simple forecast: prompt + optional params → operations → simulation in one shot.
+        If only params: deterministic expansion (no LLM). If prompt: LLM call."""
+        horizon = max(1, min(15, int(payload.horizon_years or 5)))
+        params = payload.params.model_dump() if payload.params else {}
+        prompt = (payload.prompt or "").strip()
+
+        settings = await get_user_settings(db, user["id"])
+        baseline = await build_baseline(db, user["id"], {"use_real_baseline": True, "horizon_years": horizon})
+        props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+
+        operations: list = []
+        strategy_summary = ""
+        key_risks: list = []
+
+        if prompt:
+            if not llm_key:
+                raise HTTPException(status_code=500, detail="LLM key non configurata per modalità prompt")
+            pn_iniziale = baseline.get("valore_immobili", 0) - baseline.get("debito_residuo", 0)
+            ctx = [
+                "=== STATO ATTUALE SOCIETÀ ===",
+                f"Immobili: {baseline.get('numero_immobili', 0)} · Valore €{baseline.get('valore_immobili', 0):,.0f}",
+                f"Debito €{baseline.get('debito_residuo', 0):,.0f} · Liquidità €{baseline.get('liquidita', 0):,.0f}",
+                f"PN €{pn_iniziale:,.0f} · Canone €{baseline.get('canone_mensile', 0):,.0f}/m",
+                "",
+                f"=== ORIZZONTE: {horizon} ANNI ===",
+                "",
+                "=== RICHIESTA UTENTE ===",
+                prompt,
+            ]
+            if params:
+                ctx.append("\n=== PARAMETRI ESPLICITI ===")
+                if params.get("acquisti_per_anno"): ctx.append(f"- Acquisti/anno: {params['acquisti_per_anno']}")
+                if params.get("prezzo_medio"): ctx.append(f"- Prezzo medio: €{params['prezzo_medio']:,.0f}")
+                if params.get("canone_medio"): ctx.append(f"- Canone medio: €{params['canone_medio']:,.0f}/m")
+                if params.get("citta_preferita"): ctx.append(f"- Città: {params['citta_preferita']}")
+                if params.get("leva_pct") is not None: ctx.append(f"- Leva mutuo: {params['leva_pct']}%")
+                if params.get("tipologia"): ctx.append(f"- Tipologia: {params['tipologia']}")
+
+            sys_msg = (
+                "Sei AI Forecaster. Trasformi descrizione testuale + parametri in piano operativo annuale immobiliare italiano. "
+                "Rispondi SOLO JSON: {strategy_summary, key_risks[], operations:[{anno,tipo,label,prezzo,lavori,canone_mensile,mutuo_pct,tasso_mutuo,durata_mutuo,nuovo_tasso,immobile_id}]}. "
+                "tipo ∈ {acquisto,vendita,ristrutturazione,rinegoziazione_mutuo,aumento_canone}. mutuo_pct 0..0.8. Distribuisci ops nell'orizzonte.\n\n"
+                + "\n".join(ctx)
+            )
+            try:
+                from emergentintegrations.llm.chat import LlmChat, UserMessage
+                chat = LlmChat(api_key=llm_key, session_id=f"quickfc-{uuid.uuid4()}", system_message=sys_msg).with_model("anthropic", "claude-sonnet-4-6")
+                reply = await chat.send_message(UserMessage(text="Genera il piano."))
+            except Exception as e:
+                logging.exception("Quick forecast AI error")
+                raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
+            parsed = None
+            try:
+                parsed = json.loads(reply)
+            except Exception:
+                m = re.search(r"\{[\s\S]*\}", reply)
+                if m:
+                    try: parsed = json.loads(m.group(0))
+                    except Exception: parsed = None
+            if not parsed or "operations" not in parsed:
+                raise HTTPException(status_code=500, detail="L'AI non ha restituito un piano valido")
+            strategy_summary = parsed.get("strategy_summary", "")
+            key_risks = parsed.get("key_risks") or []
+            for op in parsed.get("operations") or []:
+                try: anno = max(1, min(horizon, int(op.get("anno", 1))))
+                except Exception: anno = 1
+                tipo = op.get("tipo", "acquisto")
+                if tipo not in ("acquisto","vendita","ristrutturazione","rinegoziazione_mutuo","sfitto","aumento_canone"): continue
+                operations.append({
+                    "id": str(uuid.uuid4()), "anno": anno, "tipo": tipo,
+                    "label": (op.get("label") or "")[:80],
+                    "prezzo": float(op.get("prezzo") or 0), "lavori": float(op.get("lavori") or 0),
+                    "canone_mensile": float(op.get("canone_mensile") or 0),
+                    "mutuo_pct": min(0.9, max(0.0, float(op.get("mutuo_pct") or 0))),
+                    "tasso_mutuo": float(op.get("tasso_mutuo") or 0),
+                    "durata_mutuo": int(op.get("durata_mutuo") or 20),
+                    "nuovo_tasso": float(op.get("nuovo_tasso") or 0),
+                    "mesi": int(op.get("mesi") or 0), "pct_canone": float(op.get("pct_canone") or 0),
+                    "immobile_id": op.get("immobile_id"),
+                })
+        elif params:
+            n_per_year = int(params.get("acquisti_per_anno") or 1)
+            prezzo = float(params.get("prezzo_medio") or 180000)
+            canone = float(params.get("canone_medio") or 1000)
+            citta = params.get("citta_preferita") or "Milano"
+            tipologia = params.get("tipologia") or "Bilocale"
+            leva = max(0.0, min(0.9, float(params.get("leva_pct") or 60) / 100))
+            for y in range(1, horizon + 1):
+                for i in range(n_per_year):
+                    operations.append({
+                        "id": str(uuid.uuid4()), "anno": y, "tipo": "acquisto",
+                        "label": f"{tipologia} {citta} #{(y-1)*n_per_year + i + 1}",
+                        "prezzo": prezzo, "lavori": 0, "canone_mensile": canone,
+                        "mutuo_pct": leva, "tasso_mutuo": 3.2, "durata_mutuo": 20,
+                        "nuovo_tasso": 0, "mesi": 0, "pct_canone": 0, "immobile_id": None,
+                    })
+            strategy_summary = (
+                f"Acquisto programmatico di {n_per_year} {tipologia.lower()}/anno a {citta} "
+                f"a ~€{prezzo:,.0f}, canone medio €{canone:,.0f}/m, leva {leva*100:.0f}%."
+            )
+            key_risks = ["Concentrazione geografica", "Sensibilità a tassi mutuo", "Rischio sfitto su volumi crescenti"]
+        else:
+            raise HTTPException(status_code=400, detail="Specificare prompt o parametri")
+
+        draft = {
+            "nome": payload.nome or f"Forecast rapido @ {horizon}y",
+            "descrizione": strategy_summary[:500],
+            "horizon_years": horizon, "use_real_baseline": True,
+            "initial_patrimonio": 0, "initial_debito": 0, "initial_liquidita": 0,
+            "initial_canone_mensile": 0, "initial_rata_mutui": 0, "initial_numero_immobili": 0,
+            "inflation_rate": 2.0, "rivalutazione_immobili": 2.0,
+            "istat_canoni": 1.8, "tassazione_pct": 26.0, "operations": operations,
+        }
+        sim = simulate(baseline, draft, props, settings)
+
+        saved_id = None
+        if payload.save and operations:
+            item = {
+                "id": str(uuid.uuid4()), "user_id": user["id"], **draft,
+                "ai_generated": bool(prompt),
+                "ai_strategy_summary": strategy_summary, "ai_key_risks": key_risks,
+                "quick_mode": True,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.scenarios.insert_one(item.copy())
+            saved_id = item["id"]
+        return {"draft_scenario": draft, "simulation": sim, "strategy_summary": strategy_summary, "key_risks": key_risks, "saved_id": saved_id}
 
     # ===== AI Strategist — Multi-shot Async Jobs =====
     @router.post("/auto-optimize/jobs", status_code=202)
