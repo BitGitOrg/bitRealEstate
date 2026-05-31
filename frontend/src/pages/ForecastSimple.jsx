@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
@@ -11,6 +11,7 @@ import {
 import {
   Sparkles, Loader2, FileDown, MessageSquare, RefreshCw, GitCompare,
   TrendingUp, Building2, Wallet, AlertTriangle, Settings as SettingsIcon, ArrowRight,
+  Activity, RotateCcw, ShieldAlert, Zap, Ban,
 } from "lucide-react";
 
 const API = "/forecast";
@@ -42,15 +43,34 @@ export default function ForecastSimple() {
   const [chatHistory, setChatHistory] = useState([]);
   const [chatSending, setChatSending] = useState(false);
 
+  // Vincoli hard applicati durante la simulazione
+  const [vincoli, setVincoli] = useState({
+    blocca_acquisti_cassa_negativa: false,
+    riserva_minima_liquidita: 0,
+  });
+  // Sensitivity what-if (sliders live, debounced)
+  const SENS_DEFAULT = { delta_tasso_pct: 0, delta_canone_pct: 0, delta_rivalutazione_pct: 0, vacancy_mesi_anno: 0 };
+  const [sensitivity, setSensitivity] = useState(SENS_DEFAULT);
+  const [sensResult, setSensResult] = useState(null);
+  const [sensLoading, setSensLoading] = useState(false);
+  // Tornado
+  const [tornado, setTornado] = useState(null);
+  const [tornadoLoading, setTornadoLoading] = useState(false);
+
   const canRun = (mode === "prompt" && prompt.trim()) || mode !== "prompt";
 
   const simulate = async (overrideMode) => {
     const useMode = overrideMode || mode;
     setLoading(true);
+    // reset what-if/tornado on new run
+    setSensitivity(SENS_DEFAULT);
+    setSensResult(null);
+    setTornado(null);
     try {
       const body = { horizon_years: horizon, save: true };
       if (useMode === "prompt" || useMode === "both") body.prompt = prompt.trim();
       if (useMode === "params" || useMode === "both") body.params = params;
+      if (vincoli.blocca_acquisti_cassa_negativa || vincoli.riserva_minima_liquidita > 0) body.vincoli = vincoli;
       const r = await apiClient().post(`${API}/quick`, body);
       setResult(r.data);
       setChatHistory([]);
@@ -82,6 +102,47 @@ export default function ForecastSimple() {
       setChatSending(false);
     }
   };
+
+  // Debounced sensitivity: ricomputa quando uno slider cambia, salvo tutti a 0
+  useEffect(() => {
+    if (!result?.saved_id) return;
+    const allZero =
+      !sensitivity.delta_tasso_pct &&
+      !sensitivity.delta_canone_pct &&
+      !sensitivity.delta_rivalutazione_pct &&
+      !sensitivity.vacancy_mesi_anno;
+    if (allZero) {
+      setSensResult(null);
+      return;
+    }
+    const t = setTimeout(async () => {
+      setSensLoading(true);
+      try {
+        const r = await apiClient().post(`${API}/scenarios/${result.saved_id}/sensitivity`, sensitivity);
+        setSensResult(r.data.simulation);
+      } catch {
+        // silent — non rompe l'UI
+      } finally {
+        setSensLoading(false);
+      }
+    }, 280);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sensitivity, result?.saved_id]);
+
+  const runTornado = async () => {
+    if (!result?.saved_id) return;
+    setTornadoLoading(true);
+    try {
+      const r = await apiClient().post(`${API}/scenarios/${result.saved_id}/tornado`);
+      setTornado(r.data);
+    } catch {
+      toast.error("Errore tornado");
+    } finally {
+      setTornadoLoading(false);
+    }
+  };
+  const resetSensitivity = () => setSensitivity(SENS_DEFAULT);
 
   const downloadPdf = async () => {
     if (!result?.saved_id) return;
@@ -207,6 +268,42 @@ export default function ForecastSimple() {
               </div>
             )}
 
+            {/* Vincoli hard */}
+            <div className="mt-4 pt-3 border-t border-[#E2E8F0]">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5">
+                  <ShieldAlert size={12} className="text-[#B45309]" />
+                  <span className="text-[10px] uppercase tracking-wider text-[#475569] font-semibold">Vincoli hard</span>
+                </div>
+                <span className="text-[9px] text-[#94A3B8]">applicati durante la simulazione</span>
+              </div>
+              <label className="flex items-center gap-2 mb-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  data-testid="vincolo-blocca-cassa"
+                  checked={vincoli.blocca_acquisti_cassa_negativa}
+                  onChange={(e) => setVincoli({ ...vincoli, blocca_acquisti_cassa_negativa: e.target.checked })}
+                  className="w-3.5 h-3.5 accent-[#B45309]"
+                />
+                <span className="text-xs text-[#0F172A]">Blocca acquisti se la cassa va sotto la riserva</span>
+              </label>
+              <label className="block">
+                <span className="text-[10px] uppercase tracking-wider text-[#475569] font-medium">Riserva minima liquidità</span>
+                <div className="mt-1 flex items-center bg-[#F8FAFC] border border-[#E2E8F0] rounded-md focus-within:border-[#0066FF]">
+                  <input
+                    type="number"
+                    data-testid="vincolo-riserva"
+                    value={vincoli.riserva_minima_liquidita || ""}
+                    onChange={(e) => setVincoli({ ...vincoli, riserva_minima_liquidita: parseFloat(e.target.value) || 0 })}
+                    placeholder="0"
+                    className="flex-1 bg-transparent px-2 py-1.5 outline-none text-sm min-w-0"
+                  />
+                  <span className="px-2 text-[10px] text-[#64748B]">€</span>
+                </div>
+                <span className="text-[9px] text-[#94A3B8] mt-0.5 block">Se &gt; 0, blocca acquisti che farebbero scendere la cassa sotto questa soglia</span>
+              </label>
+            </div>
+
             <button
               data-testid="quick-run"
               onClick={() => simulate()}
@@ -251,6 +348,9 @@ export default function ForecastSimple() {
                   <div className="text-sm font-semibold" style={{ color: verdictTone.text }}>{s.verdict}</div>
                   <div className="text-xs mt-1" style={{ color: verdictTone.text, opacity: 0.85 }}>
                     {s.alerts_critical} alert critici · {s.alerts_warning} warning · LTV finale {s.ltv_finale}%
+                    {s.blocked_ops?.length > 0 && (
+                      <> · <Ban size={11} className="inline mb-0.5" /> {s.blocked_ops.length} op. bloccate dai vincoli</>
+                    )}
                   </div>
                 </div>
               </div>
@@ -368,6 +468,120 @@ export default function ForecastSimple() {
                 </div>
               </SectionCard>
 
+              {/* Sensitivity what-if (sliders live, ricalcolo backend debounced) */}
+              <SectionCard
+                testId="quick-sensitivity"
+                title="Stress test · what-if"
+                subtitle="Sposta gli slider per vedere come cambia il piano. Calcolo in tempo reale."
+                action={
+                  <button
+                    data-testid="sensitivity-reset"
+                    onClick={resetSensitivity}
+                    className="inline-flex items-center gap-1 text-[10px] text-[#64748B] hover:text-[#0F172A] transition"
+                  >
+                    <RotateCcw size={11} /> Reset
+                  </button>
+                }
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mb-4">
+                  <SensSlider
+                    label="Tasso mutuo"
+                    value={sensitivity.delta_tasso_pct}
+                    onChange={(v) => setSensitivity({ ...sensitivity, delta_tasso_pct: v })}
+                    min={-1.5} max={3} step={0.25} suffix="%"
+                    testId="sens-tasso"
+                    tone="red"
+                  />
+                  <SensSlider
+                    label="Canone affitto"
+                    value={sensitivity.delta_canone_pct}
+                    onChange={(v) => setSensitivity({ ...sensitivity, delta_canone_pct: v })}
+                    min={-30} max={30} step={5} suffix="%"
+                    testId="sens-canone"
+                    tone="blue"
+                  />
+                  <SensSlider
+                    label="Rivalutazione"
+                    value={sensitivity.delta_rivalutazione_pct}
+                    onChange={(v) => setSensitivity({ ...sensitivity, delta_rivalutazione_pct: v })}
+                    min={-3} max={3} step={0.5} suffix="%"
+                    testId="sens-rival"
+                    tone="green"
+                  />
+                  <SensSlider
+                    label="Vacancy"
+                    value={sensitivity.vacancy_mesi_anno}
+                    onChange={(v) => setSensitivity({ ...sensitivity, vacancy_mesi_anno: Math.round(v) })}
+                    min={0} max={6} step={1} suffix=" m/anno"
+                    testId="sens-vacancy"
+                    tone="orange"
+                  />
+                </div>
+
+                {/* Confronto Base vs Stress */}
+                {sensResult ? (
+                  <div data-testid="sens-result" className="grid grid-cols-3 gap-2">
+                    <DeltaCard
+                      label="PN finale"
+                      base={result.simulation.summary.patrimonio_netto_finale}
+                      stress={sensResult.summary.patrimonio_netto_finale}
+                      eurFmt
+                    />
+                    <DeltaCard
+                      label="Cash flow cum."
+                      base={result.simulation.summary.cash_flow_cumulato}
+                      stress={sensResult.summary.cash_flow_cumulato}
+                      eurFmt
+                    />
+                    <DeltaCard
+                      label="LTV finale"
+                      base={result.simulation.summary.ltv_finale}
+                      stress={sensResult.summary.ltv_finale}
+                      pctFmt
+                      reverseGood
+                    />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-xs text-[#94A3B8] py-2">
+                    {sensLoading ? <><Loader2 size={12} className="animate-spin" /> Calcolo…</> : <><Activity size={12} /> Tutti gli slider a 0 — sposta per simulare uno stress</>}
+                  </div>
+                )}
+              </SectionCard>
+
+              {/* Tornado chart */}
+              <SectionCard
+                testId="quick-tornado"
+                title="Tornado · sensibilità ai parametri"
+                subtitle="Quale variabile ha l'impatto maggiore sul patrimonio netto finale"
+                action={
+                  !tornado && (
+                    <button
+                      data-testid="tornado-run"
+                      onClick={runTornado}
+                      disabled={tornadoLoading}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[#0F172A] hover:bg-[#1E293B] text-white text-[11px] font-semibold disabled:opacity-50 transition"
+                    >
+                      {tornadoLoading ? <Loader2 size={11} className="animate-spin" /> : <Zap size={11} />}
+                      {tornadoLoading ? "Calcolo…" : "Calcola tornado"}
+                    </button>
+                  )
+                }
+              >
+                {!tornado && !tornadoLoading && (
+                  <div className="text-xs text-[#94A3B8] py-3 text-center">
+                    Clicca <b>Calcola tornado</b>: stresso ogni parametro ±range e ti dico quale conta di più.
+                  </div>
+                )}
+                {tornadoLoading && (
+                  <div className="flex items-center justify-center gap-2 text-xs text-[#64748B] py-6">
+                    <Loader2 size={14} className="animate-spin" /> Calcolo 5 stress test in parallelo…
+                  </div>
+                )}
+                {tornado && (
+                  <TornadoChart base={tornado.base_pn} items={tornado.items} />
+                )}
+              </SectionCard>
+
               {/* Actions */}
               <div className="flex flex-wrap gap-2 pt-1">
                 <button data-testid="action-variant" onClick={() => simulate()} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#E2E8F0] hover:bg-[#F8FAFC] text-sm text-[#475569] transition">
@@ -452,3 +666,114 @@ const ParamSelect = ({ label, v, onChange, options, testId }) => (
     </select>
   </label>
 );
+
+
+const TONE = {
+  red:    { accent: "#DC2626", track: "#FEE2E2" },
+  blue:   { accent: "#0066FF", track: "#DBEAFE" },
+  green:  { accent: "#059669", track: "#D1FAE5" },
+  orange: { accent: "#B45309", track: "#FED7AA" },
+};
+
+const SensSlider = ({ label, value, onChange, min, max, step, suffix, testId, tone = "blue" }) => {
+  const t = TONE[tone];
+  const pctValue = ((value - min) / (max - min)) * 100;
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-1">
+        <span className="text-[10px] uppercase tracking-wider text-[#475569] font-medium">{label}</span>
+        <span className="text-xs font-display font-bold" style={{ color: value !== 0 ? t.accent : "#0F172A" }}>
+          {value > 0 ? "+" : ""}{value}{suffix}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min} max={max} step={step} value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        data-testid={testId}
+        className="w-full h-1.5 rounded-lg appearance-none cursor-pointer"
+        style={{
+          background: `linear-gradient(to right, ${t.accent} 0%, ${t.accent} ${pctValue}%, #E2E8F0 ${pctValue}%, #E2E8F0 100%)`,
+          accentColor: t.accent,
+        }}
+      />
+      <div className="flex justify-between text-[9px] text-[#94A3B8] mt-0.5">
+        <span>{min > 0 ? "" : ""}{min}{suffix}</span>
+        <span>0</span>
+        <span>+{max}{suffix}</span>
+      </div>
+    </div>
+  );
+};
+
+const DeltaCard = ({ label, base, stress, eurFmt, pctFmt, reverseGood }) => {
+  const delta = stress - base;
+  const deltaPct = base ? (delta / Math.abs(base)) * 100 : 0;
+  const isPositive = delta >= 0;
+  const goodColor = "#059669";
+  const badColor = "#DC2626";
+  const deltaColor = (isPositive !== reverseGood) ? goodColor : badColor;
+  const fmt = (v) => eurFmt ? `€ ${Math.round(v).toLocaleString("it-IT")}` : pctFmt ? `${v}%` : v;
+  return (
+    <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg p-2.5">
+      <div className="text-[9px] uppercase tracking-wider text-[#64748B] mb-1">{label}</div>
+      <div className="text-xs text-[#94A3B8] line-through">{fmt(base)}</div>
+      <div className="text-sm font-display font-bold text-[#0F172A]">{fmt(stress)}</div>
+      <div className="text-[10px] font-semibold mt-0.5" style={{ color: deltaColor }}>
+        {isPositive ? "▲" : "▼"} {Math.abs(deltaPct).toFixed(1)}%
+      </div>
+    </div>
+  );
+};
+
+const TornadoChart = ({ base, items }) => {
+  // largest swing first (already sorted by backend). Bars are centered at 0 (= base).
+  const maxAbs = Math.max(...items.map((i) => Math.max(Math.abs(i.delta_pn_low), Math.abs(i.delta_pn_high))));
+  const eurK = (v) => `${v >= 0 ? "+" : ""}€${Math.round(v / 1000)}k`;
+  return (
+    <div className="space-y-2">
+      <div className="text-[10px] text-[#64748B] mb-2">
+        Base PN finale: <b className="text-[#0F172A]">€ {Math.round(base).toLocaleString("it-IT")}</b> · barre = scostamento da base
+      </div>
+      {items.map((it) => {
+        const leftW = (Math.abs(it.delta_pn_low) / maxAbs) * 50;
+        const rightW = (Math.abs(it.delta_pn_high) / maxAbs) * 50;
+        const leftColor = it.delta_pn_low < 0 ? "#DC2626" : "#059669";
+        const rightColor = it.delta_pn_high > 0 ? "#059669" : "#DC2626";
+        return (
+          <div key={it.param} className="flex items-center gap-2">
+            <div className="text-[10px] text-[#475569] w-32 shrink-0 truncate" title={it.param}>{it.param}</div>
+            <div className="flex-1 flex h-5 relative">
+              {/* LEFT side (low value) */}
+              <div className="w-1/2 flex justify-end relative">
+                <div
+                  className="h-full rounded-l flex items-center justify-end pr-1"
+                  style={{ width: `${leftW}%`, background: leftColor, opacity: 0.85 }}
+                >
+                  {leftW > 12 && <span className="text-[9px] text-white font-semibold">{eurK(it.delta_pn_low)}</span>}
+                </div>
+              </div>
+              {/* center line */}
+              <div className="absolute left-1/2 top-0 bottom-0 w-px bg-[#94A3B8]" />
+              {/* RIGHT side (high value) */}
+              <div className="w-1/2 flex justify-start relative">
+                <div
+                  className="h-full rounded-r flex items-center justify-start pl-1"
+                  style={{ width: `${rightW}%`, background: rightColor, opacity: 0.85 }}
+                >
+                  {rightW > 12 && <span className="text-[9px] text-white font-semibold">{eurK(it.delta_pn_high)}</span>}
+                </div>
+              </div>
+            </div>
+            <div className="text-[10px] text-[#64748B] w-24 shrink-0 text-right">
+              {it.low_value}{it.unit} → {it.high_value}{it.unit}
+            </div>
+          </div>
+        );
+      })}
+      <div className="mt-3 text-[10px] text-[#64748B] bg-[#F1F5F9] rounded-md p-2">
+        💡 La variabile in cima è quella che <b>conta di più</b> per il tuo piano. Quando rifai la simulazione, controlla soprattutto questa.
+      </div>
+    </div>
+  );
+};

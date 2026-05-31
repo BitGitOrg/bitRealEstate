@@ -118,10 +118,25 @@ class QuickForecastParams(BaseModel):
     tipologia: Optional[str] = None  # bilocale/trilocale/...
 
 
+class Vincoli(BaseModel):
+    """Hard constraints applicati durante la simulazione."""
+    blocca_acquisti_cassa_negativa: bool = False
+    riserva_minima_liquidita: float = 0  # € — se >0 blocca acquisti che farebbero scendere cassa sotto questa soglia
+
+
+class SensitivityIn(BaseModel):
+    delta_tasso_pct: float = 0           # +/- punti % sul tasso interesse implicito (base 3%)
+    delta_canone_pct: float = 0          # -30..+30 (% sul canone)
+    delta_rivalutazione_pct: float = 0   # +/- punti % sulla rivalutazione annua
+    vacancy_mesi_anno: int = 0           # 0..6
+    costi_gestione_pct: Optional[float] = None  # default 15.0
+
+
 class QuickForecastIn(BaseModel):
     horizon_years: int = 5
     prompt: Optional[str] = ""
     params: Optional[QuickForecastParams] = None
+    vincoli: Optional[Vincoli] = None
     save: bool = True
     nome: Optional[str] = None
 
@@ -179,7 +194,10 @@ async def build_baseline(db, user_id: str, scenario: dict) -> dict:
     }
 
 
-def apply_operations(state: dict, year: int, operations: List[dict], log: list, props_by_id: dict):
+def apply_operations(state: dict, year: int, operations: List[dict], log: list, props_by_id: dict, vincoli: Optional[dict] = None):
+    vincoli = vincoli or {}
+    riserva_min = float(vincoli.get("riserva_minima_liquidita") or 0)
+    blocca_neg = bool(vincoli.get("blocca_acquisti_cassa_negativa") or False)
     for op in [o for o in operations if int(o.get("anno", 0)) == year]:
         t = op.get("tipo")
         label = op.get("label") or t
@@ -192,6 +210,18 @@ def apply_operations(state: dict, year: int, operations: List[dict], log: list, 
             canone = float(op.get("canone_mensile") or 0)
             mutuo = prezzo * mutuo_pct
             equity = prezzo + lavori - mutuo
+            # Hard constraint: blocca se cassa post-acquisto sotto riserva
+            liquidita_post = state["liquidita"] - equity
+            min_required = riserva_min if (blocca_neg or riserva_min > 0) else None
+            if min_required is not None and liquidita_post < min_required:
+                state.setdefault("_blocked_ops", []).append({
+                    "anno": year, "tipo": t, "label": label,
+                    "reason": "liquidita_insufficiente",
+                    "liquidita_attesa": round(liquidita_post, 0),
+                    "riserva_richiesta": round(min_required, 0),
+                })
+                log.append(f"⚠️ BLOCCATO «{label}»: liquidità post-op €{liquidita_post:,.0f} < riserva €{min_required:,.0f}")
+                continue
             rata_op = pmt(mutuo, tasso, durata)
             state["numero_immobili"] += 1
             state["valore_immobili"] += prezzo
@@ -287,17 +317,24 @@ def compute_snapshot_alerts(snap: dict, prev: dict, settings: dict) -> list:
     return alerts
 
 
-def simulate(baseline: dict, scenario: dict, props: list, settings: dict = None) -> dict:
+def simulate(baseline: dict, scenario: dict, props: list, settings: dict = None, modifiers: Optional[dict] = None) -> dict:
     horizon = max(1, min(15, int(scenario.get("horizon_years", 5))))
-    rival = float(scenario.get("rivalutazione_immobili") or 0)
+    modifiers = modifiers or {}
+    rival = float(scenario.get("rivalutazione_immobili") or 0) + float(modifiers.get("delta_rivalutazione_pct") or 0)
     istat = float(scenario.get("istat_canoni") or 0)
     tax_pct = float(scenario.get("tassazione_pct") or 26)
+    delta_canone_pct = float(modifiers.get("delta_canone_pct") or 0)
+    vacancy_mesi = max(0, int(modifiers.get("vacancy_mesi_anno") or 0))
+    costi_pct = (float(modifiers["costi_gestione_pct"]) if modifiers.get("costi_gestione_pct") is not None else 15.0) / 100.0
+    interest_rate_implied = 3.0 + float(modifiers.get("delta_tasso_pct") or 0)
+    vincoli = scenario.get("vincoli") or {}
     operations = scenario.get("operations") or []
     props_by_id = {p["id"]: p for p in props}
 
     snapshots = [baseline.copy()]
     yearly_logs = {0: ["Stato iniziale"]}
     state = baseline.copy()
+    state["_blocked_ops"] = []
 
     for y in range(1, horizon + 1):
         # 1) automatic events
@@ -307,13 +344,12 @@ def simulate(baseline: dict, scenario: dict, props: list, settings: dict = None)
 
         # 2) operations
         log = []
-        apply_operations(state, y, operations, log, props_by_id)
+        apply_operations(state, y, operations, log, props_by_id, vincoli)
 
-        # 3) yearly P&L
-        ricavi = state["canone_mensile"] * 12 - state.get("_one_off_revenue_loss", 0)
-        costi_gestione = ricavi * 0.15
-        # approximate interest portion: assume blended 3% on outstanding debt
-        interest_rate_implied = 3.0
+        # 3) yearly P&L (con modifiers)
+        canone_eff = state["canone_mensile"] * (1 + delta_canone_pct / 100)
+        ricavi = canone_eff * (12 - vacancy_mesi) - state.get("_one_off_revenue_loss", 0)
+        costi_gestione = ricavi * costi_pct
         interessi_annui = state["debito_residuo"] * interest_rate_implied / 100
         rata_annua = state["rata_mutui_mensile"] * 12
         ammortamento_capitale = max(0, rata_annua - interessi_annui)
@@ -336,7 +372,7 @@ def simulate(baseline: dict, scenario: dict, props: list, settings: dict = None)
             "debito_residuo": round(state["debito_residuo"], 0),
             "liquidita": round(state["liquidita"], 0),
             "patrimonio_netto": round(state["valore_immobili"] - state["debito_residuo"], 0),
-            "canone_mensile": round(state["canone_mensile"], 0),
+            "canone_mensile": round(canone_eff, 0),
             "rata_mutui_mensile": round(state["rata_mutui_mensile"], 0),
             "ricavi_annui": round(ricavi, 0),
             "costi_annui": round(costi_gestione + interessi_annui, 0),
@@ -399,6 +435,7 @@ def simulate(baseline: dict, scenario: dict, props: list, settings: dict = None)
             "first_year_negative_liquidity": first_neg_liquidity,
             "verdict": verdict,
             "verdict_severity": verdict_severity,
+            "blocked_ops": state.get("_blocked_ops", []),
         },
     }
 
@@ -1038,6 +1075,7 @@ def make_forecast_router(db, current_user, llm_key: str):
         else:
             raise HTTPException(status_code=400, detail="Specificare prompt o parametri")
 
+        vincoli_dict = payload.vincoli.model_dump() if payload.vincoli else {}
         draft = {
             "nome": payload.nome or f"Forecast rapido @ {horizon}y",
             "descrizione": strategy_summary[:500],
@@ -1046,6 +1084,7 @@ def make_forecast_router(db, current_user, llm_key: str):
             "initial_canone_mensile": 0, "initial_rata_mutui": 0, "initial_numero_immobili": 0,
             "inflation_rate": 2.0, "rivalutazione_immobili": 2.0,
             "istat_canoni": 1.8, "tassazione_pct": 26.0, "operations": operations,
+            "vincoli": vincoli_dict,
         }
         sim = simulate(baseline, draft, props, settings)
 
@@ -1063,7 +1102,65 @@ def make_forecast_router(db, current_user, llm_key: str):
             saved_id = item["id"]
         return {"draft_scenario": draft, "simulation": sim, "strategy_summary": strategy_summary, "key_risks": key_risks, "saved_id": saved_id}
 
-    # ===== AI Strategist — Multi-shot Async Jobs =====
+    # ===== Sensitivity analysis — re-simulate scenario with modifiers =====
+    @router.post("/scenarios/{sid}/sensitivity")
+    async def scenario_sensitivity(sid: str, payload: SensitivityIn, user: dict = Depends(current_user)):
+        scen = await db.scenarios.find_one({"id": sid, "user_id": user["id"]}, {"_id": 0})
+        if not scen:
+            raise HTTPException(status_code=404, detail="Scenario non trovato")
+        baseline = await build_baseline(db, user["id"], scen)
+        props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+        settings = await get_user_settings(db, user["id"])
+        sim = simulate(baseline, scen, props, settings, modifiers=payload.model_dump())
+        return {"simulation": sim, "modifiers": payload.model_dump()}
+
+    # ===== Tornado analysis — ±range per parameter, ranks by impact on PN finale =====
+    @router.post("/scenarios/{sid}/tornado")
+    async def scenario_tornado(sid: str, user: dict = Depends(current_user)):
+        scen = await db.scenarios.find_one({"id": sid, "user_id": user["id"]}, {"_id": 0})
+        if not scen:
+            raise HTTPException(status_code=404, detail="Scenario non trovato")
+        baseline = await build_baseline(db, user["id"], scen)
+        props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+        settings = await get_user_settings(db, user["id"])
+
+        base_sim = simulate(baseline, scen, props, settings)
+        base_pn = base_sim["summary"]["patrimonio_netto_finale"]
+        base_cf = base_sim["summary"]["cash_flow_cumulato"]
+
+        # Define ±perturbations for each parameter
+        perturbations = [
+            ("Tasso mutuo (Δ punti %)", "delta_tasso_pct", -1.5, +1.5, "%"),
+            ("Canone affitto (%)",      "delta_canone_pct", -15, +15, "%"),
+            ("Rivalutazione (Δ punti %)", "delta_rivalutazione_pct", -2, +2, "%"),
+            ("Vacancy (mesi/anno)",     "vacancy_mesi_anno", 0, 3, "m"),
+            ("Costi gestione (%)",      "costi_gestione_pct", 10, 25, "%"),
+        ]
+        items = []
+        for label, field, low, high, unit in perturbations:
+            mods_low = {field: low}
+            mods_high = {field: high}
+            # For costi_gestione_pct base = 15.0 (None means default). For vacancy base = 0.
+            sim_low = simulate(baseline, scen, props, settings, modifiers=mods_low)
+            sim_high = simulate(baseline, scen, props, settings, modifiers=mods_high)
+            pn_low = sim_low["summary"]["patrimonio_netto_finale"]
+            pn_high = sim_high["summary"]["patrimonio_netto_finale"]
+            cf_low = sim_low["summary"]["cash_flow_cumulato"]
+            cf_high = sim_high["summary"]["cash_flow_cumulato"]
+            # impact = max swing from base
+            swing = max(abs(pn_high - base_pn), abs(pn_low - base_pn))
+            items.append({
+                "param": label, "field": field, "unit": unit,
+                "low_value": low, "high_value": high,
+                "pn_low": pn_low, "pn_high": pn_high,
+                "cf_low": cf_low, "cf_high": cf_high,
+                "delta_pn_low": pn_low - base_pn,
+                "delta_pn_high": pn_high - base_pn,
+                "swing": swing,
+            })
+        items.sort(key=lambda x: x["swing"], reverse=True)
+        return {"base_pn": base_pn, "base_cf": base_cf, "items": items}
+
     @router.post("/auto-optimize/jobs", status_code=202)
     async def create_auto_optimize_job(payload: AutoOptimizeJobIn, user: dict = Depends(current_user)):
         if not llm_key:
