@@ -183,6 +183,22 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 65. **Loop chiuso end-to-end**: i dati salvati dal form fluiscono automaticamente in `Investor Book` PDF (sezione "Locazione in corso" per ogni immobile) + nei calcoli `KPI` portafoglio (canone annuo complessivo) + nelle proiezioni `Forecast` (canone_mensile è la baseline).
 66. **Test coverage**: 6/6 backend pytest + frontend e2e (toast success, persistenza dopo reload, screenshot). File: `/app/backend/tests/test_iter17_locazione.py`.
 
+## 🆕 Form "Nuova operazione" multi-step (31 May 2026 - iter 18)
+67. **Nuovo modal `NewPropertyModal.jsx`** (4 step) — chiude finalmente il gap di creazione manuale immobile:
+   - **Step 1**: 3 card grandi per scegliere la **tipologia operazione** (`reddito` / `compra_vendi` / `compra_ristruttura_vendi`), ognuna con icona, colore distintivo e descrizione strategica.
+   - **Step 2**: Anagrafica completa (nome, indirizzo, città, provincia, tipologia, m², piano, anno, classe energetica, data acquisto).
+   - **Step 3**: Numeri (prezzo + notaio + agenzia + imposte + lavori + valore stimato + canone se reddito + mutuo opzionale) con **live preview** che calcola in tempo reale costo totale, rendimento lordo stimato (per reddito) o margine atteso (per compra-vendi/ristruttura-vendi).
+   - **Step 4**: Stato iniziale (in_valutazione / in_trattativa / acquistato / in_ristrutturazione / disponibile / affittato) + note + **recap finale** prima della creazione.
+   - Progress bar gradient con colore del tipo operazione selezionato.
+68. **Wiring nei 2 punti di entrata**:
+   - **`/patrimonio`** → pulsante "Nuovo immobile" (precedentemente non funzionante) ora apre il modal.
+   - **`/operazioni`** → pulsante header "Nuova operazione" + **3 pulsanti per-card** ("Aggiungi a reddito", "Aggiungi compra-vendi", "Aggiungi compra-ristruttura-vendi") che **preselezionano la tipologia** e saltano direttamente allo step 2.
+69. **Template Excel aggiornato** (`routers/imports.py`): nuova colonna "Operazione" all'indice 10 (tra "Stato" e "Data acquisto"). 24 colonne totali. Parse e commit preservano l'operazione esplicita; fallback alla heuristica canone-based solo se cella vuota.
+70. **Bug fix critici durante testing** (iter 18):
+   - **Off-by-one Excel parse**: dopo l'inserimento di "Operazione" al col 10, `prezzo = cells[11]` puntava a "Data acquisto" → fixed a `cells[12]`. Tutti gli altri indici già a posto.
+   - **Modal step re-sync**: `useState(preselectOperazione ? 2 : 1)` non re-eseguiva al cambio prop → modal di `/operazioni` restava su step 1. Fixed con `useEffect([open, preselectOperazione])` che resetta step + operazione.
+71. **Test coverage**: 8/8 backend pytest + 100% UI e2e flow (4 step, live preview, recap, toast, list-show, preselect→step 2 con accent colore). Suite riusabile in `/app/backend/tests/test_iter18_operazione.py`. 5 screenshot in `/app/frontend/public/screenshots/16..19`.
+
 ## Demo accounts
 - ceo@controlroom.it / demo1234 (admin)
 - amministrazione@controlroom.it / demo1234 (amministrazione)
