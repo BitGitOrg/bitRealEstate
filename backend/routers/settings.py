@@ -17,6 +17,14 @@ DEFAULT_SETTINGS = {
     "limite_indebitamento": 60.0,
     "logo_base64": None,
     "logo_mime": None,
+    # === Fiscale ===
+    "tipo_societa": "srl",                # privato | srl | spa | holding
+    "regime_affitti": "ordinario",         # ordinario | cedolare_21 | cedolare_10
+    "imu_media_per_immobile": 800.0,       # €/anno per immobile
+    "anni_holding_plusvalenza": 5,         # entro N anni si tassa al 26%, dopo esente
+    "aliquota_plusvalenza": 26.0,
+    "aliquota_ires": 24.0,
+    "aliquota_irap": 3.9,
 }
 
 
