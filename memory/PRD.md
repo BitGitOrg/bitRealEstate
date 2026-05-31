@@ -199,6 +199,18 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
    - **Modal step re-sync**: `useState(preselectOperazione ? 2 : 1)` non re-eseguiva al cambio prop → modal di `/operazioni` restava su step 1. Fixed con `useEffect([open, preselectOperazione])` che resetta step + operazione.
 71. **Test coverage**: 8/8 backend pytest + 100% UI e2e flow (4 step, live preview, recap, toast, list-show, preselect→step 2 con accent colore). Suite riusabile in `/app/backend/tests/test_iter18_operazione.py`. 5 screenshot in `/app/frontend/public/screenshots/16..19`.
 
+## 🆕 Forecast semplificato — Una sola schermata (31 May 2026 - iter 19)
+72. **`/forecast` rifatta da zero** (`ForecastSimple.jsx`) — layout 2 colonne, niente tab. Sinistra = input ultra-leggero (modalità Prompt / Parametri / Entrambi · orizzonte 3-5-10), destra = output immediato.
+73. **Endpoint backend unificato** `POST /api/forecast/quick`:
+   - Con **prompt**: chiama Claude → JSON con operazioni + risks → simula
+   - Con **parametri** (acquisti/anno, prezzo, canone, città, tipologia, leva): espansione deterministica → simula (no LLM)
+   - Con **entrambi**: prompt + parametri come vincoli espliciti nel system message
+   - Sempre persistito con `quick_mode:true` (per PDF + AI chat).
+74. **Output sintetico**: verdict banner colorato, 4 KPI mini (PN, immobili, CF cum., LTV), 4 grafici essenziali (PN area, CF bar, debito+LTV composite con linea soglia 70%, ricavi/costi/utile composite), tabella anno-per-anno con righe tinte rosso/ambra + badge alert per riga, 4 pulsanti azione (Genera variante, Confronta, Scarica PDF, Chiedi all'AI).
+75. **AI chat in pagina** sul risultato — domande libere ("Qual è l'anno più rischioso?", "Come riduco l'LTV?") risposte dal Claude AI Coach esistente.
+76. **Pagina avanzata preservata** su `/forecast/advanced` (vecchio editor a 4 tab + multi-shot Strategist + Compare side-by-side). Link "Modalità avanzata" sempre visibile in header.
+77. **Test coverage**: 100% backend (3/3) + 100% frontend e2e (16 data-testids verificati). Suite in `/app/backend/tests/test_iter19_forecast_quick.py`.
+
 ## Demo accounts
 - ceo@controlroom.it / demo1234 (admin)
 - amministrazione@controlroom.it / demo1234 (amministrazione)
