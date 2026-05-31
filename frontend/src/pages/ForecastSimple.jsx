@@ -178,15 +178,6 @@ export default function ForecastSimple() {
     <Layout
       title="Forecast"
       subtitle="Descrivi il tuo piano o usa i parametri rapidi · simulazione + grafici + report in 1 click"
-      actions={
-        <Link
-          to="/forecast/advanced"
-          data-testid="advanced-link"
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#E2E8F0] hover:bg-[#F8FAFC] text-sm text-[#475569] transition"
-        >
-          <SettingsIcon size={14} /> Modalità avanzata <ArrowRight size={12} />
-        </Link>
-      }
     >
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* LEFT — INPUT */}
@@ -587,9 +578,6 @@ export default function ForecastSimple() {
                 <button data-testid="action-variant" onClick={() => simulate()} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#E2E8F0] hover:bg-[#F8FAFC] text-sm text-[#475569] transition">
                   <RefreshCw size={13} /> Genera variante
                 </button>
-                <Link to={`/forecast/advanced?compare=${result.saved_id}`} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#E2E8F0] hover:bg-[#F8FAFC] text-sm text-[#475569] transition">
-                  <GitCompare size={13} /> Confronta con altro scenario
-                </Link>
                 <button data-testid="action-pdf" onClick={downloadPdf} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#059669] hover:bg-[#047857] text-white text-sm font-semibold transition">
                   <FileDown size={13} /> Scarica PDF Piano Industriale
                 </button>

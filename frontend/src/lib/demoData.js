@@ -99,20 +99,10 @@ export const portfolioKPI = {
   immobili_in_vendita: 0,
 };
 
-// === Cash Flow mensile (ultimi 12 mesi) — portafoglio acquistato durante il 2025, affittato al 100% da Gen 2026 ===
+// === Cash Flow mensile (a partire da Gen 2026, primo mese a regime) ===
 export const cashFlowMensile = [
-  { mese: "Mar '25", incassi:    0, uscite:   0, saldo:     0 },
-  { mese: "Apr '25", incassi:    0, uscite:   0, saldo:     0 },
-  { mese: "Mag '25", incassi:    0, uscite:   0, saldo:     0 },
-  { mese: "Giu '25", incassi:    0, uscite:   0, saldo:     0 },
-  { mese: "Lug '25", incassi:    0, uscite:   0, saldo:     0 },
-  { mese: "Ago '25", incassi:    0, uscite:   0, saldo:     0 },
-  { mese: "Set '25", incassi:    0, uscite:   0, saldo:     0 },
-  { mese: "Ott '25", incassi:    0, uscite:   0, saldo:     0 },
-  { mese: "Nov '25", incassi:    0, uscite:   0, saldo:     0 },
-  { mese: "Dic '25", incassi:    0, uscite: 220, saldo:  -220 },  // piccoli costi prep
-  { mese: "Gen '26", incassi: 2290, uscite: 470, saldo:  1820 },  // 1° mese a regime
-  { mese: "Feb '26", incassi: 2290, uscite: 470, saldo:  1820 },
+  { mese: "Gen '26", incassi: 2290, uscite: 470, saldo: 1820 },
+  { mese: "Feb '26", incassi: 2290, uscite: 470, saldo: 1820 },
 ];
 
 // === Forecast 12 mesi (full occupancy €2.290/mese) ===
@@ -131,20 +121,10 @@ export const cashFlowForecast = [
   { mese: "Feb '27", saldo_previsto: 1820 },
 ];
 
-// === Ricavi vs Costi annuali (ultimi 12 mesi) ===
+// === Ricavi vs Costi (a partire da Gen 2026) ===
 export const ricaviCostiAnnuali = [
-  { mese: "Mar", ricavi:    0, costi:   0 },
-  { mese: "Apr", ricavi:    0, costi:   0 },
-  { mese: "Mag", ricavi:    0, costi:   0 },
-  { mese: "Giu", ricavi:    0, costi:   0 },
-  { mese: "Lug", ricavi:    0, costi:   0 },
-  { mese: "Ago", ricavi:    0, costi:   0 },
-  { mese: "Set", ricavi:    0, costi:   0 },
-  { mese: "Ott", ricavi:    0, costi:   0 },
-  { mese: "Nov", ricavi:    0, costi:   0 },
-  { mese: "Dic", ricavi:    0, costi: 220 },
-  { mese: "Gen", ricavi: 2290, costi: 470 },
-  { mese: "Feb", ricavi: 2290, costi: 470 },
+  { mese: "Gen '26", ricavi: 2290, costi: 470 },
+  { mese: "Feb '26", ricavi: 2290, costi: 470 },
 ];
 
 // === Distribuzione patrimonio per tipologia ===
@@ -215,15 +195,49 @@ export const alerts = [
   { id: "A-005", tipo: "documentale", severity: "bassa", titolo: "APE in scadenza Via Foligno",                   descrizione: "APE Via Foligno scade tra 60 giorni — rinnovo necessario.",                                                       immobile_id: "IMM-001", ts: "2026-02-01" },
 ];
 
-// === Documenti ===
+// === Documenti — archivio completo dei 5 immobili Torino ===
 export const documenti = [
-  { id: "D-001", nome: "Rogito Via Foligno.pdf",         tipo: "Rogito",   immobile_id: "IMM-001", dimensione: "2.1 MB", caricato: "2024-03-15" },
-  { id: "D-002", nome: "Rogito Negozio De Amicis.pdf",   tipo: "Rogito",   immobile_id: "IMM-002", dimensione: "2.4 MB", caricato: "2024-05-22" },
-  { id: "D-003", nome: "Rogito Via Borgaro.pdf",         tipo: "Rogito",   immobile_id: "IMM-003", dimensione: "2.0 MB", caricato: "2024-07-08" },
-  { id: "D-004", nome: "Rogito Via Don Bosco.pdf",       tipo: "Rogito",   immobile_id: "IMM-004", dimensione: "2.2 MB", caricato: "2024-09-12" },
-  { id: "D-005", nome: "Rogito Via Lauro Rossi.pdf",     tipo: "Rogito",   immobile_id: "IMM-005", dimensione: "2.3 MB", caricato: "2024-11-04" },
-  { id: "D-006", nome: "Contratto locazione C-001.pdf",  tipo: "Contratto", immobile_id: "IMM-001", dimensione: "0.9 MB", caricato: "2024-04-01" },
-  { id: "D-007", nome: "Contratto locazione C-002.pdf",  tipo: "Contratto", immobile_id: "IMM-002", dimensione: "1.1 MB", caricato: "2024-06-01" },
+  // Rogiti
+  { id: "D-001", nome: "Rogito Via Foligno.pdf",          tipo: "Rogito",       immobile_id: "IMM-001", dimensione: "2.1 MB", caricato: "2025-02-15" },
+  { id: "D-002", nome: "Rogito Negozio De Amicis.pdf",    tipo: "Rogito",       immobile_id: "IMM-002", dimensione: "2.4 MB", caricato: "2025-05-10" },
+  { id: "D-003", nome: "Rogito Via Borgaro.pdf",          tipo: "Rogito",       immobile_id: "IMM-003", dimensione: "2.0 MB", caricato: "2025-07-08" },
+  { id: "D-004", nome: "Rogito Via Don Bosco.pdf",        tipo: "Rogito",       immobile_id: "IMM-004", dimensione: "2.2 MB", caricato: "2025-09-15" },
+  { id: "D-005", nome: "Rogito Via Lauro Rossi.pdf",      tipo: "Rogito",       immobile_id: "IMM-005", dimensione: "2.3 MB", caricato: "2025-11-20" },
+  // APE
+  { id: "D-006", nome: "APE Via Foligno.pdf",             tipo: "APE",          immobile_id: "IMM-001", dimensione: "0.7 MB", caricato: "2025-02-10" },
+  { id: "D-007", nome: "APE Negozio De Amicis.pdf",       tipo: "APE",          immobile_id: "IMM-002", dimensione: "0.8 MB", caricato: "2025-05-05" },
+  { id: "D-008", nome: "APE Via Borgaro.pdf",             tipo: "APE",          immobile_id: "IMM-003", dimensione: "0.7 MB", caricato: "2025-07-03" },
+  { id: "D-009", nome: "APE Via Don Bosco.pdf",           tipo: "APE",          immobile_id: "IMM-004", dimensione: "0.8 MB", caricato: "2025-09-10" },
+  { id: "D-010", nome: "APE Via Lauro Rossi.pdf",         tipo: "APE",          immobile_id: "IMM-005", dimensione: "0.7 MB", caricato: "2025-11-15" },
+  // Planimetrie
+  { id: "D-011", nome: "Planimetria Via Foligno.pdf",     tipo: "Planimetria",  immobile_id: "IMM-001", dimensione: "1.4 MB", caricato: "2025-02-15" },
+  { id: "D-012", nome: "Planimetria Negozio.pdf",         tipo: "Planimetria",  immobile_id: "IMM-002", dimensione: "1.8 MB", caricato: "2025-05-10" },
+  { id: "D-013", nome: "Planimetria Via Borgaro.pdf",     tipo: "Planimetria",  immobile_id: "IMM-003", dimensione: "1.3 MB", caricato: "2025-07-08" },
+  { id: "D-014", nome: "Planimetria Via Don Bosco.pdf",   tipo: "Planimetria",  immobile_id: "IMM-004", dimensione: "1.4 MB", caricato: "2025-09-15" },
+  { id: "D-015", nome: "Planimetria Via Lauro Rossi.pdf", tipo: "Planimetria",  immobile_id: "IMM-005", dimensione: "1.5 MB", caricato: "2025-11-20" },
+  // Visure catastali
+  { id: "D-016", nome: "Visura catastale Foligno.pdf",        tipo: "Visura",   immobile_id: "IMM-001", dimensione: "0.5 MB", caricato: "2025-02-12" },
+  { id: "D-017", nome: "Visura catastale De Amicis.pdf",      tipo: "Visura",   immobile_id: "IMM-002", dimensione: "0.6 MB", caricato: "2025-05-08" },
+  { id: "D-018", nome: "Visura catastale Borgaro.pdf",        tipo: "Visura",   immobile_id: "IMM-003", dimensione: "0.5 MB", caricato: "2025-07-05" },
+  { id: "D-019", nome: "Visura catastale Don Bosco.pdf",      tipo: "Visura",   immobile_id: "IMM-004", dimensione: "0.5 MB", caricato: "2025-09-12" },
+  { id: "D-020", nome: "Visura catastale Lauro Rossi.pdf",    tipo: "Visura",   immobile_id: "IMM-005", dimensione: "0.5 MB", caricato: "2025-11-18" },
+  // Contratti locazione (tutti dal 01/01/2026)
+  { id: "D-021", nome: "Contratto locazione C-001 Foligno.pdf",   tipo: "Contratto", immobile_id: "IMM-001", dimensione: "0.9 MB", caricato: "2025-12-20" },
+  { id: "D-022", nome: "Contratto locazione C-002 De Amicis.pdf", tipo: "Contratto", immobile_id: "IMM-002", dimensione: "1.1 MB", caricato: "2025-12-22" },
+  { id: "D-023", nome: "Contratto locazione C-003 Borgaro.pdf",   tipo: "Contratto", immobile_id: "IMM-003", dimensione: "0.9 MB", caricato: "2025-12-23" },
+  { id: "D-024", nome: "Contratto locazione C-004 Don Bosco.pdf", tipo: "Contratto", immobile_id: "IMM-004", dimensione: "0.9 MB", caricato: "2025-12-28" },
+  { id: "D-025", nome: "Contratto locazione C-005 Lauro Rossi.pdf", tipo: "Contratto", immobile_id: "IMM-005", dimensione: "0.9 MB", caricato: "2025-12-30" },
+  // Fatture agenzia (4: tutti tranne il negozio che non ha avuto agenzia)
+  { id: "D-026", nome: "Fattura agenzia Via Foligno (3.000€).pdf",     tipo: "Fattura", immobile_id: "IMM-001", dimensione: "0.3 MB", caricato: "2025-02-15" },
+  { id: "D-027", nome: "Fattura agenzia Via Borgaro (3.000€).pdf",     tipo: "Fattura", immobile_id: "IMM-003", dimensione: "0.3 MB", caricato: "2025-07-08" },
+  { id: "D-028", nome: "Fattura agenzia Via Don Bosco (6.000€).pdf",   tipo: "Fattura", immobile_id: "IMM-004", dimensione: "0.3 MB", caricato: "2025-09-15" },
+  { id: "D-029", nome: "Fattura agenzia Via Lauro Rossi (4.000€).pdf", tipo: "Fattura", immobile_id: "IMM-005", dimensione: "0.3 MB", caricato: "2025-11-20" },
+  // Imposta di registro 9% atto (5 ricevute)
+  { id: "D-030", nome: "Ricevuta imposta registro Foligno (2.160€).pdf",     tipo: "Fattura", immobile_id: "IMM-001", dimensione: "0.2 MB", caricato: "2025-02-15" },
+  { id: "D-031", nome: "Ricevuta imposta registro De Amicis (5.400€).pdf",   tipo: "Fattura", immobile_id: "IMM-002", dimensione: "0.2 MB", caricato: "2025-05-10" },
+  { id: "D-032", nome: "Ricevuta imposta registro Borgaro (4.680€).pdf",     tipo: "Fattura", immobile_id: "IMM-003", dimensione: "0.2 MB", caricato: "2025-07-08" },
+  { id: "D-033", nome: "Ricevuta imposta registro Don Bosco (4.590€).pdf",   tipo: "Fattura", immobile_id: "IMM-004", dimensione: "0.2 MB", caricato: "2025-09-15" },
+  { id: "D-034", nome: "Ricevuta imposta registro Lauro Rossi (5.220€).pdf", tipo: "Fattura", immobile_id: "IMM-005", dimensione: "0.2 MB", caricato: "2025-11-20" },
 ];
 
 export const formatEur = (n) => {

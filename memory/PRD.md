@@ -244,6 +244,13 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 
 86. **Coerenza dati** verificata: Dashboard (Valore patrimonio 297.000€, ricavi 2.290€/m, rend. netto 7.56%, debito 0€), Patrimonio (5 righe Torino), KPI & Rendimenti (Via Foligno top 9.88%, Don Bosco bottom 6.14%, Portfolio Score 72/100), Mappa (5 marker GPS Torino), Cash Flow (saldo medio 12 mesi 1.119€), Affitti (5 contratti 100% occupancy), Scheda immobile (anagrafica + valore corretti).
 
+## 🆕 Cleanup UX + dati doppi + archivio Documenti (31 May 2026 - iter 23)
+93. **Rimossa modalità avanzata Forecast**: eliminato link "Modalità avanzata" nell'header di `ForecastSimple`, link "Confronta con altro scenario" che portava a `/forecast/advanced`, route `/forecast/advanced` e import di `Forecast.jsx` da `App.js`. Forecast ora è single-page senza diramazioni.
+94. **Grafici partono da Gen 2026**: `cashFlowMensile` e `ricaviCostiAnnuali` troncati ai soli mesi a regime (Gen + Feb 2026). Forecast 12 mesi rimane invariato. Niente più mesi a 0 pre-acquisizione.
+95. **Fix Operazioni duplicate**: `Operazioni.jsx` faceva `[...realProps, ...demoProperties]` mostrando 10 invece di 5. Applicato lo stesso pattern di Patrimonio: se realProps presenti → usa solo quelli, altrimenti fallback demo.
+96. **Documenti archivio completo** (da 7 → 34): 5 rogiti + 5 APE + 5 planimetrie + 5 visure catastali + 5 contratti locazione + 4 fatture agenzia + 5 ricevute imposta registro (9% atto). Tutte le date allineate al 2025 per gli atti d'acquisto e dicembre 2025 per i contratti firmati prima dell'avvio Gen 2026.
+
+
 - ceo@controlroom.it / demo1234 (admin)
 - amministrazione@controlroom.it / demo1234 (amministrazione)
 - commercialista@controlroom.it / demo1234 (commercialista)

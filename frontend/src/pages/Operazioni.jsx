@@ -22,7 +22,8 @@ export default function Operazioni() {
   const load = () => apiClient().get("/properties").then(r => setRealProps(r.data || [])).catch(() => {});
   useEffect(() => { load(); }, []);
 
-  const allProperties = [...realProps, ...demoProperties];
+  // Se ho properties reali nel DB → uso solo quelle. Altrimenti fallback demo.
+  const allProperties = realProps.length > 0 ? realProps : demoProperties;
   const grouped = Object.keys(OPERAZIONI).map(k => ({
     key: k, meta: OPERAZIONI[k], items: allProperties.filter(p => p.operazione === k),
   }));
