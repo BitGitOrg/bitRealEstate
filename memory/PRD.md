@@ -253,6 +253,14 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 
 - ceo@controlroom.it / demo1234 (admin)
 - amministrazione@controlroom.it / demo1234 (amministrazione)
+
+## 🆕 Documenti reali + Alert scadenze automatici (31 May 2026 - iter 24)
+97. **Backend `/api/documents`** (`routers/documents.py`): upload multipart con MIME detection, list filtrato per `immobile_id`/`tipo`, download streaming, delete. Storage base64 in MongoDB (limite 15 MB). Tipi accettati: Rogito/APE/Contratto/Fattura/Planimetria/Visura/Altro. Estensioni: PDF/PNG/JPG/DOC/DOCX/XLS/XLSX.
+98. **Frontend `Documenti.jsx` rifatta**: modal upload drag-and-drop con preview file, selettore tipo + immobile, download reale (blob+anchor), delete con conferma. Modalità ibrida: se ci sono documenti reali → mostra solo quelli con badge "archivio reale"; se vuoto → mostra i 34 documenti demo come anteprima ispirativa con etichetta "demo" e tooltip "Carica per attivare l'archivio reale".
+99. **Backend `/api/alerts`** (`routers/alerts.py`): `GET /alerts` lista, `POST /alerts/refresh` ricalcola alert auto-generated (cancella vecchi auto + scansiona properties), `DELETE /alerts/{id}` dismiss. Trigger: scadenza_contratto a 90/60/30/0 gg (severity bassa/media/alta/critica), scadenza mutuo idem, immobile sfitto. Campi `days_remaining` + `scadenza` per UI badge.
+100. **Frontend `AlertCenter.jsx` rifatta**: bottone "Scansiona scadenze" con loader, toast con N alert generati, badge Clock colorato (rosso scaduto / arancio ≤30 / ambra ≤60 / blu ≤90), pulsante X per dismiss inline. Subtitle mostra "live · agg. HH:MM" se i dati sono reali, altrimenti "demo".
+101. **Test end-to-end verificato**: setto temporaneamente scadenze Via Foligno (45gg) / Borgaro (75gg) / Don Bosco (20gg) → 3 alert generati con severity corretta (media/bassa/alta) → screenshot UI funzionante → rollback scadenze al 2030.
+
 - commercialista@controlroom.it / demo1234 (commercialista)
 - collaboratore@controlroom.it / demo1234 (collaboratore)
 
