@@ -1,0 +1,39 @@
+{
+  "summary": "Tested 4-step NewPropertyModal + operazione persistence (backend) + Excel template/parse/commit. Found and fixed 2 regressions: (1) Excel parse was reading prezzo from cells[11] which is now 'Data acquisto' after Operazione column insertion — fixed to cells[12]; (2) NewPropertyModal step state was not re-syncing when preselectOperazione prop changed (modal stayed at step 1 when opened from Operazioni page) — added useEffect sync on open+preselect. All 8 backend tests pass; UI flow (4 steps, live preview, recap, toast, list-show, preselect→step 2 with blue accent) works end-to-end.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter18_operazione.py",
+    "/app/test_reports/pytest/iter18_results.xml",
+    "/app/frontend/public/screenshots/16_new_property_step1.png",
+    "/app/frontend/public/screenshots/17_new_property_step3.png",
+    "/app/frontend/public/screenshots/18_new_property_step4.png",
+    "/app/frontend/public/screenshots/19_operazioni_with_buttons.png",
+    "/app/frontend/public/screenshots/19b_preselect_step2.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "NewPropertyModal.jsx (393 lines) is approaching the 700-line ceiling but still acceptable. Consider extracting the 4 step components into separate sub-files if it grows further.",
+    "imports.py parse function uses hard-coded cell index numbers (cells[11], cells[12]...). After this regression, recommend introducing named constants (IDX_OPERAZIONE=10, IDX_PREZZO=12, ...) or zipping cells with IMMOBILI_COLUMNS to avoid future off-by-one bugs when columns are inserted.",
+    "Empty-Operazione parse fallback currently always stores 'reddito' in the parse output (line 199-ish: `coerce_str(cells[10]) or 'reddito'`). The canone-based heuristic mentioned in the spec is only applied at commit time, which can confuse users seeing the parse preview. Consider applying the heuristic at parse time for UI consistency."
+  ],
+  "updated_files": [
+    "/app/backend/routers/imports.py (cells[11] -> cells[12] for prezzo)",
+    "/app/frontend/src/components/property/NewPropertyModal.jsx (added useEffect to re-sync step+operazione when open/preselect changes)",
+    "/app/backend/tests/test_iter18_operazione.py (new)"
+  ],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% (all UI flows verified)"},
+  "test_credentials": "ceo@controlroom.it / demo1234 (from review request)",
+  "seed_data_creation": "None — test created 'TEST Flip Bologna' via UI and pytest cleanup removed it; demo IMM-BE20E5 and IMM-836DA0 untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All Operazione-related flows are green after the two fixes. If new columns are added to the Excel template, double-check the cells[N] indices in imports.py parse_immobili — currently still position-based.",
+  "rca_of_the_issue": "Regression 1 (prezzo wrong column): Inserting 'Operazione' at IMMOBILI_COLUMNS[10] shifted all subsequent columns by +1, but the parse function only updated some lookups (data_acquisto correctly stayed at cells[11], but `prezzo = cells[11]` was never bumped to cells[12]). Repro: upload Excel with Prezzo=150000 → parse returned prezzo_acquisto=0 (since data_acquisto string can't be coerced to float). Fix: change cells[11] → cells[12] for prezzo only. Regression 2 (preselect ignored on remount): `useState(preselectOperazione ? 2 : 1)` only runs on first mount; subsequent prop changes ignored. The modal in Operazioni page stayed mounted, so step never reset to 2. Fix: useEffect that watches [open, preselectOperazione] and resets step + form.operazione."
+}

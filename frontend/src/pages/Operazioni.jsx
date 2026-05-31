@@ -1,9 +1,12 @@
+import { useState, useEffect } from "react";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import { StatusBadge } from "../components/StatusBadge";
-import { properties, formatEur } from "../lib/demoData";
-import { Home, ShoppingBag, Hammer } from "lucide-react";
+import { properties as demoProperties, formatEur } from "../lib/demoData";
+import { apiClient } from "../lib/auth";
+import { Home, ShoppingBag, Hammer, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
+import NewPropertyModal from "../components/property/NewPropertyModal";
 
 const OPERAZIONI = {
   reddito: { label: "Immobile a reddito", icon: Home, color: "#10B981", desc: "Acquisto finalizzato all'affitto" },
@@ -12,23 +15,52 @@ const OPERAZIONI = {
 };
 
 export default function Operazioni() {
+  const [realProps, setRealProps] = useState([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [preselect, setPreselect] = useState(null);
+
+  const load = () => apiClient().get("/properties").then(r => setRealProps(r.data || [])).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const allProperties = [...realProps, ...demoProperties];
   const grouped = Object.keys(OPERAZIONI).map(k => ({
-    key: k, meta: OPERAZIONI[k], items: properties.filter(p => p.operazione === k),
+    key: k, meta: OPERAZIONI[k], items: allProperties.filter(p => p.operazione === k),
   }));
 
+  const openModal = (op) => { setPreselect(op); setModalOpen(true); };
+
   return (
-    <Layout title="Operazioni Immobiliari" subtitle="Gestione delle tipologie di operazione attive">
+    <Layout
+      title="Operazioni Immobiliari"
+      subtitle="Gestione delle tipologie di operazione attive"
+      actions={
+        <button
+          data-testid="new-operation-btn"
+          onClick={() => openModal(null)}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0066FF] hover:bg-[#2563EB] text-white text-sm font-medium transition-colors"
+        >
+          <Plus size={14} /> Nuova operazione
+        </button>
+      }
+    >
+      <NewPropertyModal
+        open={modalOpen}
+        preselectOperazione={preselect}
+        onClose={() => { setModalOpen(false); setPreselect(null); }}
+        onCreated={() => load()}
+      />
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         {grouped.map(g => {
           const Icon = g.meta.icon;
-          const totale = g.items.reduce((s, x) => s + x.costo_totale, 0);
+          const totale = g.items.reduce((s, x) => s + (x.costo_totale || 0), 0);
           return (
             <SectionCard key={g.key} testId={`op-summary-${g.key}`}>
               <div className="flex items-start gap-3 mb-3">
                 <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: `${g.meta.color}20`, border: `1px solid ${g.meta.color}40` }}>
                   <Icon size={18} style={{ color: g.meta.color }} />
                 </div>
-                <div>
+                <div className="flex-1">
                   <div className="font-display font-semibold text-[#0F172A]">{g.meta.label}</div>
                   <div className="text-xs text-[#475569]">{g.meta.desc}</div>
                 </div>
@@ -43,6 +75,14 @@ export default function Operazioni() {
                   <div className="font-display text-2xl font-bold tabular">{formatEur(totale)}</div>
                 </div>
               </div>
+              <button
+                data-testid={`op-add-${g.key}`}
+                onClick={() => openModal(g.key)}
+                className="mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 transition"
+                style={{ background: g.meta.color }}
+              >
+                <Plus size={12} /> Aggiungi {g.meta.label.toLowerCase()}
+              </button>
             </SectionCard>
           );
         })}

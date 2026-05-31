@@ -18,7 +18,7 @@ from routers._shared import enrich_property as _enrich_property, coerce_float, c
 
 IMMOBILI_COLUMNS = [
     "Nome immobile", "Indirizzo", "Città", "Provincia", "Tipologia", "Metratura (m²)",
-    "Piano", "Anno costruzione", "Classe energetica", "Stato",
+    "Piano", "Anno costruzione", "Classe energetica", "Stato", "Operazione",
     "Data acquisto (YYYY-MM-DD)", "Prezzo acquisto (€)", "Notaio (€)", "Agenzia (€)",
     "Imposte (€)", "Lavori (€)", "Valore stimato (€)", "Canone mensile (€)",
     "Banca mutuo", "Capitale residuo (€)", "Rata mutuo (€)", "Tasso mutuo (%)",
@@ -27,7 +27,7 @@ IMMOBILI_COLUMNS = [
 
 IMMOBILI_EXAMPLE_ROW = [
     "Bilocale Navigli", "Via Vigevano 12", "Milano", "MI", "Bilocale", 58,
-    "2", 1972, "D", "affittato",
+    "2", 1972, "D", "affittato", "reddito",
     "2022-03-15", 215000, 4200, 6500,
     8900, 18000, 285000, 1450,
     "Intesa Sanpaolo", 95000, 540, 2.8,
@@ -188,7 +188,7 @@ def make_imports_router(db, current_user, llm_key: str):
             nome = coerce_str(cells[0])
             if not nome:
                 continue
-            prezzo = coerce_float(cells[11])
+            prezzo = coerce_float(cells[12])
             warnings = []
             if prezzo <= 0:
                 warnings.append("Prezzo acquisto mancante o non valido")
@@ -197,13 +197,15 @@ def make_imports_router(db, current_user, llm_key: str):
                 "provincia": coerce_str(cells[3]), "tipologia": coerce_str(cells[4]) or "Altro",
                 "metratura": coerce_float(cells[5]), "piano": coerce_str(cells[6]),
                 "anno_costruzione": coerce_int(cells[7]), "classe_energetica": coerce_str(cells[8]),
-                "stato": coerce_str(cells[9]) or "acquistato", "data_acquisto": coerce_str(cells[10]),
-                "prezzo_acquisto": prezzo, "notaio": coerce_float(cells[12]),
-                "agenzia": coerce_float(cells[13]), "imposte": coerce_float(cells[14]),
-                "lavori": coerce_float(cells[15]), "valore_stimato": coerce_float(cells[16]) or prezzo,
-                "canone_mensile": coerce_float(cells[17]), "mutuo_banca": coerce_str(cells[18]),
-                "mutuo_residuo": coerce_float(cells[19]), "mutuo_rata": coerce_float(cells[20]),
-                "mutuo_tasso": coerce_float(cells[21]), "note": coerce_str(cells[22]),
+                "stato": coerce_str(cells[9]) or "acquistato",
+                "operazione": coerce_str(cells[10]) or "reddito",
+                "data_acquisto": coerce_str(cells[11]),
+                "prezzo_acquisto": prezzo, "notaio": coerce_float(cells[13]),
+                "agenzia": coerce_float(cells[14]), "imposte": coerce_float(cells[15]),
+                "lavori": coerce_float(cells[16]), "valore_stimato": coerce_float(cells[17]) or prezzo,
+                "canone_mensile": coerce_float(cells[18]), "mutuo_banca": coerce_str(cells[19]),
+                "mutuo_residuo": coerce_float(cells[20]), "mutuo_rata": coerce_float(cells[21]),
+                "mutuo_tasso": coerce_float(cells[22]), "note": coerce_str(cells[23]),
                 "warnings": warnings, "valid": len(warnings) == 0,
             }
             if warnings:
@@ -234,7 +236,7 @@ def make_imports_router(db, current_user, llm_key: str):
                 "metratura": float(r.get("metratura", 0) or 0), "piano": r.get("piano", ""),
                 "anno_costruzione": int(r.get("anno_costruzione", 0) or 0),
                 "classe_energetica": r.get("classe_energetica", ""), "stato": r.get("stato", "acquistato"),
-                "operazione": "reddito" if r.get("canone_mensile", 0) > 0 else "compra_vendi",
+                "operazione": r.get("operazione") or ("reddito" if r.get("canone_mensile", 0) > 0 else "compra_vendi"),
                 "prezzo_acquisto": float(r.get("prezzo_acquisto", 0) or 0),
                 "notaio": float(r.get("notaio", 0) or 0), "agenzia": float(r.get("agenzia", 0) or 0),
                 "imposte": float(r.get("imposte", 0) or 0), "lavori": float(r.get("lavori", 0) or 0),

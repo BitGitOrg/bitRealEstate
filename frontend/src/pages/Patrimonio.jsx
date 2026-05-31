@@ -6,6 +6,7 @@ import { properties, STATI, formatEur } from "../lib/demoData";
 import { Search, Plus, LayoutGrid, List, MapPin, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../lib/auth";
+import NewPropertyModal from "../components/property/NewPropertyModal";
 
 export default function Patrimonio() {
   const [q, setQ] = useState("");
@@ -13,14 +14,15 @@ export default function Patrimonio() {
   const [view, setView] = useState("table");
   const [dealsInTrattativa, setDealsInTrattativa] = useState([]);
   const [realProps, setRealProps] = useState([]);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const loadProps = () => apiClient().get("/properties").then(r => setRealProps(r.data || [])).catch(() => {});
 
   useEffect(() => {
     apiClient().get("/deals?status=in_trattativa")
       .then(r => setDealsInTrattativa(r.data || []))
       .catch(() => {});
-    apiClient().get("/properties")
-      .then(r => setRealProps(r.data || []))
-      .catch(() => {});
+    loadProps();
   }, []);
 
   // Convert deals into property-like rows
@@ -63,12 +65,17 @@ export default function Patrimonio() {
           <Link to="/deal-inbox" data-testid="goto-deal-inbox" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[rgba(0,102,255,0.1)] border border-[rgba(0,102,255,0.3)] text-[#2563EB] hover:bg-[rgba(0,102,255,0.2)] text-sm font-medium transition-colors">
             <Sparkles size={14}/> AI Deal Scout
           </Link>
-          <button data-testid="add-property-btn" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0066FF] hover:bg-[#2563EB] text-white text-sm font-medium transition-colors">
+          <button data-testid="add-property-btn" onClick={() => setModalOpen(true)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0066FF] hover:bg-[#2563EB] text-white text-sm font-medium transition-colors">
             <Plus size={14} /> Nuovo immobile
           </button>
         </div>
       }
     >
+      <NewPropertyModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onCreated={() => loadProps()}
+      />
       {/* Filters */}
       <div className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl p-4 mb-4 flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2 flex-1 min-w-[240px] px-3 py-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
