@@ -231,6 +231,17 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
    - **Totale**: € 283.050 investiti, € 2.290/mese canoni (€27.480/anno), tutti acquistati cash (zero mutui), tutti affittati.
 84. **demoData.js riallineato**: properties array, portfolioKPI, cashFlowMensile/Forecast/Ricavi-Costi, distribuzioneTipologia (4 bilocali + 1 negozio), contratti (5), incassi (5 pagati Feb 2026), lavori vuoto, mutui vuoto, alerts riscritti (concentrazione 100% Torino + opportunità leva).
 85. **Patrimonio.jsx fix duplicazione**: la pagina mostrava 10 immobili (5 real + 5 demo). Ora se `realProps.length > 0` mostra SOLO i real + deals in trattativa; demoData è fallback se DB vuoto. Subtitle: "5 immobili · dati reali".
+
+## 🆕 Rebase timeline a Gen 2026 (31 May 2026 - iter 22)
+87. **Acquisti spostati al 2025**, **contratti tutti dal 01/01/2026 al 100%**:
+   - data_acquisto: Feb/Mag/Lug/Set/Nov 2025 (sostituiti i 2024)
+   - data_inizio_contratto: 2026-01-01 per tutti e 5; scadenza 4 anni bilocali (2030-01-01), 6 anni negozio (2032-01-01)
+88. **Cashflow storico ricalcolato**: zero da Mar '25 a Nov '25 (immobili in acquisizione), -220€ a Dic '25 (prep), poi 1820€/mese a regime da Gen '26.
+89. **Forecast 12 mesi**: steady ~1820€/mese con dip a 1070€ a Giu '26 e Dic '26 (IMU acconto/saldo).
+90. **Movimenti aggiornati**: solo Gen + Feb 2026 (5 affitti pagati ciascun mese + condominio Q1 + manutenzione). Niente IMU 2025 (non ancora dovuta).
+91. **Alerts** aggiornati con "Portafoglio appena entrato a regime" come primo alert strategico.
+92. **MongoDB sincronizzato** via script reset_and_seed_torino.py.
+
 86. **Coerenza dati** verificata: Dashboard (Valore patrimonio 297.000€, ricavi 2.290€/m, rend. netto 7.56%, debito 0€), Patrimonio (5 righe Torino), KPI & Rendimenti (Via Foligno top 9.88%, Don Bosco bottom 6.14%, Portfolio Score 72/100), Mappa (5 marker GPS Torino), Cash Flow (saldo medio 12 mesi 1.119€), Affitti (5 contratti 100% occupancy), Scheda immobile (anagrafica + valore corretti).
 
 - ceo@controlroom.it / demo1234 (admin)
