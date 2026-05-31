@@ -220,6 +220,19 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 
 
 ## Demo accounts
+
+## 🆕 Reset DB + popolazione portafoglio reale Torino (31 May 2026 - iter 21)
+83. **DB CEO svuotato e popolato con 5 immobili reali a Torino** via `/app/backend/scripts/reset_and_seed_torino.py`:
+   - Via Foligno 18 — Bilocale — 24K + 3K ag + 9% atto → canone 320€/m (rend. lordo 13.17%)
+   - Negozio Piazza De Amicis 4 — 60K + 9% atto → canone 590€/m (rend. lordo 10.83%)
+   - Via Borgaro 86 — Bilocale — 52K + 3K ag + 9% atto → canone 480€/m (rend. lordo 9.65%)
+   - Via Don Bosco 22 — Bilocale — 51K + 6K ag + 9% atto → canone 420€/m (rend. lordo 8.18%)
+   - Via Lauro Rossi 14 — Bilocale — 58K + 4K ag + 9% atto → canone 480€/m (rend. lordo 8.57%)
+   - **Totale**: € 283.050 investiti, € 2.290/mese canoni (€27.480/anno), tutti acquistati cash (zero mutui), tutti affittati.
+84. **demoData.js riallineato**: properties array, portfolioKPI, cashFlowMensile/Forecast/Ricavi-Costi, distribuzioneTipologia (4 bilocali + 1 negozio), contratti (5), incassi (5 pagati Feb 2026), lavori vuoto, mutui vuoto, alerts riscritti (concentrazione 100% Torino + opportunità leva).
+85. **Patrimonio.jsx fix duplicazione**: la pagina mostrava 10 immobili (5 real + 5 demo). Ora se `realProps.length > 0` mostra SOLO i real + deals in trattativa; demoData è fallback se DB vuoto. Subtitle: "5 immobili · dati reali".
+86. **Coerenza dati** verificata: Dashboard (Valore patrimonio 297.000€, ricavi 2.290€/m, rend. netto 7.56%, debito 0€), Patrimonio (5 righe Torino), KPI & Rendimenti (Via Foligno top 9.88%, Don Bosco bottom 6.14%, Portfolio Score 72/100), Mappa (5 marker GPS Torino), Cash Flow (saldo medio 12 mesi 1.119€), Affitti (5 contratti 100% occupancy), Scheda immobile (anagrafica + valore corretti).
+
 - ceo@controlroom.it / demo1234 (admin)
 - amministrazione@controlroom.it / demo1234 (amministrazione)
 - commercialista@controlroom.it / demo1234 (commercialista)

@@ -45,7 +45,12 @@ export default function Patrimonio() {
     dealId: d.id,
   })), [dealsInTrattativa]);
 
-  const allProperties = useMemo(() => [...realProps, ...dealProperties, ...properties], [realProps, dealProperties]);
+  const allProperties = useMemo(() => {
+    // Se ci sono properties reali in DB → uso solo quelle + deals in trattativa
+    // Altrimenti fallback ai demo
+    if (realProps.length > 0) return [...realProps, ...dealProperties];
+    return [...dealProperties, ...properties];
+  }, [realProps, dealProperties]);
 
   const cities = useMemo(() => Array.from(new Set(allProperties.map(p => p.citta))).filter(Boolean), [allProperties]);
   const [citta, setCitta] = useState("tutte");
@@ -59,7 +64,7 @@ export default function Patrimonio() {
   return (
     <Layout
       title="Patrimonio Immobiliare"
-      subtitle={`${filtered.length} immobili in elenco${realProps.length > 0 ? ` · ${realProps.length} dal Deal Inbox` : ""}${dealsInTrattativa.length > 0 ? ` · ${dealsInTrattativa.length} in trattativa` : ""}`}
+      subtitle={`${filtered.length} immobili${realProps.length > 0 ? " · dati reali" : " · demo"}${dealsInTrattativa.length > 0 ? ` · ${dealsInTrattativa.length} in trattativa` : ""}`}
       actions={
         <div className="hidden md:flex items-center gap-2">
           <Link to="/deal-inbox" data-testid="goto-deal-inbox" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[rgba(0,102,255,0.1)] border border-[rgba(0,102,255,0.3)] text-[#2563EB] hover:bg-[rgba(0,102,255,0.2)] text-sm font-medium transition-colors">
