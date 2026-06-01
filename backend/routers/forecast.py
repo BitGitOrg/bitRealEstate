@@ -1161,6 +1161,111 @@ def make_forecast_router(db, current_user, llm_key: str):
         items.sort(key=lambda x: x["swing"], reverse=True)
         return {"base_pn": base_pn, "base_cf": base_cf, "items": items}
 
+    # ===== AI Action Plan — cosa fare per raggiungere gli obiettivi della simulazione =====
+    @router.post("/scenarios/{sid}/action-plan")
+    async def scenario_action_plan(sid: str, user: dict = Depends(current_user)):
+        if not llm_key:
+            raise HTTPException(status_code=500, detail="LLM key non configurata")
+        scen = await db.scenarios.find_one({"id": sid, "user_id": user["id"]}, {"_id": 0})
+        if not scen:
+            raise HTTPException(status_code=404, detail="Scenario non trovato")
+        baseline = await build_baseline(db, user["id"], scen)
+        props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+        settings = await get_user_settings(db, user["id"])
+        sim = simulate(baseline, scen, props, settings)
+        s = sim["summary"]
+
+        # Build context for AI
+        ops_by_year: dict = {}
+        for op in scen.get("operations", []):
+            ops_by_year.setdefault(int(op.get("anno", 0)), []).append(
+                f"{op.get('tipo')} «{op.get('label','')}»"
+            )
+        ops_lines = "\n".join([f"- Anno {y}: {', '.join(v)}" for y, v in sorted(ops_by_year.items())]) or "- Nessuna operazione programmata"
+        sn = sim["snapshots"]
+        pn_iniziale = sn[0].get("patrimonio_netto", 0) if sn else 0
+        crescita_pn = s.get("patrimonio_netto_finale", 0) - pn_iniziale
+
+        ctx = (
+            f"PORTAFOGLIO ATTUALE: {len(props)} immobili, valore {sn[0].get('valore_immobili',0):,.0f} €, "
+            f"debito {sn[0].get('debito_residuo',0):,.0f} €, liquidità {sn[0].get('liquidita',0):,.0f} €, "
+            f"canone mensile {sn[0].get('canone_mensile',0):,.0f} €.\n"
+            f"OBIETTIVO SCENARIO ({scen.get('nome','')}): orizzonte {scen.get('horizon_years')} anni, "
+            f"PN finale {s.get('patrimonio_netto_finale',0):,.0f} €, "
+            f"crescita PN {crescita_pn:,.0f} €, "
+            f"cash flow cumulato {s.get('cash_flow_cumulato',0):,.0f} €, "
+            f"LTV finale {s.get('ltv_finale',0)}%, "
+            f"verdict {s.get('verdict','')}.\n"
+            f"OPERAZIONI PIANIFICATE:\n{ops_lines}\n"
+            f"STRATEGIA SINTESI: {scen.get('descrizione','')[:400]}"
+        )
+
+        sys_msg = (
+            "Sei un consulente strategico immobiliare. Produci un piano d'azione concreto per i prossimi 12-18 mesi "
+            "che permetta all'utente di raggiungere gli obiettivi della simulazione. "
+            "Output: SOLO JSON valido nel formato {\"actions\": [...]}, niente testo prima o dopo. "
+            "Ogni azione DEVE avere: "
+            "{\"priority\": \"P0|P1|P2\" (P0=urgente entro 30gg, P1=entro 3-6 mesi, P2=entro 12-18 mesi), "
+            "\"timeline\": \"es. Entro 30gg / Entro Q3 2026 / Anno 2\", "
+            "\"title\": \"titolo breve dell'azione\", "
+            "\"description\": \"descrizione concreta in 1-2 frasi, includi numeri reali quando possibile\", "
+            "\"kpi\": \"metrica da monitorare per capire se l'azione sta funzionando\", "
+            "\"category\": \"acquisto|finanziamento|gestione|vendita|ottimizzazione|monitoraggio\"}. "
+            "Produci 5-7 azioni totali, mix di P0/P1/P2, ordinate per priorità. "
+            "Le azioni devono essere ESEGUIBILI dall'utente, non generiche. "
+            "Considera vincoli reali italiani (cedolare 21%, mutui banca, tempi notarili). "
+            "Esempi BUONI: «Aprire 2 watchlist su immocasa.it per bilocali Torino zona Aurora 60-80k€», "
+            "«Richiedere a Intesa Sanpaolo preventivo mutuo per surroga su Via Foligno (€24k → finanziabile 60% = €14k cash liberato)». "
+            "Esempi DA EVITARE: «Diversifica il portafoglio», «Monitora il mercato».\n\n"
+            + ctx
+        )
+
+        try:
+            from emergentintegrations.llm.chat import LlmChat, UserMessage
+            chat = LlmChat(
+                api_key=llm_key,
+                session_id=f"action-plan-{sid}",
+                system_message=sys_msg,
+            ).with_model("anthropic", "claude-sonnet-4-6")
+            reply = await chat.send_message(UserMessage(text="Genera il piano d'azione."))
+        except Exception as e:
+            logging.exception("AI action-plan error")
+            raise HTTPException(status_code=500, detail=f"AI error: {str(e)}")
+
+        # Parse JSON robustly
+        actions: list = []
+        try:
+            text = reply.strip()
+            if "```" in text:
+                # estrai blocco json se presente
+                import re as _re
+                m = _re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+                if m:
+                    text = m.group(1).strip()
+            # estrai primo oggetto json
+            start = text.find("{")
+            end = text.rfind("}")
+            if start != -1 and end > start:
+                text = text[start:end+1]
+            parsed = json.loads(text)
+            actions = parsed.get("actions", []) if isinstance(parsed, dict) else []
+        except Exception as e:
+            logging.warning(f"Parse action plan failed: {e}; raw: {reply[:200]}")
+            # fallback: 1 azione "raw" con testo grezzo
+            actions = [{
+                "priority": "P1", "timeline": "Da definire",
+                "title": "Sintesi AI (parsing fallito)",
+                "description": reply[:400],
+                "kpi": "n/d", "category": "monitoraggio",
+            }]
+
+        await db.scenarios.update_one(
+            {"id": sid, "user_id": user["id"]},
+            {"$set": {"action_plan": actions, "action_plan_ts": datetime.now(timezone.utc).isoformat()}}
+        )
+        return {"actions": actions}
+
+
     @router.post("/auto-optimize/jobs", status_code=202)
     async def create_auto_optimize_job(payload: AutoOptimizeJobIn, user: dict = Depends(current_user)):
         if not llm_key:

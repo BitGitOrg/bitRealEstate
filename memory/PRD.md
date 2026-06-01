@@ -261,6 +261,13 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 100. **Frontend `AlertCenter.jsx` rifatta**: bottone "Scansiona scadenze" con loader, toast con N alert generati, badge Clock colorato (rosso scaduto / arancio ≤30 / ambra ≤60 / blu ≤90), pulsante X per dismiss inline. Subtitle mostra "live · agg. HH:MM" se i dati sono reali, altrimenti "demo".
 101. **Test end-to-end verificato**: setto temporaneamente scadenze Via Foligno (45gg) / Borgaro (75gg) / Don Bosco (20gg) → 3 alert generati con severity corretta (media/bassa/alta) → screenshot UI funzionante → rollback scadenze al 2030.
 
+
+## 🆕 AI Action Plan widget nella Forecast (1 Jun 2026 - iter 25)
+102. **Backend `/api/forecast/scenarios/{sid}/action-plan`** (`forecast.py`): chiama Claude Sonnet 4.6 passando contesto completo (portafoglio attuale + obiettivi simulazione + operazioni pianificate + verdict) e chiede output JSON strutturato `{actions: [{priority: P0|P1|P2, timeline, title, description, kpi, category}]}`. Parsing robusto (regex blocco markdown, slice tra `{` e `}`). Salva action_plan + action_plan_ts nello scenario.
+103. **Frontend `ForecastSimple.jsx` — widget "Piano d'Azione AI"** posizionato tra Tornado e Actions. Bottone "Genera piano d'azione" → call AI → render `ActionPlanList` con 3 sezioni (P0 URGENTE / P1 QUESTO Q / P2 STRATEGICO), ogni azione card con numero cerchiato, badge categoria colorato (acquisto/finanziamento/gestione/vendita/ottimizzazione/monitoraggio), clock+timeline, KPI con check verde.
+104. **Bottone "Accelera crescita"** appare dopo generazione piano: appende al prompt corrente "ACCELERA LA CRESCITA: usa leva finanziaria massima (mutui 70-75% LTV), reinvesti tutti gli utili, considera anche operazioni compra-ristruttura-vendi…" e ri-esegue `/quick`, producendo una variante più aggressiva.
+105. **Test e2e verificato**: simulazione "2 acquisti/anno bilocali Torino 60K€ leva 60%" → action plan genera 7 azioni concrete con riferimenti reali (Intesa Sanpaolo, Banco BPM, immobiliare.it, zone specifiche, numeri esatti). Toast feedback "Piano d'azione generato (N step)".
+
 - commercialista@controlroom.it / demo1234 (commercialista)
 - collaboratore@controlroom.it / demo1234 (collaboratore)
 

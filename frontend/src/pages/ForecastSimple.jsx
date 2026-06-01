@@ -11,7 +11,7 @@ import {
 import {
   Sparkles, Loader2, FileDown, MessageSquare, RefreshCw, GitCompare,
   TrendingUp, Building2, Wallet, AlertTriangle, Settings as SettingsIcon, ArrowRight,
-  Activity, RotateCcw, ShieldAlert, Zap, Ban,
+  Activity, RotateCcw, ShieldAlert, Zap, Ban, Target, Rocket, CheckCircle2, Clock,
 } from "lucide-react";
 
 const API = "/forecast";
@@ -56,6 +56,9 @@ export default function ForecastSimple() {
   // Tornado
   const [tornado, setTornado] = useState(null);
   const [tornadoLoading, setTornadoLoading] = useState(false);
+  // Action Plan
+  const [actionPlan, setActionPlan] = useState(null);
+  const [actionPlanLoading, setActionPlanLoading] = useState(false);
 
   const canRun = (mode === "prompt" && prompt.trim()) || mode !== "prompt";
 
@@ -66,6 +69,7 @@ export default function ForecastSimple() {
     setSensitivity(SENS_DEFAULT);
     setSensResult(null);
     setTornado(null);
+    setActionPlan(null);
     try {
       const body = { horizon_years: horizon, save: true };
       if (useMode === "prompt" || useMode === "both") body.prompt = prompt.trim();
@@ -143,6 +147,29 @@ export default function ForecastSimple() {
     }
   };
   const resetSensitivity = () => setSensitivity(SENS_DEFAULT);
+
+  const runActionPlan = async () => {
+    if (!result?.saved_id) return;
+    setActionPlanLoading(true);
+    try {
+      const r = await apiClient().post(`${API}/scenarios/${result.saved_id}/action-plan`);
+      setActionPlan(r.data.actions || []);
+      toast.success(`Piano d'azione generato (${r.data.actions?.length || 0} step)`);
+    } catch {
+      toast.error("Errore generazione piano d'azione");
+    } finally {
+      setActionPlanLoading(false);
+    }
+  };
+
+  const accelerateGrowth = async () => {
+    const boost = (prompt ? prompt.trim() + "\n\n" : "") +
+      "ACCELERA LA CRESCITA: usa leva finanziaria massima (mutui 70-75% LTV), reinvesti tutti gli utili, " +
+      "considera anche operazioni compra-ristruttura-vendi per liberare capitale e fare almeno +1 acquisto/anno rispetto al piano base.";
+    setPrompt(boost);
+    setMode("prompt");
+    await simulate("prompt");
+  };
 
   const downloadPdf = async () => {
     if (!result?.saved_id) return;
@@ -573,6 +600,52 @@ export default function ForecastSimple() {
                 )}
               </SectionCard>
 
+              {/* Piano d'Azione AI — cosa fare per raggiungere gli obiettivi */}
+              <SectionCard
+                testId="quick-action-plan"
+                title="Piano d'Azione AI"
+                subtitle="Cosa fare nei prossimi 12-18 mesi per raggiungere gli obiettivi della simulazione"
+                action={
+                  <div className="flex items-center gap-2">
+                    {actionPlan && (
+                      <button
+                        data-testid="accelerate-btn"
+                        onClick={accelerateGrowth}
+                        disabled={loading}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-[#0066FF] text-[#0066FF] hover:bg-[#EFF6FF] text-[11px] font-semibold disabled:opacity-50 transition"
+                      >
+                        <Rocket size={11} /> Accelera crescita
+                      </button>
+                    )}
+                    {!actionPlan && (
+                      <button
+                        data-testid="action-plan-run"
+                        onClick={runActionPlan}
+                        disabled={actionPlanLoading}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[#0066FF] hover:bg-[#2563EB] text-white text-[11px] font-semibold disabled:opacity-50 transition"
+                      >
+                        {actionPlanLoading ? <Loader2 size={11} className="animate-spin" /> : <Target size={11} />}
+                        {actionPlanLoading ? "Generazione AI…" : "Genera piano d'azione"}
+                      </button>
+                    )}
+                  </div>
+                }
+              >
+                {!actionPlan && !actionPlanLoading && (
+                  <div className="text-xs text-[#94A3B8] py-3 text-center">
+                    Clicca <b>Genera piano d'azione</b>: l'AI produce 5-7 step concreti con priorità, tempi e KPI da monitorare.
+                  </div>
+                )}
+                {actionPlanLoading && (
+                  <div className="flex items-center justify-center gap-2 text-xs text-[#64748B] py-6">
+                    <Loader2 size={14} className="animate-spin" /> Claude Sonnet 4.6 sta scrivendo il piano…
+                  </div>
+                )}
+                {actionPlan && actionPlan.length > 0 && (
+                  <ActionPlanList actions={actionPlan} />
+                )}
+              </SectionCard>
+
               {/* Actions */}
               <div className="flex flex-wrap gap-2 pt-1">
                 <button data-testid="action-variant" onClick={() => simulate()} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#E2E8F0] hover:bg-[#F8FAFC] text-sm text-[#475569] transition">
@@ -761,6 +834,100 @@ const TornadoChart = ({ base, items }) => {
       })}
       <div className="mt-3 text-[10px] text-[#64748B] bg-[#F1F5F9] rounded-md p-2">
         💡 La variabile in cima è quella che <b>conta di più</b> per il tuo piano. Quando rifai la simulazione, controlla soprattutto questa.
+      </div>
+    </div>
+  );
+};
+
+
+const PRIO_META = {
+  P0: { label: "URGENTE",   bg: "#FEE2E2", text: "#DC2626", border: "#FCA5A5", icon: "⚡" },
+  P1: { label: "QUESTO Q",  bg: "#FEF3C7", text: "#B45309", border: "#FCD34D", icon: "◆" },
+  P2: { label: "STRATEGICO", bg: "#DBEAFE", text: "#1E40AF", border: "#93C5FD", icon: "○" },
+};
+const CAT_META = {
+  acquisto:      { color: "#059669", label: "Acquisto" },
+  finanziamento: { color: "#7C3AED", label: "Finanziamento" },
+  gestione:      { color: "#0066FF", label: "Gestione" },
+  vendita:       { color: "#DC2626", label: "Vendita" },
+  ottimizzazione: { color: "#B45309", label: "Ottimizzazione" },
+  monitoraggio:  { color: "#64748B", label: "Monitoraggio" },
+};
+
+const ActionPlanList = ({ actions }) => {
+  // group by priority
+  const grouped = ["P0", "P1", "P2"].reduce((acc, p) => {
+    acc[p] = actions.filter((a) => (a.priority || "P1") === p);
+    return acc;
+  }, {});
+
+  return (
+    <div className="space-y-4">
+      {["P0", "P1", "P2"].map((p) => {
+        const list = grouped[p];
+        if (!list || list.length === 0) return null;
+        const meta = PRIO_META[p];
+        return (
+          <div key={p}>
+            <div className="flex items-center gap-2 mb-2">
+              <span
+                className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded"
+                style={{ background: meta.bg, color: meta.text, border: `1px solid ${meta.border}` }}
+              >
+                {meta.icon} {meta.label}
+              </span>
+              <div className="flex-1 h-px bg-[#E2E8F0]" />
+              <span className="text-[10px] text-[#94A3B8]">{list.length} azion{list.length === 1 ? "e" : "i"}</span>
+            </div>
+            <div className="space-y-2">
+              {list.map((a, i) => {
+                const cat = CAT_META[a.category] || CAT_META.monitoraggio;
+                return (
+                  <div
+                    key={`${p}-${i}`}
+                    data-testid={`action-${p}-${i}`}
+                    className="bg-white border border-[#E2E8F0] rounded-lg p-3 hover:border-[#CBD5E1] transition group"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div
+                        className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[11px] font-bold"
+                        style={{ background: `${cat.color}15`, color: cat.color, border: `1px solid ${cat.color}40` }}
+                      >
+                        {i + 1}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="text-sm font-semibold text-[#0F172A]">{a.title}</span>
+                          <span
+                            className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold"
+                            style={{ background: `${cat.color}15`, color: cat.color }}
+                          >
+                            {cat.label}
+                          </span>
+                          {a.timeline && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] text-[#64748B]">
+                              <Clock size={10} /> {a.timeline}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-[#475569] leading-relaxed">{a.description}</div>
+                        {a.kpi && (
+                          <div className="mt-1.5 inline-flex items-start gap-1.5 text-[10px] text-[#64748B]">
+                            <CheckCircle2 size={11} className="mt-0.5 shrink-0 text-[#059669]" />
+                            <span><b className="text-[#475569]">KPI:</b> {a.kpi}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+      <div className="text-[10px] text-[#64748B] bg-[#F1F5F9] rounded-md p-2 mt-2">
+        💡 <b>P0</b> entro 30gg · <b>P1</b> entro Q corrente · <b>P2</b> orizzonte 12-18 mesi. Premi «<b>Accelera crescita</b>» per ricalcolare con leva massima e operazioni più aggressive.
       </div>
     </div>
   );
