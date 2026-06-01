@@ -432,3 +432,18 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 
 ### Rimanenze (P2)
 - Mappa Patrimonio geografica (richiede geocoding indirizzi + react-leaflet)
+
+## Update — Zero dati demo orfani (chiusura P2)
+
+### Tre fix conclusivi
+1. ✅ **AIAutopilot.jsx** ora carica via `/api/properties`, `/api/mutui/aggregato`, `/api/cashflow/aggregato`, `/api/finance/liquidity`, `/api/settings`. Il contesto inviato a Claude contiene **ogni KPI reale** + il regime fiscale + la lista dei 20 primi immobili con dati live (canoni, scadenze, mutui collegati). Pannello "Contesto live" ridisegnato.
+2. ✅ **SchedaImmobile.jsx** tab Documenti/Movimenti/Lavori → ora leggono da `/api/documents?immobile_id`, `/api/import/banca` (filtrato per `match_canone.property_id`), `/api/lavori?immobile_id`. Rimossi gli import demo `contratti`, `lavori`, `documenti`, `movimenti`.
+3. ✅ **Mappa.jsx** ora vera mappa OpenStreetMap con **react-leaflet** + nuovo router `routers/geo.py` con geocoding Nominatim (free, rate-limit 1req/s) e cache su `property.geo`. CircleMarker colorati per rendimento/stato, Popup con dati live, fallback su città se indirizzo non trovato.
+
+### Verifica E2E
+- 5 immobili Torino geocodificati con successo: Via Foligno 18 → lat 45.097549 lng 7.669097, ecc.
+- Tutti gli endpoint API rispondono correttamente.
+
+### Stato finale "demo"
+- Demo presente: `formatEur`, `STATI`, `getProperty` (helper di utilità statici, non dati)
+- Demo residuo come fallback se DB vuoto: Patrimonio, Dashboard, AlertCenter, Operazioni, Affitti (tutti già passano automaticamente ai dati live se presenti).

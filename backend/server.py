@@ -37,6 +37,7 @@ from routers.contracts import make_contracts_router
 from routers.lavori import make_lavori_router
 from routers.vendite import make_vendite_router
 from routers.cashflow import make_cashflow_router
+from routers.geo import make_geo_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -642,6 +643,7 @@ app.include_router(make_contracts_router(db, current_user))
 app.include_router(make_lavori_router(db, current_user))
 app.include_router(make_vendite_router(db, current_user))
 app.include_router(make_cashflow_router(db, current_user))
+app.include_router(make_geo_router(db, current_user))
 
 app.add_middleware(
     CORSMiddleware,

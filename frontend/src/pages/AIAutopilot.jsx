@@ -1,15 +1,14 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Layout } from "../components/layout/Layout";
-import { Sparkles, Send, Bot, User as UserIcon, Loader2 } from "lucide-react";
+import { Sparkles, Send, Bot, User as UserIcon, Loader2, Database } from "lucide-react";
 import { apiClient } from "../lib/auth";
-import { portfolioKPI } from "../lib/demoData";
 import { toast } from "sonner";
 
 const SUGGESTIONS = [
   "Quale immobile rende di meno?",
-  "Quale immobile dovrei vendere?",
-  "Conviene rinegoziare il mutuo della Villa Como?",
-  "Quanto posso pagare al massimo un bilocale a Milano per avere il 5% netto?",
+  "Quale immobile dovrei vendere per liberare capitale?",
+  "Conviene rinegoziare i miei mutui agli attuali tassi di mercato?",
+  "Quanto posso pagare al massimo un bilocale a Torino per avere il 5% netto?",
   "Riepiloga lo stato del mio portafoglio in 5 punti chiave.",
   "Quali sono i 3 immobili più rischiosi?",
 ];
@@ -19,11 +18,70 @@ export default function AIAutopilot() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [props, setProps] = useState([]);
+  const [mutuiAgg, setMutuiAgg] = useState(null);
+  const [cfAgg, setCfAgg] = useState(null);
+  const [liquidity, setLiquidity] = useState(null);
+  const [settings, setSettings] = useState(null);
   const scrollRef = useRef(null);
+
+  // Carica TUTTI i dati reali del portafoglio per fornire il contesto all'AI
+  useEffect(() => {
+    Promise.all([
+      apiClient().get("/properties").catch(() => ({ data: [] })),
+      apiClient().get("/mutui/aggregato").catch(() => ({ data: null })),
+      apiClient().get("/cashflow/aggregato").catch(() => ({ data: null })),
+      apiClient().get("/finance/liquidity").catch(() => ({ data: null })),
+      apiClient().get("/settings").catch(() => ({ data: null })),
+    ]).then(([p, m, c, l, s]) => {
+      setProps(p.data || []);
+      setMutuiAgg(m.data);
+      setCfAgg(c.data);
+      setLiquidity(l.data);
+      setSettings(s.data);
+    });
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading]);
+
+  // KPI calcolati live (in linea con Dashboard)
+  const kpi = useMemo(() => {
+    if (!props.length) return null;
+    const tot_valore = props.reduce((s, p) => s + (p.valore_stimato || 0), 0);
+    const tot_costo = props.reduce((s, p) => s + (p.costo_totale || 0), 0);
+    const ricavi_m = props.reduce((s, p) => s + (p.canone_mensile || 0), 0);
+    const cf_m = props.reduce((s, p) => s + (p.cash_flow_mensile || 0), 0);
+    const reddito = props.filter(p => p.canone_mensile > 0 && p.rendimento_netto > 0);
+    const wSum = reddito.reduce((s, p) => s + p.rendimento_netto * p.costo_totale, 0);
+    const tc = reddito.reduce((s, p) => s + p.costo_totale, 0);
+    const rend_medio_netto = tc > 0 ? wSum / tc : 0;
+    const sfitti = props.filter(p => (p.stato === "sfitto" || p.stato === "disponibile") && !p.canone_mensile);
+    const in_lav = props.filter(p => p.stato === "in_ristrutturazione");
+    const in_vendita = props.filter(p => p.stato === "in_vendita");
+    return {
+      totale_immobili: props.length,
+      valore_stimato_totale: Math.round(tot_valore),
+      capitale_investito: Math.round(tot_costo - (mutuiAgg?.debito_totale || 0)),
+      ricavi_mensili: Math.round(ricavi_m),
+      cash_flow_mensile: Math.round(cf_m),
+      debito_residuo: Math.round(mutuiAgg?.debito_totale || 0),
+      rendimento_medio_netto: +rend_medio_netto.toFixed(2),
+      immobili_sfitti: sfitti.length,
+      immobili_in_lavorazione: in_lav.length,
+      immobili_in_vendita: in_vendita.length,
+      liquidita_disponibile: Math.round(liquidity?.liquidita || 0),
+      ltv_pct: mutuiAgg?.ltv_pct ?? null,
+      incidenza_rata_pct: mutuiAgg?.incidenza_rata_su_affitti_pct ?? null,
+      saldo_corrente_mese: cfAgg?.saldo_corrente ?? null,
+      mesi_tensione_prossimi_12: cfAgg?.mesi_tensione_prossimi_12 ?? 0,
+      regime_fiscale: settings?.tipo_societa
+        ? (settings.tipo_societa === "privato" ? `Privato ${settings.regime_affitti}` : `${settings.tipo_societa.toUpperCase()} (IRES+IRAP ${((settings.aliquota_ires ?? 24) + (settings.aliquota_irap ?? 3.9)).toFixed(1)}%)`)
+        : "SRL",
+      target_netto: settings?.target_netto ?? 4.5,
+    };
+  }, [props, mutuiAgg, cfAgg, liquidity, settings]);
 
   const send = async (text) => {
     const q = (text ?? input).trim();
@@ -33,17 +91,31 @@ export default function AIAutopilot() {
     setMessages(newMsgs);
     setLoading(true);
     try {
-      const ctx = {
-        valore_stimato_totale: portfolioKPI.valore_stimato_totale,
-        capitale_investito: portfolioKPI.capitale_investito,
-        ricavi_mensili: portfolioKPI.ricavi_mensili,
-        cash_flow_mensile: portfolioKPI.cash_flow_mensile,
-        debito_residuo: portfolioKPI.debito_residuo,
-        rendimento_medio_netto: portfolioKPI.rendimento_medio_netto,
-        totale_immobili: portfolioKPI.totale_immobili,
-        immobili_sfitti: portfolioKPI.immobili_sfitti,
-        immobili_in_lavorazione: portfolioKPI.immobili_in_lavorazione,
-      };
+      // Contesto ricco e REALE: KPI portafoglio + lista immobili sintetica
+      const property_summary = props.slice(0, 20).map(p => ({
+        id: p.id,
+        nome: p.nome,
+        citta: p.citta,
+        stato: p.stato,
+        prezzo_acquisto: p.prezzo_acquisto,
+        costo_totale: p.costo_totale,
+        valore_stimato: p.valore_stimato,
+        canone_mensile: p.canone_mensile,
+        rendimento_lordo: p.rendimento_lordo,
+        rendimento_netto: p.rendimento_netto,
+        cash_flow_mensile: p.cash_flow_mensile,
+        portfolio_score: p.portfolio_score,
+        inquilino: p.inquilino,
+        scadenza_contratto: p.scadenza_contratto,
+        disdetta_ricevuta_il: p.disdetta_ricevuta_il,
+        mutuo: p.mutuo ? {
+          banca: p.mutuo.banca,
+          residuo: p.mutuo.residuo,
+          rata: p.mutuo.rata,
+          tasso: p.mutuo.tasso,
+        } : null,
+      }));
+      const ctx = { ...kpi, properties: property_summary };
       const { data } = await apiClient().post("/ai/chat", {
         session_id: sessionId,
         message: q,
@@ -85,16 +157,26 @@ export default function AIAutopilot() {
           </div>
 
           <div className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl p-5">
-            <div className="text-[10px] uppercase tracking-widest text-[#475569] mb-3">Contesto usato</div>
-            <div className="text-[11px] text-[#64748B] leading-relaxed space-y-1">
-              <div>• {portfolioKPI.totale_immobili} immobili totali</div>
-              <div>• Capitale: {(portfolioKPI.capitale_investito/1000000).toFixed(2)}M €</div>
-              <div>• Cash flow: {portfolioKPI.cash_flow_mensile} €/mese</div>
-              <div>• Debito: {(portfolioKPI.debito_residuo/1000).toFixed(0)}k €</div>
-              <div>• Rend. netto medio: {portfolioKPI.rendimento_medio_netto}%</div>
+            <div className="flex items-center gap-2 mb-3">
+              <Database size={12} className="text-[#059669]" />
+              <span className="text-[10px] uppercase tracking-widest text-[#475569]">Contesto live</span>
             </div>
+            {kpi ? (
+              <div className="text-[11px] text-[#64748B] leading-relaxed space-y-1">
+                <div>• <strong className="text-[#0F172A]">{kpi.totale_immobili}</strong> immobili in portafoglio</div>
+                <div>• Valore: <strong className="text-[#0F172A] tabular">{(kpi.valore_stimato_totale/1000).toFixed(0)}k €</strong></div>
+                <div>• Ricavi: <strong className="text-[#0F172A] tabular">{kpi.ricavi_mensili} €/mese</strong></div>
+                <div>• Cash flow: <strong className="text-[#0F172A] tabular">{kpi.cash_flow_mensile} €/mese</strong></div>
+                <div>• Debito: <strong className="text-[#0F172A] tabular">{(kpi.debito_residuo/1000).toFixed(1)}k €</strong></div>
+                <div>• Rend. netto medio: <strong className="text-[#059669] tabular">{kpi.rendimento_medio_netto}%</strong></div>
+                <div>• Regime: <strong className="text-[#0F172A]">{kpi.regime_fiscale}</strong></div>
+                <div>• Liquidità: <strong className="text-[#0F172A] tabular">{kpi.liquidita_disponibile} €</strong></div>
+              </div>
+            ) : (
+              <div className="text-[11px] text-[#94A3B8] italic">Caricamento dati live…</div>
+            )}
             <div className="mt-3 pt-3 border-t border-[#E2E8F0] text-[10px] text-[#64748B] leading-snug">
-              <strong className="text-[#2563EB]">Se hai importato bilanci o immobili reali</strong>, l'AI userà automaticamente quei dati al posto dei valori demo.
+              L'AI usa <strong className="text-[#059669]">dati reali</strong> dal tuo DB: KPI, mutui, cash flow, regime fiscale e ogni immobile (canoni, contratti, scadenze).
             </div>
           </div>
         </div>

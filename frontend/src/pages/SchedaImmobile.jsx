@@ -5,7 +5,7 @@ import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import { StatusBadge, DisdettaBadge } from "../components/StatusBadge";
 import { ScoreGauge } from "../components/ScoreGauge";
-import { getProperty, formatEur, contratti, lavori, documenti, movimenti } from "../lib/demoData";
+import { getProperty, formatEur } from "../lib/demoData";
 import { apiClient } from "../lib/auth";
 import { ArrowLeft, MapPin, FileText, Download, Calendar, Save, User, Home, Loader2, AlertTriangle, Bell, Clock, X, LogOut, KeyRound, History, Banknote } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
@@ -22,6 +22,9 @@ export default function SchedaImmobile() {
   const [remoteP, setRemoteP] = useState(null);
   const [loading, setLoading] = useState(true);
   const [alerts, setAlerts] = useState([]);
+  const [docs, setDocs] = useState([]);
+  const [lavoriProp, setLavoriProp] = useState([]);
+  const [movs, setMovs] = useState([]);
 
   useEffect(() => {
     // Try to fetch from API; fall back to demo
@@ -34,6 +37,29 @@ export default function SchedaImmobile() {
       const all = r.data || [];
       setAlerts(all.filter(a => a.immobile_id === id));
     }).catch(() => {});
+    // Documenti dell'immobile (router /documents)
+    apiClient().get(`/documents?immobile_id=${id}`)
+      .then(r => setDocs(r.data || []))
+      .catch(() => setDocs([]));
+    // Lavori legati a questo immobile
+    apiClient().get(`/lavori?immobile_id=${id}`)
+      .then(r => setLavoriProp(r.data || []))
+      .catch(() => setLavoriProp([]));
+    // Movimenti banca che matchano questo immobile (filtro client su match_canone.property_id)
+    apiClient().get(`/import/banca?limit=200`)
+      .then(r => {
+        const items = r.data?.items || [];
+        const filtered = items.filter(m => m.match_canone?.property_id === id).map(m => ({
+          id: m.id,
+          data: (m.data || "").slice(0, 10),
+          tipo: m.importo >= 0 ? "ricavo" : "costo",
+          categoria: m.match_canone ? "Affitto incassato" : (m.importo >= 0 ? "Bonifico" : "Pagamento"),
+          descrizione: m.descrizione || "—",
+          importo: Math.abs(m.importo),
+        }));
+        setMovs(filtered);
+      })
+      .catch(() => setMovs([]));
   }, [id]);
 
   const refreshAlertsForProperty = () => {
@@ -56,10 +82,7 @@ export default function SchedaImmobile() {
   if (loading) return <Layout title="Caricamento…"><div className="text-[#64748B]">Sto cercando l'immobile…</div></Layout>;
   if (!p) return <Layout title="Immobile non trovato"><Link to="/patrimonio" className="text-[#2563EB]">← Torna al patrimonio</Link></Layout>;
 
-  const contratto = contratti.find(c => c.immobile_id === p.id);
-  const lavoroAttivo = lavori.find(l => l.immobile_id === p.id);
-  const docs = documenti.filter(d => d.immobile_id === p.id);
-  const movs = movimenti.filter(m => m.immobile_id === p.id);
+  const lavoroAttivo = lavoriProp.find(l => l.stato === "in_corso") || lavoriProp[0] || null;
 
   return (
     <Layout
@@ -193,9 +216,9 @@ export default function SchedaImmobile() {
             <SectionCard title="Ricavi" testId="card-ricavi" >
               <Row label="Canone mensile" value={formatEur(p.canone_mensile)} />
               <Row label="Canone annuo" value={formatEur(p.canone_mensile * 12)} />
-              {contratto && <>
-                <Row label="Conduttore" value={contratto.conduttore} />
-                <Row label="Contratto" value={`${contratto.inizio} → ${contratto.fine}`} />
+              {p.inquilino && <>
+                <Row label="Conduttore" value={p.inquilino} />
+                <Row label="Contratto" value={`${p.data_inizio_contratto || "?"} → ${p.scadenza_contratto || "?"}`} />
               </>}
             </SectionCard>
             <SectionCard title="Rendimento" testId="card-rendimento">
