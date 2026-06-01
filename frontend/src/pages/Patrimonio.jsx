@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
-import { StatusBadge } from "../components/StatusBadge";
+import { StatusBadge, DisdettaBadge } from "../components/StatusBadge";
 import { ScoreBadge } from "../components/ScoreBadge";
 import { properties, STATI, formatEur } from "../lib/demoData";
 import { Search, Plus, LayoutGrid, List, MapPin, Sparkles } from "lucide-react";
@@ -145,7 +145,12 @@ export default function Patrimonio() {
                     </td>
                     <td className="px-2 py-3 text-[#475569]">{p.tipologia}</td>
                     <td className="px-2 py-3 text-[#475569]">{p.citta}</td>
-                    <td className="px-2 py-3"><StatusBadge stato={p.stato} /></td>
+                    <td className="px-2 py-3">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <StatusBadge stato={p.stato} />
+                        {p.disdetta_ricevuta_il && <DisdettaBadge dataUscita={p.data_uscita_prevista} compact testId={`row-disdetta-${p.id}`} />}
+                      </div>
+                    </td>
                     <td className="px-2 py-3 text-right tabular">{formatEur(p.costo_totale)}</td>
                     <td className="px-2 py-3 text-right tabular">{formatEur(p.valore_stimato)}</td>
                     <td className="px-2 py-3 text-right tabular">{p.canone_mensile ? formatEur(p.canone_mensile) : "—"}</td>
@@ -166,8 +171,9 @@ export default function Patrimonio() {
             <Link key={p.id} to={p.id?.startsWith('DEAL-') ? "/deal-inbox" : `/immobile/${p.id}`} data-testid={`property-card-${p.id}`} className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl overflow-hidden card-hover group">
               <div className="relative h-44">
                 <img src={p.img} alt={p.nome} className="w-full h-full object-cover" />
-                <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
                   <StatusBadge stato={p.stato} />
+                  {p.disdetta_ricevuta_il && <DisdettaBadge dataUscita={p.data_uscita_prevista} compact />}
                   {p.fromDeal && <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(0,102,255,0.85)] text-white font-semibold">Deal Inbox</span>}
                 </div>
                 <div className="absolute bottom-3 right-3 bg-[#F8FAFC]/90 backdrop-blur border border-[#E2E8F0] rounded-full px-2 py-1 text-[11px] tabular" onClick={(e) => e.preventDefault()}>

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
-import { StatusBadge } from "../components/StatusBadge";
+import { StatusBadge, DisdettaBadge } from "../components/StatusBadge";
 import { ScoreGauge } from "../components/ScoreGauge";
 import { getProperty, formatEur, contratti, lavori, documenti, movimenti } from "../lib/demoData";
 import { apiClient } from "../lib/auth";
@@ -73,6 +73,7 @@ export default function SchedaImmobile() {
           <img src={p.img} alt={p.nome} className="w-full h-72 object-cover" />
           <div className="p-5 flex flex-wrap items-center gap-3">
             <StatusBadge stato={p.stato} />
+            {p.disdetta_ricevuta_il && <DisdettaBadge dataUscita={p.data_uscita_prevista} dataTestId="hero-disdetta-badge" />}
             <span className="text-xs text-[#475569] flex items-center gap-1"><MapPin size={12}/> {p.indirizzo}, {p.citta}</span>
             <span className="text-xs text-[#475569]">{p.metratura} m² · {p.tipologia} · Piano {p.piano}</span>
             <span className="text-xs text-[#475569]">Classe {p.classe_energetica}</span>

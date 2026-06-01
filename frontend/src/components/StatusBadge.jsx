@@ -30,3 +30,30 @@ export const SeverityBadge = ({ severity }) => {
   };
   return <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border ${map[severity]}`}>{severity.toUpperCase()}</span>;
 };
+
+/**
+ * Badge "In disdetta" — mostrato accanto allo StatusBadge quando l'immobile ha una disdetta registrata.
+ * Mostra anche giorni residui se la data uscita prevista è valorizzata.
+ */
+export const DisdettaBadge = ({ dataUscita, dataTestId, compact = false }) => {
+  if (!dataUscita) return null;
+  let dayInfo = "";
+  try {
+    const d = new Date(dataUscita);
+    const days = Math.round((d - new Date()) / 86400000);
+    if (days < 0) dayInfo = "scaduta";
+    else if (days === 0) dayInfo = "oggi";
+    else if (days < 60) dayInfo = `tra ${days}gg`;
+    else dayInfo = `${d.toLocaleDateString("it-IT", { month: "short", year: "numeric" })}`;
+  } catch {}
+  return (
+    <span
+      data-testid={dataTestId || "disdetta-badge"}
+      title={`Disdetta in corso · uscita ${dataUscita}`}
+      className={`inline-flex items-center gap-1 rounded-full ${compact ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-[11px]"} font-medium border bg-[rgba(245,158,11,0.12)] text-[#B45309] border-[rgba(245,158,11,0.35)]`}
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-[#B45309] animate-pulse" />
+      In disdetta · {dayInfo}
+    </span>
+  );
+};
