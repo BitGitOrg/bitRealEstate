@@ -4,7 +4,7 @@ import { SectionCard } from "../components/dashboard/SectionCard";
 import { documenti as demoDocs, properties as demoProps } from "../lib/demoData";
 import { apiClient } from "../lib/auth";
 import { toast } from "sonner";
-import { FileText, Upload, Download, Search, Sparkles, X, Trash2, Loader2, FileUp } from "lucide-react";
+import { FileText, Upload, Download, Search, Sparkles, X, Trash2, Loader2, FileUp, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 const TIPI = ["Tutti", "Rogito", "APE", "Contratto", "Fattura", "Planimetria", "Visura"];
 const TIPI_FORM = ["Rogito", "APE", "Contratto", "Fattura", "Planimetria", "Visura", "Altro"];
@@ -17,6 +17,8 @@ export default function Documenti() {
   const [realProps, setRealProps] = useState([]);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [analyzingId, setAnalyzingId] = useState(null);
+  const [analysisModal, setAnalysisModal] = useState(null); // {doc, analysis}
 
   const load = () => apiClient().get("/documents").then(r => setRealDocs(r.data || [])).catch(() => {});
   useEffect(() => {
@@ -62,6 +64,22 @@ export default function Documenti() {
       load();
     } catch {
       toast.error("Errore nell'eliminazione");
+    }
+  };
+
+  const handleAnalyze = async (doc) => {
+    const isReal = !!realDocs.find(d => d.id === doc.id);
+    if (!isReal) { toast.info("L'analisi AI funziona solo su documenti reali caricati."); return; }
+    setAnalyzingId(doc.id);
+    try {
+      const r = await apiClient().post(`/documents/${doc.id}/analyze`);
+      setAnalysisModal({ doc, analysis: r.data.analysis, cached: r.data.cached });
+      toast.success(r.data.cached ? "Analisi caricata da cache" : "Documento analizzato dall'AI");
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Errore analisi AI");
+    } finally {
+      setAnalyzingId(null);
     }
   };
 
@@ -143,6 +161,10 @@ export default function Documenti() {
                   {p && <div className="text-[11px] text-[#475569]">{p.nome}</div>}
                   <div className="text-[11px] text-[#64748B] mt-2">{d.dimensione} · {d.caricato}</div>
                   <div className="mt-3 flex gap-2">
+                    <button onClick={() => handleAnalyze(d)} disabled={analyzingId === d.id || !isReal} title={isReal ? "Estrai dati con AI" : "Disponibile dopo l'upload"} className="inline-flex items-center justify-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-[#7C3AED]/40 bg-[#F5F3FF] text-[#6D28D9] hover:bg-[#EDE9FE] disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                      {analyzingId === d.id ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                      {analyzingId === d.id ? "AI…" : (d.ai_analysis ? "Apri AI" : "AI")}
+                    </button>
                     <button onClick={() => handleDownload(d)} className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-[#E2E8F0] hover:bg-[#FFFFFF] text-[#475569] hover:text-[#0F172A] transition-colors">
                       <Download size={12} /> Scarica
                     </button>
@@ -152,12 +174,20 @@ export default function Documenti() {
                       </button>
                     )}
                   </div>
+                  {d.ai_analysis && (
+                    <button onClick={() => setAnalysisModal({ doc: d, analysis: d.ai_analysis, cached: true })} className="mt-2 w-full text-[10px] text-[#6D28D9] hover:underline text-left inline-flex items-center gap-1">
+                      <Sparkles size={10} /> Analisi AI disponibile
+                    </button>
+                  )}
                 </div>
               );
             })}
           </div>
         )}
       </SectionCard>
+      {analysisModal && (
+        <AnalysisModal doc={analysisModal.doc} analysis={analysisModal.analysis} onClose={() => setAnalysisModal(null)} />
+      )}
     </Layout>
   );
 }
@@ -280,6 +310,114 @@ function UploadModal({ open, onClose, onUploaded, properties, loading, setLoadin
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+
+function AnalysisModal({ doc, analysis, onClose }) {
+  const a = analysis || {};
+  const summary = a.summary || "";
+  const anomalie = Array.isArray(a.anomalie) ? a.anomalie.filter((x) => x && String(x).trim()) : [];
+  const clausole = Array.isArray(a.clausole_rilevanti) ? a.clausole_rilevanti.filter((x) => x && String(x).trim()) : [];
+
+  // Tutti gli altri campi (esclusi summary/anomalie/clausole/parse_error/raw_text)
+  const skip = new Set(["summary", "anomalie", "clausole_rilevanti", "parse_error", "raw_text"]);
+  const fields = Object.entries(a).filter(([k, v]) => !skip.has(k) && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0));
+
+  const formatVal = (v) => {
+    if (typeof v === "boolean") return v ? "Sì" : "No";
+    if (typeof v === "number") return v.toLocaleString("it-IT");
+    if (typeof v === "object") return JSON.stringify(v, null, 2);
+    return String(v);
+  };
+  const labelize = (k) => k.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-5 py-4 border-b border-[#E2E8F0]">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-lg bg-[#F5F3FF] border border-[#7C3AED]/30 flex items-center justify-center">
+              <Sparkles size={18} className="text-[#7C3AED]" />
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-[#0F172A]">Analisi AI · {doc.tipo}</div>
+              <div className="text-xs text-[#64748B]">{doc.nome}</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-[#F1F5F9] rounded-lg"><X size={16} className="text-[#64748B]" /></button>
+        </div>
+        <div className="px-5 py-4 overflow-y-auto space-y-4">
+          {a.parse_error && (
+            <div className="flex gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900">
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+              <div>L'AI ha restituito una risposta non strutturata. Mostro il testo grezzo qui sotto. Riprova: solitamente la seconda analisi è più pulita.</div>
+            </div>
+          )}
+          {summary && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-[#475569] font-semibold mb-1">Sintesi esecutiva</div>
+              <p className="text-sm text-[#0F172A] leading-relaxed bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg p-3">{summary}</p>
+            </div>
+          )}
+          {fields.length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-[#475569] font-semibold mb-2">Dati estratti</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {fields.map(([k, v]) => (
+                  <div key={k} className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg p-2.5">
+                    <div className="text-[9px] uppercase tracking-wider text-[#64748B] mb-0.5">{labelize(k)}</div>
+                    <div className="text-[13px] text-[#0F172A] font-medium break-words">
+                      {Array.isArray(v) ? (
+                        <ul className="list-disc list-inside text-xs space-y-0.5">{v.map((x, i) => <li key={i}>{formatVal(x)}</li>)}</ul>
+                      ) : (
+                        formatVal(v)
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {clausole.length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-[#475569] font-semibold mb-1">Clausole rilevanti</div>
+              <ul className="space-y-1.5">
+                {clausole.map((c, i) => (
+                  <li key={i} className="text-xs text-[#475569] flex items-start gap-2">
+                    <CheckCircle2 size={12} className="text-[#0066FF] mt-0.5 shrink-0" />
+                    <span>{c}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {anomalie.length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-[#B45309] font-semibold mb-1 flex items-center gap-1">
+                <AlertTriangle size={11} /> Anomalie / Attenzioni
+              </div>
+              <ul className="space-y-1.5">
+                {anomalie.map((c, i) => (
+                  <li key={i} className="text-xs text-[#92400E] bg-amber-50 border border-amber-200 rounded p-2 flex items-start gap-2">
+                    <AlertTriangle size={12} className="mt-0.5 shrink-0" /> <span>{c}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {a.raw_text && a.parse_error && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-[#64748B] mb-1">Output AI (grezzo)</div>
+              <pre className="text-[11px] bg-[#F1F5F9] border border-[#E2E8F0] rounded-lg p-2.5 whitespace-pre-wrap max-h-48 overflow-auto">{a.raw_text}</pre>
+            </div>
+          )}
+        </div>
+        <div className="px-5 py-3 border-t border-[#E2E8F0] flex justify-end">
+          <button onClick={onClose} className="px-3 py-1.5 rounded-lg bg-[#0F172A] hover:bg-[#1E293B] text-white text-sm">Chiudi</button>
+        </div>
       </div>
     </div>
   );

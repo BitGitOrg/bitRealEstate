@@ -571,7 +571,7 @@ app.include_router(make_imports_router(db, current_user, EMERGENT_LLM_KEY))
 app.include_router(make_settings_router(db, current_user))
 app.include_router(make_reports_router(db, current_user))
 app.include_router(make_forecast_router(db, current_user, EMERGENT_LLM_KEY))
-app.include_router(make_documents_router(db, current_user))
+app.include_router(make_documents_router(db, current_user, EMERGENT_LLM_KEY))
 app.include_router(make_alerts_router(db, current_user))
 
 app.add_middleware(

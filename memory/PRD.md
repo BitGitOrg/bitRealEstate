@@ -272,6 +272,14 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 - collaboratore@controlroom.it / demo1234 (collaboratore)
 
 ## Backlog (P1)
+
+## 🆕 AI Document Reader (1 Jun 2026 - iter 26)
+106. **Backend `POST /api/documents/{id}/analyze`**: estrae testo dal PDF con pdfplumber (max 15 pagine), invia a Claude Sonnet 4.6 con schema JSON specifico per tipo documento (Rogito/Contratto/APE/Fattura/Visura/Planimetria/Altro). Cache su `documents.ai_analysis` + `ai_analyzed_at` (no doppia chiamata se già analizzato). Parsing robusto JSON (regex markdown + slice braces) con fallback `raw_text` se l'AI restituisce testo non strutturato.
+107. **Schema specifici per tipo**: Contratto estrae locatore/conduttore + CF, durata, canone, deposito, ISTAT, spese condominiali, rinnovo, clausole_rilevanti[], anomalie[]. Rogito estrae notaio, venditore, acquirente, prezzo, imposte, dati catastali. APE estrae classe energetica, EP globale, certificatore, scadenza. Fattura estrae numero, emittente, imponibile, IVA, totale, scadenza pagamento.
+108. **Anomalie intelligenti**: il prompt chiede a Claude di segnalare incongruenze, clausole rischiose, scadenze imminenti, importi sospetti. Test reale su contratto Foligno → 5 anomalie professionali (registrazione 30gg, clausola prelazione nulla per L.431/1998, congruità canone, deposito ok, mancata modalità pagamento).
+109. **Frontend `Documenti.jsx`**: bottone viola **"AI"** (o "Apri AI" se già analizzato) su ogni card + link `Analisi AI disponibile` sotto. Apre `AnalysisModal` con sezioni Sintesi/Dati estratti (grid 2 col)/Clausole/Anomalie. Loader inline durante analisi. Cache visibile: 2ª apertura è istantanea.
+110. **Limitazioni note**: l'analisi è disponibile solo per documenti reali (non demo). PDF richiesti — immagini OCR fuori scope iniziale. Max 15 pagine per non saturare il context.
+
 - Persistenza immobili reali su MongoDB (oggi sono in `demoData.js`)
 - Upload documenti reali con object storage
 - AI Document Reader (estrazione rogito, fatture)
