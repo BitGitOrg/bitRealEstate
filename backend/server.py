@@ -31,6 +31,7 @@ from routers.forecast import make_forecast_router
 from routers.documents import make_documents_router
 from routers.alerts import make_alerts_router
 from routers.incassi import make_incassi_router
+from routers.finance import make_finance_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -369,15 +370,59 @@ def strip_html(html: str, limit: int = 8000) -> str:
 
 
 async def fetch_url_text(url: str) -> str:
+    """Scarica una pagina con fallback automatico se la fonte blocca i bot.
+    Strategia: 1) HTTP diretto, 2) Jina Reader (r.jina.ai estrae testo pulito di qualsiasi URL).
+    """
     headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
-        "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+        "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "it-IT,it;q=0.9,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://www.google.com/",
+        "Cache-Control": "no-cache",
     }
-    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, headers=headers) as cli:
-        r = await cli.get(url)
-        if r.status_code >= 400:
-            raise HTTPException(status_code=400, detail=f"Impossibile scaricare l'annuncio (HTTP {r.status_code}). Prova a incollare il testo dell'annuncio.")
-        return strip_html(r.text)
+    # 1) HTTP diretto
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, headers=headers) as cli:
+            r = await cli.get(url)
+            if 200 <= r.status_code < 400 and len(r.text) > 500:
+                text = strip_html(r.text)
+                if len(text) > 200:
+                    return text
+            logging.info(f"fetch_url_text: HTTP {r.status_code} per {url}, provo fallback Jina")
+    except Exception as ex:
+        logging.warning(f"fetch_url_text: errore HTTP diretto {ex}, provo Jina")
+    # 2) Fallback Jina Reader (https://r.jina.ai/<URL>) — restituisce markdown pulito di qualsiasi pagina, bypassa anti-bot
+    try:
+        jina_url = "https://r.jina.ai/" + url
+        async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as cli:
+            r = await cli.get(jina_url, headers={"Accept": "text/plain", "X-Return-Format": "text"})
+            if 200 <= r.status_code < 400 and r.text:
+                body = r.text
+                # Filtra noise di Jina (cookie warning, errori target)
+                bad_patterns = [
+                    "Target URL returned error 4",
+                    "Target URL returned error 5",
+                    "may be requiring CAPTCHA",
+                    "consider enabling shadow DOM",
+                ]
+                # Estrai solo la sezione "Markdown Content:" se presente
+                if "Markdown Content:" in body:
+                    body = body.split("Markdown Content:", 1)[1].strip()
+                # Se dopo filter è ancora troppo corto o contiene cookie banner solo, fallisci
+                has_error = any(p.lower() in r.text.lower() for p in bad_patterns)
+                # Cleaning: rimuovi cookie banners ricorrenti
+                if len(body) > 500 and not has_error:
+                    return body[:15000]
+                if len(body) > 200 and not has_error:
+                    return body[:15000]
+            logging.warning(f"Jina HTTP {r.status_code} o contenuto inutile")
+    except Exception as ex:
+        logging.exception(f"Jina fetch failed: {ex}")
+    raise HTTPException(status_code=400, detail=(
+        "Il sito (es. Immobiliare.it/Idealista) blocca le richieste automatiche e non è stato possibile recuperare il testo. "
+        "Soluzione: 1) apri l'annuncio nel browser, 2) seleziona tutto il testo con Ctrl/Cmd+A, 3) copialo e incollalo qui sotto nel campo «Testo annuncio» invece dell'URL."
+    ))
 
 
 DEAL_EXTRACT_PROMPT = (
@@ -575,6 +620,7 @@ app.include_router(make_forecast_router(db, current_user, EMERGENT_LLM_KEY))
 app.include_router(make_documents_router(db, current_user, EMERGENT_LLM_KEY))
 app.include_router(make_alerts_router(db, current_user))
 app.include_router(make_incassi_router(db, current_user))
+app.include_router(make_finance_router(db, current_user))
 
 app.add_middleware(
     CORSMiddleware,

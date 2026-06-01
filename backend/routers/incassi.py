@@ -159,4 +159,46 @@ def make_incassi_router(db, current_user):
                 total += await _generate_expected_incassi(db, user["id"], p)
         return {"generated": total, "properties_checked": len(props)}
 
+    # ===== Single source of truth for liquidity =====
+    @router.get("/liquidity", include_in_schema=False)
+    async def liquidity_legacy(user: dict = Depends(current_user)):
+        # alias retro-compat
+        return await _compute_liquidity(db, user["id"])
+
     return router
+
+
+async def _compute_liquidity(db, user_id: str) -> dict:
+    """Fonte di verità per la liquidità: liquidita_iniziale (settings) + saldo movimenti bancari importati.
+    Esposto via /api/finance/liquidity (vedi finance_router). Lo riuso da incassi e finance.
+    """
+    # 1) liquidità iniziale dalle impostazioni
+    s = await db.settings.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    iniziale = float(s.get("liquidita_iniziale", 35000.0) or 0)
+    # 2) saldo movimenti bancari importati
+    movs = await db.movimenti_bancari.find({"user_id": user_id}, {"_id": 0, "importo": 1}).to_list(10000)
+    saldo_movs = sum(float(m.get("importo", 0) or 0) for m in movs)
+    # 3) bilancio caricato (preferenza assoluta se presente)
+    latest = await db.bilanci.find_one({"user_id": user_id}, sort=[("created_at", -1)])
+    bilancio_liq = None
+    if latest:
+        sp = latest.get("stato_patrimoniale") or {}
+        bv = sp.get("liquidita")
+        if bv is not None:
+            bilancio_liq = float(bv)
+    if bilancio_liq is not None:
+        liquidita = bilancio_liq
+        source = "bilancio"
+    else:
+        liquidita = iniziale + saldo_movs
+        source = "iniziale+movimenti"
+    return {
+        "liquidita": round(liquidita, 2),
+        "source": source,
+        "components": {
+            "iniziale": iniziale,
+            "saldo_movimenti_bancari": round(saldo_movs, 2),
+            "movimenti_count": len(movs),
+            "bilancio_liquidita": bilancio_liq,
+        },
+    }

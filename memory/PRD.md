@@ -376,3 +376,10 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
    - `status=ok` → 5 KPI boxes (movimenti, entrate, uscite, riconciliati, duplicati), banner AI viola se Claude usato, banner errori ambra se >0 errori (mostra prime 5 con numero riga), tabella anteprima con badge per ogni riga (ok/duplicato).
 158. **Commit filtrato**: solo righe non duplicate vengono importate, toast mostra "X importati, Y duplicati saltati".
 159. **Test e2e**: file con header annidati (BANCA INTESA + IBAN + Periodo prima della tabella) + colonne inglesi (Trans. Date, Debit, Credit) → riconosciuto via heuristic con `skiprows=4`, mappato correttamente, 3 movimenti parsati e 2 riconciliati con canoni Negozio De Amicis + Via Borgaro.
+
+
+## 🆕 Bug fix + 2 feature (1 Jun 2026 - iter 36)
+160. **BUG Deal AI link Immobiliare/Idealista**: `fetch_url_text` ora ha fallback automatico a Jina Reader (`r.jina.ai/<URL>`) per bypassare HTTP 403 anti-bot. Filtra cookie banner/errori target. Messaggio errore con istruzioni copia-incolla.
+161. **BUG Liquidità inconsistente**: nuovo endpoint `GET /api/finance/liquidity` fonte unica = bilancio_caricato.liquidita → fallback settings.liquidita_iniziale + Σ movimenti_bancari. Dashboard + Forecast `build_baseline` ora usano la stessa funzione `_compute_liquidity`. Risultato test: 37.290€ ovunque (35k iniziali + 2.290 movimenti).
+162. **Mapping preset banca**: `bank_mapping_presets` con `columns_signature` hash. CRUD `/api/import/banca/mapping-presets`. Parse_banca auto-applica preset prima di heuristic/AI. Frontend: banner verde "Preset X applicato" o inline form "Salva mapping".
+163. **Fuzzy variant detection**: per ogni movimento non-duplicato cerco esistenti con stesso importo, data ±2gg, descrizione diversa → marca `variant_of`. KPI "Possibili rettifiche" + badge viola "rettifica?" con tooltip movimento originale.

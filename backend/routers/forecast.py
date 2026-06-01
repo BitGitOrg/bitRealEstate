@@ -178,7 +178,10 @@ async def build_baseline(db, user_id: str, scenario: dict) -> dict:
     valore = sp.get("valore_immobili") or sum(float(p.get("valore_stimato", p.get("prezzo_acquisto", 0)) or 0) for p in props)
     debito = sp.get("debito_mutui") or sum(float((p.get("mutuo") or {}).get("residuo", 0) or 0) for p in props)
     rata = sum(float((p.get("mutuo") or {}).get("rata", 0) or 0) for p in props)
-    liquidita = sp.get("liquidita") or 0
+    # Liquidità: usa la fonte di verità unificata (settings + movimenti bancari + bilancio)
+    from routers.incassi import _compute_liquidity
+    liq_data = await _compute_liquidity(db, user_id)
+    liquidita = liq_data.get("liquidita", 0)
     return {
         "anno": 0, "label": "Oggi (reale)",
         "numero_immobili": len(props),

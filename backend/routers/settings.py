@@ -25,6 +25,8 @@ DEFAULT_SETTINGS = {
     "aliquota_plusvalenza": 26.0,
     "aliquota_ires": 24.0,
     "aliquota_irap": 3.9,
+    # === Liquidità di partenza (fonte di verità per Dashboard/Forecast) ===
+    "liquidita_iniziale": 35000.0,
 }
 
 
@@ -38,6 +40,7 @@ class SettingsIn(BaseModel):
     strategia: Optional[str] = None
     capitale_disponibile: Optional[float] = None
     limite_indebitamento: Optional[float] = None
+    liquidita_iniziale: Optional[float] = None
 
 
 async def get_user_settings(db, user_id: str) -> dict:

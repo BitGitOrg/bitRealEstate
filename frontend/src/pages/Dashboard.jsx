@@ -32,6 +32,7 @@ const tooltipStyle = {
 export default function Dashboard() {
   const [latestBilancio, setLatestBilancio] = useState(null);
   const [bankCashflow, setBankCashflow] = useState(null);
+  const [liquidity, setLiquidity] = useState(null);
 
   useEffect(() => {
     apiClient().get("/import/bilanci/latest")
@@ -39,6 +40,9 @@ export default function Dashboard() {
       .catch(() => {});
     apiClient().get("/import/banca/cashflow-mensile?months=12")
       .then(r => setBankCashflow(r.data?.count >= 2 ? r.data.rows : null))
+      .catch(() => {});
+    apiClient().get("/finance/liquidity")
+      .then(r => setLiquidity(r.data))
       .catch(() => {});
   }, []);
 
@@ -52,7 +56,7 @@ export default function Dashboard() {
     ricavi_mensili: Math.round((ce.ricavi_affitti || 0) / 12) || portfolioKPI.ricavi_mensili,
     cash_flow_mensile: Math.round((ce.utile_netto || 0) / 12) || portfolioKPI.cash_flow_mensile,
     debito_residuo: sp.debito_mutui || portfolioKPI.debito_residuo,
-    liquidita_disponibile: sp.liquidita || portfolioKPI.liquidita_disponibile,
+    liquidita_disponibile: liquidity?.liquidita ?? (sp.liquidita || portfolioKPI.liquidita_disponibile),
     utile_anno: ce.utile_netto || portfolioKPI.utile_anno,
     patrimonio_netto: sp.patrimonio_netto || 0,
     rendimento_medio_netto: sp.valore_immobili && ce.utile_netto
@@ -62,7 +66,7 @@ export default function Dashboard() {
     immobili_profittevoli: portfolioKPI.immobili_profittevoli,
     immobili_sotto_target: portfolioKPI.immobili_sotto_target,
     immobili_sfitti: portfolioKPI.immobili_sfitti,
-  } : portfolioKPI;
+  } : { ...portfolioKPI, liquidita_disponibile: liquidity?.liquidita ?? portfolioKPI.liquidita_disponibile };
 
   const top = [...properties].sort((a, b) => b.portfolio_score - a.portfolio_score)[0];
   const worst = [...properties].sort((a, b) => a.portfolio_score - b.portfolio_score)[0];

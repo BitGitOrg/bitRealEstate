@@ -396,12 +396,13 @@ function BancaTab() {
       {/* CASE: ok → preview commit */}
       {preview?.status === "ok" && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
             <KpiBox label="Movimenti" value={preview.total} color="#0066FF" />
             <KpiBox label="Entrate" value={preview.entrate} color="#059669" />
             <KpiBox label="Uscite" value={preview.uscite} color="#DC2626" />
             <KpiBox label="Riconciliati" value={preview.matched} color="#7C3AED" />
             <KpiBox label="Duplicati" value={preview.duplicates} color="#B45309" />
+            <KpiBox label="Possibili rettifiche" value={preview.variants || 0} color="#7C3AED" />
           </div>
 
           {preview.errors_count > 0 && (
@@ -420,6 +421,14 @@ function BancaTab() {
             <div className="bg-violet-50 border border-violet-200 rounded-lg p-2.5 text-xs text-violet-900 inline-flex items-center gap-1.5">
               <Sparkles size={12} /> AI Claude ha riconosciuto automaticamente la struttura del file.
             </div>
+          )}
+          {preview.preset_applied && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 text-xs text-emerald-900 inline-flex items-center gap-1.5">
+              <CheckCircle2 size={12} /> Preset «{preview.preset_applied}» applicato automaticamente
+            </div>
+          )}
+          {!preview.preset_applied && (
+            <SavePresetInline mapping={preview.mapping_used} columns={preview.available_columns} />
           )}
 
           <SectionCard testId="banca-preview" title={`Anteprima · ${preview.filename}`}
@@ -460,6 +469,10 @@ function BancaTab() {
                       <td className="py-2 px-2">
                         {m.duplicate ? (
                           <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">duplicato · skip</span>
+                        ) : m.variant_of ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-800" title={`Variante di: ${m.variant_of.existing_descrizione} (${m.variant_of.existing_data})`}>
+                            rettifica?
+                          </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">ok</span>
                         )}
@@ -487,6 +500,38 @@ function MapField({ label, value, cols, onChange, required, hint }) {
       </select>
       {hint && <span className="text-[9px] text-[#94A3B8] mt-0.5 block">{hint}</span>}
     </label>
+  );
+}
+
+function SavePresetInline({ mapping, columns }) {
+  const [nome, setNome] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const submit = async () => {
+    if (!nome.trim()) { toast.error("Dai un nome al preset (es. 'Intesa Sanpaolo')"); return; }
+    setSaving(true);
+    try {
+      await apiClient().post("/import/banca/mapping-presets", { nome: nome.trim(), mapping, columns });
+      toast.success(`Preset «${nome}» salvato. Verrà applicato automaticamente la prossima volta che carichi questo template.`);
+      setSaved(true);
+    } catch (e) { toast.error(e?.response?.data?.detail || "Errore salvataggio preset"); }
+    finally { setSaving(false); }
+  };
+  if (saved) return (
+    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 text-xs text-emerald-900 inline-flex items-center gap-1.5">
+      <CheckCircle2 size={12} /> Preset salvato per riconoscere automaticamente questo template in futuro
+    </div>
+  );
+  return (
+    <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg p-2.5 flex items-center gap-2 text-xs">
+      <Database size={12} className="text-[#0066FF]" />
+      <span className="text-[#475569]">Salva il mapping per questa banca:</span>
+      <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="es. Banca Intesa"
+        className="flex-1 max-w-[200px] bg-white border border-[#E2E8F0] rounded px-2 py-1 text-xs outline-none focus:border-[#0066FF]" />
+      <button onClick={submit} disabled={saving} className="px-2.5 py-1 rounded bg-[#0066FF] hover:bg-[#2563EB] text-white text-xs font-medium disabled:opacity-50">
+        {saving ? "…" : "Salva preset"}
+      </button>
+    </div>
   );
 }
 

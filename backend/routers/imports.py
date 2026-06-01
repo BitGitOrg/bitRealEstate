@@ -5,7 +5,7 @@ import json
 import uuid
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
@@ -523,7 +523,14 @@ def make_imports_router(db, current_user, llm_key: str):
         if df is None or df.empty:
             raise HTTPException(400, "File vuoto o non leggibile come tabella")
 
-        # ===== Mapping colonne: 3-step ladder =====
+        # ===== Mapping colonne: 4-step ladder =====
+        # 0) Preset salvato (matching signature delle colonne)
+        cols_signature = "|".join(sorted([str(c).strip().lower() for c in df.columns]))
+        preset_applied = None
+        if not mapping_json:
+            preset = await db.bank_mapping_presets.find_one({"user_id": user["id"], "columns_signature": cols_signature}, {"_id": 0})
+            if preset:
+                preset_applied = preset.get("nome")
         # 1) Override manuale dal frontend (priorità massima)
         mapping: dict = {}
         if mapping_json:
@@ -531,6 +538,8 @@ def make_imports_router(db, current_user, llm_key: str):
                 mapping = json.loads(mapping_json)
             except Exception:
                 mapping = {}
+        elif preset_applied:
+            mapping = preset.get("mapping") or {}
 
         cols_norm = {c: str(c).lower().strip() for c in df.columns}
         def find_keyword_col(keys: list[str]) -> Optional[str]:
@@ -630,14 +639,36 @@ def make_imports_router(db, current_user, llm_key: str):
                     m["match_canone"] = {"property_id": p["id"], "property_nome": p["nome"], "canone_atteso": canone}
                     break
 
-        # Conteggio duplicati attesi (signature già esistente)
+        # Conteggio duplicati attesi (signature già esistente) + fuzzy variants
         existing_sigs = set()
+        existing_amount_date = []  # (importo, data ISO) per fuzzy match
         if movs:
-            sigs = [_movimento_signature(user["id"], m) for m in movs]
-            existing = await db.movimenti_bancari.find({"user_id": user["id"], "signature": {"$in": sigs}}, {"signature": 1}).to_list(2000)
-            existing_sigs = {e["signature"] for e in existing}
+            existing = await db.movimenti_bancari.find({"user_id": user["id"]}, {"signature": 1, "importo": 1, "data": 1, "descrizione": 1, "id": 1}).to_list(2000)
+            existing_sigs = {e["signature"] for e in existing if e.get("signature")}
+            existing_amount_date = [(float(e.get("importo", 0)), str(e.get("data", ""))[:10], e.get("descrizione", ""), e.get("id")) for e in existing]
         for m in movs:
             m["duplicate"] = _movimento_signature(user["id"], m) in existing_sigs
+            m["variant_of"] = None
+            if m["duplicate"]:
+                continue
+            # Fuzzy variant: stesso importo, data entro ±2gg, descrizione DIVERSA
+            try:
+                m_date = date.fromisoformat(m["data"])
+            except Exception:
+                continue
+            for ex_imp, ex_data_iso, ex_desc, ex_id in existing_amount_date:
+                if abs(ex_imp - m["importo"]) > 0.01:
+                    continue
+                try:
+                    ex_date = date.fromisoformat(ex_data_iso)
+                except Exception:
+                    continue
+                if abs((m_date - ex_date).days) > 2:
+                    continue
+                if (m.get("descrizione") or "").strip().lower() == (ex_desc or "").strip().lower():
+                    continue  # se desc identica → è duplicato già marcato
+                m["variant_of"] = {"existing_id": ex_id, "existing_descrizione": ex_desc[:80], "existing_data": ex_data_iso}
+                break
 
         return {
             "status": "ok",
@@ -647,12 +678,56 @@ def make_imports_router(db, current_user, llm_key: str):
             "uscite": sum(1 for m in movs if m["tipo"] == "uscita"),
             "matched": sum(1 for m in movs if m["match_canone"]),
             "duplicates": sum(1 for m in movs if m["duplicate"]),
+            "variants": sum(1 for m in movs if m.get("variant_of")),
             "errors": errors[:50],
             "errors_count": len(errors),
             "mapping_used": {"data": col_data, "importo": col_imp, "dare": col_dare, "avere": col_avere, "descrizione": col_desc},
+            "available_columns": [str(c) for c in df.columns],
             "ai_used": ai_used,
+            "preset_applied": preset_applied,
+            "columns_signature": cols_signature,
             "movimenti": movs[:300],
         }
+
+    # ===== Mapping presets per banca (rievoca per file dello stesso template) =====
+    @router.get("/banca/mapping-presets")
+    async def list_mapping_presets(user: dict = Depends(current_user)):
+        items = await db.bank_mapping_presets.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(50)
+        return items
+
+    @router.post("/banca/mapping-presets")
+    async def save_mapping_preset(payload: dict, user: dict = Depends(current_user)):
+        nome = (payload.get("nome") or "").strip()
+        mapping = payload.get("mapping") or {}
+        columns = payload.get("columns") or []
+        if not nome:
+            raise HTTPException(400, "Nome preset obbligatorio")
+        if not mapping.get("data"):
+            raise HTTPException(400, "Mapping incompleto: serve almeno la colonna 'data'")
+        # Compute a column signature so that the preset auto-applica quando rivedi un file con quelle colonne
+        sig = "|".join(sorted([str(c).strip().lower() for c in columns]))
+        doc = {
+            "id": f"BNK-{uuid.uuid4().hex[:8].upper()}",
+            "user_id": user["id"],
+            "nome": nome,
+            "mapping": mapping,
+            "columns": columns,
+            "columns_signature": sig,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        # upsert per signature (no duplicati)
+        await db.bank_mapping_presets.update_one(
+            {"user_id": user["id"], "columns_signature": sig},
+            {"$set": doc}, upsert=True,
+        )
+        return doc
+
+    @router.delete("/banca/mapping-presets/{pid}")
+    async def delete_mapping_preset(pid: str, user: dict = Depends(current_user)):
+        r = await db.bank_mapping_presets.delete_one({"id": pid, "user_id": user["id"]})
+        if r.deleted_count == 0:
+            raise HTTPException(404, "Preset non trovato")
+        return {"deleted": pid}
 
     @router.post("/banca/commit")
     async def commit_banca(payload: BancaCommit, user: dict = Depends(current_user)):
