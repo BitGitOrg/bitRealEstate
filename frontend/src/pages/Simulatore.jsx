@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import { ScoreGauge } from "../components/ScoreGauge";
 import { formatEur } from "../lib/demoData";
-import { Sparkles, Loader2, Info, ChevronDown, ChevronUp } from "lucide-react";
+import { Sparkles, Loader2, Info, ChevronDown, ChevronUp, Settings as SettingsIcon } from "lucide-react";
 import { apiClient } from "../lib/auth";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
 const Field = ({ label, value, onChange, suffix, type = "number", testId, hint }) => (
@@ -24,6 +25,12 @@ const Field = ({ label, value, onChange, suffix, type = "number", testId, hint }
 );
 
 export default function Simulatore() {
+  // Settings caricati dal backend (società)
+  const [settings, setSettings] = useState(null);
+  useEffect(() => {
+    apiClient().get("/settings").then(r => setSettings(r.data)).catch(() => {});
+  }, []);
+
   const [prezzo, setPrezzo] = useState(180000);
   const [notaio, setNotaio] = useState(3500);
   const [agenzia, setAgenzia] = useState(5500);
@@ -32,21 +39,55 @@ export default function Simulatore() {
   const [mutuoPct, setMutuoPct] = useState(0.6);
   const [tassoMutuo, setTassoMutuo] = useState(3.2);
   const [durata, setDurata] = useState(20);
-  // Costi gestione separati e configurabili (default realistici italiani)
-  const [imuAnnua, setImuAnnua] = useState(450);          // €/anno
-  const [assicurazione, setAssicurazione] = useState(180); // €/anno
-  const [manutenzionePct, setManutenzionePct] = useState(3); // % del canone (riserva)
-  const [sfittanzaPct, setSfittanzaPct] = useState(4);    // % del canone (rischio sfitto)
-  const [cedolare, setCedolare] = useState(true);          // true=21%, false=IRPEF stima 30%
+  // Costi gestione: inizializzati dai settings appena disponibili
+  const [imuAnnua, setImuAnnua] = useState(800);
+  const [assicurazione, setAssicurazione] = useState(200);
+  const [manutenzionePct, setManutenzionePct] = useState(3);
+  const [sfittanzaPct, setSfittanzaPct] = useState(4);
+  const [userTouchedFiscal, setUserTouchedFiscal] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState(null);
 
+  // Quando arrivano i settings, riempi i default (solo prima volta, se utente non ha già toccato)
+  useEffect(() => {
+    if (!settings || userTouchedFiscal) return;
+    setImuAnnua(settings.imu_media_per_immobile ?? 800);
+    setAssicurazione(settings.assicurazione_media_per_immobile ?? 200);
+    setManutenzionePct(settings.manutenzione_pct_default ?? 3);
+    setSfittanzaPct(settings.sfittanza_pct_default ?? 4);
+  }, [settings, userTouchedFiscal]);
+
+  // Aliquota tassazione affitti: dipende dal tipo società/regime
+  const aliquotaTasse = useMemo(() => {
+    if (!settings) return 0.28;  // default SRL conservativo
+    const tipo = settings.tipo_societa || "srl";
+    if (tipo === "privato") {
+      const reg = settings.regime_affitti || "cedolare_21";
+      if (reg === "cedolare_21") return 0.21;
+      if (reg === "cedolare_10") return 0.10;
+      return 0.30;  // IRPEF ordinario stima 30%
+    }
+    // SRL / SpA / Holding: IRES + IRAP
+    return ((settings.aliquota_ires ?? 24) + (settings.aliquota_irap ?? 3.9)) / 100;
+  }, [settings]);
+
+  const labelRegime = useMemo(() => {
+    if (!settings) return "IRES+IRAP ~28% (SRL)";
+    const tipo = settings.tipo_societa || "srl";
+    if (tipo === "privato") {
+      const reg = settings.regime_affitti || "cedolare_21";
+      if (reg === "cedolare_21") return "Cedolare 21% (Privato)";
+      if (reg === "cedolare_10") return "Cedolare 10% (Privato/concordato)";
+      return "IRPEF ~30% (Privato ordinario)";
+    }
+    const eff = ((settings.aliquota_ires ?? 24) + (settings.aliquota_irap ?? 3.9)).toFixed(1);
+    return `IRES+IRAP ≈${eff}% (${tipo.toUpperCase()})`;
+  }, [settings]);
+
   const calc = useMemo(() => {
     const costoTotale = prezzo + notaio + agenzia + lavori;
     const canoneAnnuo = canone * 12;
-    // Tasse sull'affitto
-    const aliquotaTasse = cedolare ? 0.21 : 0.30;
     const tasseMensili = (canone * aliquotaTasse);
     // Spese gestione esplicite
     const imuMensile = imuAnnua / 12;
@@ -69,22 +110,21 @@ export default function Simulatore() {
     const roi = capitaleProprio > 0 ? (cashFlow * 12) / capitaleProprio * 100 : 0;
     const breakEven = capitaleProprio > 0 && cashFlow > 0 ? capitaleProprio / (cashFlow * 12) : null;
 
-    // Score più equilibrato
     let score = 55;
     score += Math.min(35, Math.max(-35, (rendNetto - 4) * 7));
     if (cashFlow < 0) score -= 15;
     if (lavori / Math.max(prezzo, 1) > 0.5) score -= 10;
     if (mutuoPct > 0.85) score -= 8;
-    if (rendLordo > 8) score += 5; // bonus deal di valore
+    if (rendLordo > 8) score += 5;
     score = Math.max(0, Math.min(100, Math.round(score)));
 
     return {
       costoTotale, canoneAnnuo, rendLordo, rendNetto,
       mutuoImporto, capitaleProprio, rata, cashFlow, roi, breakEven, score,
       imuMensile, assicMensile, manutMensile, sfittMensile, totSpeseMensili,
-      tasseMensili, aliquotaTasse,
+      tasseMensili,
     };
-  }, [prezzo, notaio, agenzia, lavori, canone, mutuoPct, tassoMutuo, durata, imuAnnua, assicurazione, manutenzionePct, sfittanzaPct, cedolare]);
+  }, [prezzo, notaio, agenzia, lavori, canone, mutuoPct, tassoMutuo, durata, imuAnnua, assicurazione, manutenzionePct, sfittanzaPct, aliquotaTasse]);
 
   const runAi = async () => {
     setAiLoading(true);
@@ -106,6 +146,17 @@ export default function Simulatore() {
 
   return (
     <Layout title="Simulatore Investimenti" subtitle="Valuta una nuova operazione — tutti i parametri sono modificabili">
+      {settings && (
+        <div data-testid="sim-fiscal-banner" className="mb-4 px-3.5 py-2.5 rounded-lg bg-[rgba(124,58,237,0.06)] border border-[rgba(124,58,237,0.25)] flex items-center justify-between gap-3 flex-wrap text-sm">
+          <div className="flex items-center gap-2 text-[#475569]">
+            <Info size={14} className="text-[#7C3AED]"/>
+            <span>Regime società: <strong className="text-[#0F172A]">{labelRegime}</strong> · IMU media <strong className="tabular text-[#0F172A]">{formatEur(settings.imu_media_per_immobile || 800)}/anno</strong></span>
+          </div>
+          <Link to="/impostazioni" className="text-xs text-[#7C3AED] hover:underline inline-flex items-center gap-1">
+            <SettingsIcon size={11}/> Modifica in Impostazioni
+          </Link>
+        </div>
+      )}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <SectionCard testId="sim-input" title="Parametri operazione" subtitle="Inserisci i dati dell'immobile candidato" className="xl:col-span-1">
           <div className="space-y-3">
@@ -135,18 +186,18 @@ export default function Simulatore() {
             {showAdvanced && (
               <div className="space-y-3 pt-1">
                 <div className="grid grid-cols-2 gap-3">
-                  <Field testId="sim-imu" label="IMU annua" value={imuAnnua} onChange={setImuAnnua} suffix="€" hint="Stima per immobile a reddito" />
-                  <Field testId="sim-assic" label="Assicurazione annua" value={assicurazione} onChange={setAssicurazione} suffix="€" />
+                  <Field testId="sim-imu" label="IMU annua" value={imuAnnua} onChange={(v) => { setImuAnnua(v); setUserTouchedFiscal(true); }} suffix="€" hint="Default da Impostazioni" />
+                  <Field testId="sim-assic" label="Assicurazione annua" value={assicurazione} onChange={(v) => { setAssicurazione(v); setUserTouchedFiscal(true); }} suffix="€" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <Field testId="sim-manut" label="Riserva manutenzione" value={manutenzionePct} onChange={setManutenzionePct} suffix="%" hint="% del canone accantonato" />
-                  <Field testId="sim-sfitt" label="Rischio sfittanza" value={sfittanzaPct} onChange={setSfittanzaPct} suffix="%" hint="% per mesi sfitto/morosità" />
+                  <Field testId="sim-manut" label="Riserva manutenzione" value={manutenzionePct} onChange={(v) => { setManutenzionePct(v); setUserTouchedFiscal(true); }} suffix="%" hint="% del canone" />
+                  <Field testId="sim-sfitt" label="Rischio sfittanza" value={sfittanzaPct} onChange={(v) => { setSfittanzaPct(v); setUserTouchedFiscal(true); }} suffix="%" hint="% per mesi sfitto" />
                 </div>
-                <div>
-                  <span className="text-[10px] uppercase tracking-wider text-[#475569] font-medium">Regime fiscale</span>
-                  <div className="mt-1.5 grid grid-cols-2 gap-2">
-                    <button data-testid="sim-tax-ced" onClick={() => setCedolare(true)} className={`px-2 py-2 rounded-lg text-xs border transition-colors ${cedolare ? "border-[#0066FF] bg-[rgba(0,102,255,0.1)] text-[#2563EB] font-medium" : "border-[#E2E8F0] text-[#475569]"}`}>Cedolare 21%</button>
-                    <button data-testid="sim-tax-irpef" onClick={() => setCedolare(false)} className={`px-2 py-2 rounded-lg text-xs border transition-colors ${!cedolare ? "border-[#0066FF] bg-[rgba(0,102,255,0.1)] text-[#2563EB] font-medium" : "border-[#E2E8F0] text-[#475569]"}`}>IRPEF ~30%</button>
+                <div className="px-3 py-2.5 bg-[rgba(124,58,237,0.06)] border border-[rgba(124,58,237,0.25)] rounded-lg text-[11px] text-[#475569] leading-relaxed flex items-start gap-2">
+                  <Info size={12} className="text-[#7C3AED] shrink-0 mt-0.5"/>
+                  <div>
+                    <strong className="text-[#0F172A]">Regime fiscale: {labelRegime}</strong><br/>
+                    L'aliquota viene applicata sul canone. Per cambiarla, modifica il tipo società da <Link to="/impostazioni" className="text-[#7C3AED] underline">Impostazioni</Link>.
                   </div>
                 </div>
               </div>
@@ -224,7 +275,7 @@ export default function Simulatore() {
               <BreakRow label={`− Assicurazione mensilizzata (${formatEur(assicurazione)}/anno)`} value={-Math.round(calc.assicMensile)} muted />
               <BreakRow label={`− Riserva manutenzione (${manutenzionePct}% canone)`} value={-Math.round(calc.manutMensile)} muted />
               <BreakRow label={`− Riserva sfittanza (${sfittanzaPct}% canone)`} value={-Math.round(calc.sfittMensile)} muted />
-              <BreakRow label={`− Tasse su affitto (${cedolare ? "Cedolare 21%" : "IRPEF ~30%"})`} value={-Math.round(calc.tasseMensili)} />
+              <BreakRow label={`− Tasse su affitto (${labelRegime})`} value={-Math.round(calc.tasseMensili)} />
               <div className="flex justify-between items-center pt-2 mt-1 border-t-2 border-[#0F172A] font-bold">
                 <span className="text-sm text-[#0F172A]">= Cash flow netto / mese</span>
                 <span className={`font-display text-lg tabular ${calc.cashFlow >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{formatEur(Math.round(calc.cashFlow))}</span>

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import { useAuth } from "../lib/auth";
-import { Save, Building2, Target, Sparkles, Shield, Image as ImageIcon, Upload, Trash2 } from "lucide-react";
+import { Save, Building2, Target, Sparkles, Shield, Image as ImageIcon, Upload, Trash2, Receipt, Wrench } from "lucide-react";
 import { toast } from "sonner";
 
 const API_BASE = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -42,6 +42,16 @@ export default function Impostazioni() {
   const [logoBase64, setLogoBase64] = useState(null);
   const [logoMime, setLogoMime] = useState(null);
   const [liquiditaIniziale, setLiquiditaIniziale] = useState(35000);
+  // Fiscale & costi gestione default
+  const [tipoSocieta, setTipoSocieta] = useState("srl");
+  const [regimeAffitti, setRegimeAffitti] = useState("ordinario");
+  const [aliquotaIres, setAliquotaIres] = useState(24);
+  const [aliquotaIrap, setAliquotaIrap] = useState(3.9);
+  const [aliquotaPlusvalenza, setAliquotaPlusvalenza] = useState(26);
+  const [imuMedia, setImuMedia] = useState(800);
+  const [assicurazioneMedia, setAssicurazioneMedia] = useState(200);
+  const [manutenzionePctDefault, setManutenzionePctDefault] = useState(3);
+  const [sfittanzaPctDefault, setSfittanzaPctDefault] = useState(4);
 
   const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem("crr_token")}` });
 
@@ -64,6 +74,15 @@ export default function Impostazioni() {
           setLogoBase64(s.logo_base64 || null);
           setLogoMime(s.logo_mime || null);
           setLiquiditaIniziale(s.liquidita_iniziale ?? 35000);
+          setTipoSocieta(s.tipo_societa || "srl");
+          setRegimeAffitti(s.regime_affitti || "ordinario");
+          setAliquotaIres(s.aliquota_ires ?? 24);
+          setAliquotaIrap(s.aliquota_irap ?? 3.9);
+          setAliquotaPlusvalenza(s.aliquota_plusvalenza ?? 26);
+          setImuMedia(s.imu_media_per_immobile ?? 800);
+          setAssicurazioneMedia(s.assicurazione_media_per_immobile ?? 200);
+          setManutenzionePctDefault(s.manutenzione_pct_default ?? 3);
+          setSfittanzaPctDefault(s.sfittanza_pct_default ?? 4);
         }
       } catch {
         toast.error("Impossibile caricare le impostazioni");
@@ -87,6 +106,15 @@ export default function Impostazioni() {
         capitale_disponibile: parseFloat(capitale) || 0,
         limite_indebitamento: parseFloat(limiteIndebitamento) || 0,
         liquidita_iniziale: parseFloat(liquiditaIniziale) || 0,
+        tipo_societa: tipoSocieta,
+        regime_affitti: regimeAffitti,
+        aliquota_ires: parseFloat(aliquotaIres) || 0,
+        aliquota_irap: parseFloat(aliquotaIrap) || 0,
+        aliquota_plusvalenza: parseFloat(aliquotaPlusvalenza) || 0,
+        imu_media_per_immobile: parseFloat(imuMedia) || 0,
+        assicurazione_media_per_immobile: parseFloat(assicurazioneMedia) || 0,
+        manutenzione_pct_default: parseFloat(manutenzionePctDefault) || 0,
+        sfittanza_pct_default: parseFloat(sfittanzaPctDefault) || 0,
       };
       const r = await fetch(`${API_BASE}/settings`, {
         method: "PUT",
@@ -248,6 +276,99 @@ export default function Impostazioni() {
             )}
             <span className="text-xs text-[#64748B]">PNG / JPG / SVG · max 1 MB · meglio se sfondo trasparente</span>
           </div>
+        </div>
+      </SectionCard>
+
+      {/* Regime fiscale */}
+      <SectionCard
+        testId="settings-fiscale"
+        title="Regime fiscale società"
+        subtitle="Parametri usati da Simulatore, KPI rendimento netto e Forecast cash flow"
+        action={<Receipt size={16} className="text-[#7C3AED]" />}
+        className="mb-4"
+      >
+        <div className="space-y-4">
+          <div>
+            <span className="text-[10px] uppercase tracking-wider text-[#475569] font-medium">Tipo soggetto</span>
+            <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2">
+              {[
+                { v: "privato", l: "Privato" },
+                { v: "srl", l: "SRL" },
+                { v: "spa", l: "SpA" },
+                { v: "holding", l: "Holding immobiliare" },
+              ].map((o) => (
+                <button
+                  key={o.v}
+                  data-testid={`tipo-societa-${o.v}`}
+                  onClick={() => setTipoSocieta(o.v)}
+                  className={`px-3 py-2.5 rounded-lg text-sm border transition-colors ${tipoSocieta === o.v ? "border-[#7C3AED] bg-[rgba(124,58,237,0.1)] text-[#7C3AED] font-medium" : "border-[#E2E8F0] text-[#475569] hover:border-[#CBD5E1]"}`}
+                >
+                  {o.l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {tipoSocieta === "privato" ? (
+            <>
+              <div>
+                <span className="text-[10px] uppercase tracking-wider text-[#475569] font-medium">Regime imposte affitti</span>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {[
+                    { v: "cedolare_21", l: "Cedolare 21%" },
+                    { v: "cedolare_10", l: "Cedolare 10% (canone concordato)" },
+                    { v: "ordinario", l: "IRPEF ordinario" },
+                  ].map((o) => (
+                    <button
+                      key={o.v}
+                      data-testid={`regime-${o.v}`}
+                      onClick={() => setRegimeAffitti(o.v)}
+                      className={`px-2 py-2 rounded-lg text-xs border transition-colors ${regimeAffitti === o.v ? "border-[#0066FF] bg-[rgba(0,102,255,0.1)] text-[#2563EB] font-medium" : "border-[#E2E8F0] text-[#475569]"}`}
+                    >
+                      {o.l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="text-[11px] text-[#64748B] bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg p-3 leading-relaxed">
+                <strong className="text-[#0F172A]">Privato:</strong> tassazione su affitti applicata sul lordo (cedolare) o sul netto contabile (IRPEF). La plusvalenza è esente se la vendita avviene dopo {/* eslint-disable-line */} 5 anni dall'acquisto.
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Aliquota IRES" value={aliquotaIres} onChange={(v) => setAliquotaIres(parseFloat(v) || 0)} type="number" suffix="%" />
+                <Field label="Aliquota IRAP" value={aliquotaIrap} onChange={(v) => setAliquotaIrap(parseFloat(v) || 0)} type="number" suffix="%" />
+              </div>
+              <div className="text-[11px] text-[#64748B] bg-[rgba(124,58,237,0.06)] border border-[rgba(124,58,237,0.2)] rounded-lg p-3 leading-relaxed">
+                <strong className="text-[#0F172A]">{tipoSocieta.toUpperCase()}:</strong> sugli affitti si applica <strong className="tabular">IRES {aliquotaIres}% + IRAP {aliquotaIrap}%</strong> sul reddito netto contabile, per un'aliquota effettiva ≈ <strong className="tabular text-[#7C3AED]">{(parseFloat(aliquotaIres) + parseFloat(aliquotaIrap)).toFixed(1)}%</strong>. La cedolare secca <em>non si applica</em> alle società di capitali.
+              </div>
+            </>
+          )}
+
+          <div className="pt-3 border-t border-[#E2E8F0] grid grid-cols-2 gap-3">
+            <Field label="Aliquota plusvalenza (vendita)" value={aliquotaPlusvalenza} onChange={(v) => setAliquotaPlusvalenza(parseFloat(v) || 0)} type="number" suffix="%" />
+            <div />
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* Costi gestione default */}
+      <SectionCard
+        testId="settings-costi-default"
+        title="Costi gestione default per immobile"
+        subtitle="Stime medie usate dal Simulatore quando crei una nuova operazione (personalizzabili per ogni deal)"
+        action={<Wrench size={16} className="text-[#059669]" />}
+        className="mb-4"
+      >
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Field label="IMU media / anno" value={imuMedia} onChange={(v) => setImuMedia(parseFloat(v) || 0)} type="number" suffix="€" />
+          <Field label="Assicurazione media / anno" value={assicurazioneMedia} onChange={(v) => setAssicurazioneMedia(parseFloat(v) || 0)} type="number" suffix="€" />
+          <Field label="Riserva manutenzione" value={manutenzionePctDefault} onChange={(v) => setManutenzionePctDefault(parseFloat(v) || 0)} type="number" suffix="%" />
+          <Field label="Rischio sfittanza" value={sfittanzaPctDefault} onChange={(v) => setSfittanzaPctDefault(parseFloat(v) || 0)} type="number" suffix="%" />
+        </div>
+        <div className="mt-3 text-[11px] text-[#64748B] leading-relaxed">
+          Manutenzione e sfittanza sono espresse in <strong>% del canone</strong>: vengono accantonate mensilmente per coprire imprevisti e mesi sfitto/morosità.
         </div>
       </SectionCard>
 

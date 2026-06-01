@@ -21,6 +21,9 @@ DEFAULT_SETTINGS = {
     "tipo_societa": "srl",                # privato | srl | spa | holding
     "regime_affitti": "ordinario",         # ordinario | cedolare_21 | cedolare_10
     "imu_media_per_immobile": 800.0,       # €/anno per immobile
+    "assicurazione_media_per_immobile": 200.0,  # €/anno per immobile
+    "manutenzione_pct_default": 3.0,       # % canone (riserva manutenzione)
+    "sfittanza_pct_default": 4.0,          # % canone (rischio sfitto)
     "anni_holding_plusvalenza": 5,         # entro N anni si tassa al 26%, dopo esente
     "aliquota_plusvalenza": 26.0,
     "aliquota_ires": 24.0,
@@ -41,6 +44,17 @@ class SettingsIn(BaseModel):
     capitale_disponibile: Optional[float] = None
     limite_indebitamento: Optional[float] = None
     liquidita_iniziale: Optional[float] = None
+    # Fiscale società
+    tipo_societa: Optional[str] = None             # privato | srl | spa | holding
+    regime_affitti: Optional[str] = None           # ordinario | cedolare_21 | cedolare_10
+    aliquota_ires: Optional[float] = None
+    aliquota_irap: Optional[float] = None
+    aliquota_plusvalenza: Optional[float] = None
+    anni_holding_plusvalenza: Optional[int] = None
+    imu_media_per_immobile: Optional[float] = None
+    assicurazione_media_per_immobile: Optional[float] = None
+    manutenzione_pct_default: Optional[float] = None
+    sfittanza_pct_default: Optional[float] = None
 
 
 async def get_user_settings(db, user_id: str) -> dict:
