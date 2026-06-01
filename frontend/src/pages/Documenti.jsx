@@ -74,7 +74,14 @@ export default function Documenti() {
     try {
       const r = await apiClient().post(`/documents/${doc.id}/analyze`);
       setAnalysisModal({ doc, analysis: r.data.analysis, cached: r.data.cached });
-      toast.success(r.data.cached ? "Analisi caricata da cache" : "Documento analizzato dall'AI");
+      const gen = r.data.alerts_generated || 0;
+      if (r.data.cached) {
+        toast.success("Analisi caricata da cache");
+      } else if (gen > 0) {
+        toast.success(`Documento analizzato · ${gen} alert generati automaticamente`);
+      } else {
+        toast.success("Documento analizzato dall'AI");
+      }
       load();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Errore analisi AI");

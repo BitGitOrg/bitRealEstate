@@ -283,6 +283,18 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 - Persistenza immobili reali su MongoDB (oggi sono in `demoData.js`)
 - Upload documenti reali con object storage
 - AI Document Reader (estrazione rogito, fatture)
+
+## 🆕 Alert auto-generati da AI Document Reader (1 Jun 2026 - iter 27)
+111. **Backend `_generate_alerts_from_analysis()`** in `documents.py`: dopo `/analyze` salva l'analisi e genera automaticamente alert dal contenuto. Cancella prima i vecchi alert con `source_doc_id` corrispondente per non duplicare.
+112. **Anomalie → alert documentali**: ogni stringa in `analysis.anomalie[]` (lunga ≥10 char) diventa 1 alert tipo "documentale". Severity = media se contiene keyword [nulla, scaduto, illegittim, rischio, antiabuso], altrimenti bassa. Titolo "Anomalia · {tipo} {nome[:40]}", descrizione completa, linkato a immobile_id.
+113. **Date scadenza → alert con `days_remaining`**: scansiona campi `data_scadenza`, `data_fine`, `data_fine_prima_scadenza`, `scadenza_pagamento`. Se entro 180gg (e non > 7gg passato), genera alert con severity dinamica: alta ≤30gg o scaduto, media ≤60gg, bassa >60gg. Titolo dinamico ("Scadenza imminente", "in approssimazione", "SCADUTA").
+114. **Test e2e verificato**:
+   - Upload + analyze APE con scadenza 35gg → 5 alert (4 anomalie + 1 scadenza media gravità 35gg)
+   - Upload + analyze Contratto Foligno → 5 alert (4 anomalie + 1 prima_scadenza)
+   - Totale 10 alert documentali con `source_doc_id` correttamente tracciato
+115. **Risposta endpoint arricchita**: `{analysis, alerts_generated: N}`. Frontend toast: "Documento analizzato · {N} alert generati automaticamente".
+116. **AlertCenter mostra gli alert auto** con badge bassa/media, link "Vai a {immobile}", bottone X per dismiss inline. La re-analisi (cache invalidata) ricrea gli alert idempotente (delete + insert).
+
 - Mappa reale con react-leaflet
 - Permessi per ruolo lato UI (oggi tutti vedono tutto)
 - Modale "Nuovo immobile" funzionante

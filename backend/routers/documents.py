@@ -183,9 +183,104 @@ def make_documents_router(db, current_user, llm_key: str = ""):
             {"id": doc_id, "user_id": user["id"]},
             {"$set": {"ai_analysis": analysis, "ai_analyzed_at": now}}
         )
-        return {"analysis": analysis, "cached": False, "analyzed_at": now}
+
+        # Auto-generate alerts dalle anomalie + scadenze estratte
+        alerts_gen = await _generate_alerts_from_analysis(db, user["id"], d, analysis, now)
+        return {"analysis": analysis, "cached": False, "analyzed_at": now, "alerts_generated": alerts_gen}
 
     return router
+
+
+async def _generate_alerts_from_analysis(db, user_id: str, doc: dict, analysis: dict, now_iso: str) -> int:
+    """Genera alert dal contenuto AI: anomalie + date di scadenza < 180gg."""
+    from datetime import date as _date
+    doc_id = doc.get("id")
+    doc_name = doc.get("nome", "documento")
+    immobile_id = doc.get("immobile_id")
+    tipo = doc.get("tipo", "Altro")
+
+    # cancella vecchi alert auto-generated da questo documento
+    await db.alerts.delete_many({"user_id": user_id, "source_doc_id": doc_id})
+
+    alerts = []
+
+    # 1) Anomalie → alert tipo documentale
+    anomalie = analysis.get("anomalie") or []
+    for i, anom in enumerate(anomalie):
+        text = str(anom).strip()
+        if not text or len(text) < 10:
+            continue
+        # severity bassa/media in base a keyword
+        sev = "media" if any(k in text.lower() for k in ["nulla", "non valida", "scaduto", "illegittim", "rischio", "antiabuso"]) else "bassa"
+        alerts.append({
+            "id": f"A-DOC-{doc_id}-anom-{i}",
+            "user_id": user_id,
+            "tipo": "documentale",
+            "severity": sev,
+            "titolo": f"Anomalia · {tipo} {doc_name[:40]}",
+            "descrizione": text[:500],
+            "immobile_id": immobile_id,
+            "ts": now_iso,
+            "auto_generated": True,
+            "source_doc_id": doc_id,
+            "kind": "doc_anomalia",
+        })
+
+    # 2) Date scadenza → alert se entro 180gg
+    date_fields = [
+        ("data_scadenza", "Scadenza documento"),
+        ("data_fine", "Scadenza contratto"),
+        ("data_fine_prima_scadenza", "Prima scadenza contratto"),
+        ("scadenza_pagamento", "Scadenza pagamento fattura"),
+    ]
+    for field, label in date_fields:
+        val = analysis.get(field)
+        if not val or not isinstance(val, str):
+            continue
+        try:
+            target = _date.fromisoformat(val[:10])
+        except Exception:
+            continue
+        days = (target - _date.today()).days
+        if days > 180:  # troppo lontano
+            continue
+        if days < -7:  # già passato da più di una settimana → non spammare
+            continue
+        if days < 0:
+            sev = "alta"
+            titolo = f"{label} SCADUTA · {tipo}"
+            desc = f"«{doc_name}» — scadenza {val[:10]}: scaduta da {-days} giorni."
+        elif days <= 30:
+            sev = "alta"
+            titolo = f"{label} imminente · {tipo}"
+            desc = f"«{doc_name}» — scadenza {val[:10]}: mancano {days} giorni."
+        elif days <= 60:
+            sev = "media"
+            titolo = f"{label} in approssimazione · {tipo}"
+            desc = f"«{doc_name}» — scadenza {val[:10]}: mancano {days} giorni."
+        else:
+            sev = "bassa"
+            titolo = f"{label} · {tipo}"
+            desc = f"«{doc_name}» — scadenza {val[:10]}: mancano {days} giorni."
+        alerts.append({
+            "id": f"A-DOC-{doc_id}-scad-{field}",
+            "user_id": user_id,
+            "tipo": "documentale",
+            "severity": sev,
+            "titolo": titolo,
+            "descrizione": desc,
+            "immobile_id": immobile_id,
+            "ts": now_iso,
+            "days_remaining": days,
+            "scadenza": val[:10],
+            "auto_generated": True,
+            "source_doc_id": doc_id,
+            "kind": "doc_scadenza",
+        })
+
+    if alerts:
+        await db.alerts.insert_many([a.copy() for a in alerts])
+    return len(alerts)
 
 
 def _prompt_by_tipo(tipo: str) -> dict:
