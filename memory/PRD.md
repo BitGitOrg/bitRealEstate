@@ -361,3 +361,18 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 153. **`restartTour()` helper** esportato per il bottone "Rifai il tour guidato" presente nella sezione Introduzione del Manuale d'uso (rimuove localStorage + redirect a /dashboard).
 
 148. **Integrato nel Layout** (visibile ovunque). Test e2e: da `/affitti` → click help → URL `/manuale?s=affitti` → titolo "4. Affitti & Locazioni" caricato.
+
+
+## 🆕 Import estratto conto AI-driven (1 Jun 2026 - iter 35)
+154. **Backend `parse_banca` riscritto robusto** in `imports.py`:
+   - `_read_tabular_robust()`: CSV con auto-detect separator (`;`, `,`, `\t`, `|`) e encoding (utf-8, latin-1, cp1252). Excel multi-sheet con `skiprows` 0–5 e scoring per scegliere il foglio/header migliore (privilegia righe con più colonne non-Unnamed).
+   - `_parse_amount()`: gestisce formati italiani e USA (1.234,56 vs 1,234.56), simboli €/EUR, parentesi per negativi, spazi e apostrofi.
+   - `_parse_date()`: stringhe ISO, Timestamp pandas (via `.date()`), date italiane DD/MM/YYYY via dateutil fuzzy.
+   - `_ai_detect_columns()`: fallback Claude Sonnet 4.6 che riceve sample CSV e ritorna JSON `{data, importo, dare, avere, descrizione}` con nomi colonne ESATTI.
+155. **3-step ladder mapping**: 1) override manuale dal frontend, 2) heuristic keyword italiano+inglese, 3) AI fallback solo se ancora mancano data/importo.
+156. **Response shape**: `{status: "ok"|"needs_mapping", total, entrate, uscite, matched, duplicates, errors[], errors_count, mapping_used, ai_used, movimenti[]}`. Duplicati detect via signature MD5 già esistenti in DB. Errors riportano riga umana (header + 1-based) + messaggio.
+157. **Frontend `BancaTab` rifatto** con 2 stati:
+   - `status=needs_mapping` → form interattivo con 5 dropdown popolate dalle colonne disponibili + preview sample 5 righe + bottone "Riprova con mapping".
+   - `status=ok` → 5 KPI boxes (movimenti, entrate, uscite, riconciliati, duplicati), banner AI viola se Claude usato, banner errori ambra se >0 errori (mostra prime 5 con numero riga), tabella anteprima con badge per ogni riga (ok/duplicato).
+158. **Commit filtrato**: solo righe non duplicate vengono importate, toast mostra "X importati, Y duplicati saltati".
+159. **Test e2e**: file con header annidati (BANCA INTESA + IBAN + Periodo prima della tabella) + colonne inglesi (Trans. Date, Debit, Credit) → riconosciuto via heuristic con `skiprows=4`, mappato correttamente, 3 movimenti parsati e 2 riconciliati con canoni Negozio De Amicis + Via Borgaro.

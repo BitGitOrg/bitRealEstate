@@ -5,7 +5,7 @@ import { apiClient } from "../lib/auth";
 import { formatEur } from "../lib/demoData";
 import {
   Upload, Download, FileSpreadsheet, FileText, Building2, Sparkles,
-  CheckCircle2, AlertTriangle, Loader2, Banknote, Database, X, Calendar
+  CheckCircle2, AlertTriangle, Loader2, Banknote, Database, X, Calendar, AlertCircle
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { toast } from "sonner";
@@ -287,25 +287,47 @@ function BilanciTab() {
 function BancaTab() {
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [pendingFile, setPendingFile] = useState(null);
+  const [mapping, setMapping] = useState({});
 
-  const upload = async (file) => {
-    setLoading(true); setPreview(null);
+  const upload = async (file, manualMapping = null) => {
+    setLoading(true);
+    if (!manualMapping) setPreview(null);
     try {
       const fd = new FormData();
       fd.append("file", file);
+      if (manualMapping) fd.append("mapping_json", JSON.stringify(manualMapping));
       const { data } = await apiClient().post("/import/banca/parse", fd, { headers: { "Content-Type": "multipart/form-data" } });
       setPreview(data);
-      toast.success(`${data.total} movimenti · ${data.matched} riconciliati con i canoni`);
+      if (data.status === "needs_mapping") {
+        setPendingFile(file);
+        setMapping(data.detected || {});
+        toast.warning("Devo mapping manuale per alcune colonne");
+      } else {
+        setPendingFile(null);
+        const aiTag = data.ai_used ? " (AI)" : "";
+        toast.success(`${data.total} movimenti · ${data.matched} riconciliati · ${data.errors_count} errori${aiTag}`);
+      }
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Errore parsing estratto conto");
     } finally { setLoading(false); }
   };
 
+  const retryWithMapping = () => {
+    if (!pendingFile) return;
+    // Filtra mapping rimuovendo i null
+    const clean = Object.fromEntries(Object.entries(mapping).filter(([_, v]) => v));
+    upload(pendingFile, clean);
+  };
+
   const commit = async () => {
     try {
-      const { data } = await apiClient().post("/import/banca/commit", { movimenti: preview.movimenti });
-      toast.success(`${data.created} movimenti bancari importati`);
+      // Solo non duplicati
+      const toCommit = preview.movimenti.filter(m => !m.duplicate);
+      const { data } = await apiClient().post("/import/banca/commit", { movimenti: toCommit });
+      toast.success(`${data.created} movimenti bancari importati${preview.duplicates ? `, ${preview.duplicates} duplicati saltati` : ""}`);
       setPreview(null);
+      setPendingFile(null);
     } catch { toast.error("Errore"); }
   };
 
@@ -317,15 +339,15 @@ function BancaTab() {
             <Banknote size={18} className="text-[#059669]"/>
           </div>
           <div>
-            <div className="font-display font-semibold text-[#0F172A]">Estratto conto bancario</div>
-            <div className="text-sm text-[#475569] mt-1">Carica il CSV o Excel dell'estratto conto: il sistema riconcilia automaticamente le entrate con i canoni attesi degli immobili.</div>
-            <div className="text-xs text-[#64748B] mt-1">Colonne attese: una colonna "Data", una "Descrizione", una "Importo".</div>
+            <div className="font-display font-semibold text-[#0F172A]">Estratto conto bancario · qualsiasi template</div>
+            <div className="text-sm text-[#475569] mt-1">L'AI riconosce automaticamente la struttura del tuo Excel/CSV (anche template bancari con header annidati). Se non capisce una colonna, ti chiede di mapparla manualmente.</div>
+            <div className="text-xs text-[#64748B] mt-1">Auto-detect: heuristic (italiano + inglese) → AI fallback Claude se mancano data o importo. Riconciliazione automatica con i canoni attesi degli immobili.</div>
           </div>
         </div>
       </SectionCard>
 
       {!preview && (
-        <Dropzone testId="dropzone-banca" onFile={upload} accept=".csv,.xlsx,.xls" hint="CSV o Excel" />
+        <Dropzone testId="dropzone-banca" onFile={upload} accept=".csv,.xlsx,.xls" hint="CSV o Excel · multi-sheet supportato" />
       )}
 
       {loading && (
@@ -334,40 +356,35 @@ function BancaTab() {
         </div>
       )}
 
-      {preview && (
-        <SectionCard testId="banca-preview" title="Movimenti rilevati" subtitle={`${preview.total} totali · ${preview.entrate} entrate · ${preview.uscite} uscite · ${preview.matched} riconciliati con canoni`}
+      {/* CASE: needs_mapping → mapping form interattivo */}
+      {preview?.status === "needs_mapping" && (
+        <SectionCard testId="banca-mapping" title="Mapping colonne richiesto" subtitle={preview.message}
           action={
             <div className="flex items-center gap-2">
-              <button onClick={() => setPreview(null)} className="text-xs px-3 py-1.5 rounded-lg border border-[#E2E8F0] hover:border-[#CBD5E1] text-[#475569]">Annulla</button>
-              <button data-testid="banca-commit-btn" onClick={commit} className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#0066FF] hover:bg-[#2563EB] text-white font-medium">
-                <CheckCircle2 size={12}/> Importa {preview.total} movimenti
+              <button onClick={() => { setPreview(null); setPendingFile(null); }} className="text-xs px-3 py-1.5 rounded-lg border border-[#E2E8F0] hover:border-[#CBD5E1] text-[#475569]">Annulla</button>
+              <button data-testid="mapping-retry" onClick={retryWithMapping} className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#0066FF] hover:bg-[#2563EB] text-white font-medium">
+                <CheckCircle2 size={12}/> Riprova con mapping
               </button>
             </div>
           }
         >
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-[10px] uppercase tracking-wider text-[#64748B] border-b border-[#E2E8F0]">
-                  <th className="py-2 px-2">Data</th>
-                  <th className="py-2 px-2">Descrizione</th>
-                  <th className="py-2 px-2 text-right">Importo</th>
-                  <th className="py-2 px-2">Match canone</th>
-                </tr>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+            <MapField label="Data" value={mapping.data} cols={preview.available_columns} onChange={(v) => setMapping(m => ({...m, data: v}))} required />
+            <MapField label="Importo (singola colonna)" value={mapping.importo} cols={preview.available_columns} onChange={(v) => setMapping(m => ({...m, importo: v}))} hint="oppure usa Dare+Avere sotto" />
+            <MapField label="Dare / Uscita / Debit" value={mapping.dare} cols={preview.available_columns} onChange={(v) => setMapping(m => ({...m, dare: v}))} />
+            <MapField label="Avere / Entrata / Credit" value={mapping.avere} cols={preview.available_columns} onChange={(v) => setMapping(m => ({...m, avere: v}))} />
+            <MapField label="Descrizione / Causale" value={mapping.descrizione} cols={preview.available_columns} onChange={(v) => setMapping(m => ({...m, descrizione: v}))} />
+          </div>
+          <div className="text-[10px] uppercase tracking-wider text-[#475569] font-semibold mb-1">Prime righe del file</div>
+          <div className="overflow-x-auto rounded-lg border border-[#E2E8F0]">
+            <table className="w-full text-xs">
+              <thead className="bg-[#F8FAFC]">
+                <tr>{preview.available_columns.map((c, i) => <th key={i} className="px-2 py-1.5 text-left text-[#475569] font-medium border-b border-[#E2E8F0]">{c}</th>)}</tr>
               </thead>
               <tbody>
-                {preview.movimenti.map((m, i) => (
+                {preview.sample_rows.map((r, i) => (
                   <tr key={i} className="border-b border-[#E2E8F0] last:border-0">
-                    <td className="py-2 px-2 text-[#475569] text-xs"><Calendar size={10} className="inline mr-1"/>{m.data}</td>
-                    <td className="py-2 px-2">{m.descrizione}</td>
-                    <td className={`py-2 px-2 text-right tabular ${m.importo >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{formatEur(m.importo)}</td>
-                    <td className="py-2 px-2">
-                      {m.match_canone ? (
-                        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-[rgba(16,185,129,0.3)] bg-[rgba(16,185,129,0.08)] text-[#059669]">
-                          <CheckCircle2 size={10}/> {m.match_canone.property_nome}
-                        </span>
-                      ) : m.importo > 0 ? <span className="text-[10px] text-[#64748B]">nessun match</span> : <span className="text-[10px] text-[#64748B]">—</span>}
-                    </td>
+                    {r.map((v, j) => <td key={j} className="px-2 py-1.5 text-[#475569]">{v || "—"}</td>)}
                   </tr>
                 ))}
               </tbody>
@@ -375,6 +392,109 @@ function BancaTab() {
           </div>
         </SectionCard>
       )}
+
+      {/* CASE: ok → preview commit */}
+      {preview?.status === "ok" && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <KpiBox label="Movimenti" value={preview.total} color="#0066FF" />
+            <KpiBox label="Entrate" value={preview.entrate} color="#059669" />
+            <KpiBox label="Uscite" value={preview.uscite} color="#DC2626" />
+            <KpiBox label="Riconciliati" value={preview.matched} color="#7C3AED" />
+            <KpiBox label="Duplicati" value={preview.duplicates} color="#B45309" />
+          </div>
+
+          {preview.errors_count > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex gap-2 text-xs">
+              <AlertCircle size={14} className="text-amber-700 shrink-0 mt-0.5" />
+              <div>
+                <b className="text-amber-900">{preview.errors_count} righe non importate.</b> <span className="text-amber-800">Prime 5:</span>
+                <ul className="mt-1 space-y-0.5 list-disc list-inside text-amber-800">
+                  {preview.errors.slice(0, 5).map((e, i) => <li key={i}>Riga {e.row}: {e.error}</li>)}
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {preview.ai_used && (
+            <div className="bg-violet-50 border border-violet-200 rounded-lg p-2.5 text-xs text-violet-900 inline-flex items-center gap-1.5">
+              <Sparkles size={12} /> AI Claude ha riconosciuto automaticamente la struttura del file.
+            </div>
+          )}
+
+          <SectionCard testId="banca-preview" title={`Anteprima · ${preview.filename}`}
+            subtitle={`Mapping usato: data=${preview.mapping_used.data || "—"}, importo=${preview.mapping_used.importo || `${preview.mapping_used.dare || "—"}/${preview.mapping_used.avere || "—"}`}, descrizione=${preview.mapping_used.descrizione || "—"}`}
+            action={
+              <div className="flex items-center gap-2">
+                <button onClick={() => setPreview(null)} className="text-xs px-3 py-1.5 rounded-lg border border-[#E2E8F0] hover:border-[#CBD5E1] text-[#475569]">Annulla</button>
+                <button data-testid="banca-commit-btn" onClick={commit} disabled={preview.total - preview.duplicates === 0} className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#0066FF] hover:bg-[#2563EB] disabled:opacity-50 text-white font-medium">
+                  <CheckCircle2 size={12}/> Importa {preview.total - preview.duplicates} movimenti
+                </button>
+              </div>
+            }
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-[10px] uppercase tracking-wider text-[#64748B] border-b border-[#E2E8F0]">
+                    <th className="py-2 px-2">Data</th>
+                    <th className="py-2 px-2">Descrizione</th>
+                    <th className="py-2 px-2 text-right">Importo</th>
+                    <th className="py-2 px-2">Match canone</th>
+                    <th className="py-2 px-2">Stato</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.movimenti.map((m, i) => (
+                    <tr key={i} className={`border-b border-[#E2E8F0] last:border-0 ${m.duplicate ? "opacity-50" : ""}`}>
+                      <td className="py-2 px-2 text-[#475569] text-xs"><Calendar size={10} className="inline mr-1"/>{m.data}</td>
+                      <td className="py-2 px-2">{m.descrizione}</td>
+                      <td className={`py-2 px-2 text-right tabular ${m.importo >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{formatEur(m.importo)}</td>
+                      <td className="py-2 px-2">
+                        {m.match_canone ? (
+                          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-[rgba(16,185,129,0.3)] bg-[rgba(16,185,129,0.08)] text-[#059669]">
+                            <CheckCircle2 size={10}/> {m.match_canone.property_nome}
+                          </span>
+                        ) : m.importo > 0 ? <span className="text-[10px] text-[#64748B]">nessun match</span> : <span className="text-[10px] text-[#64748B]">—</span>}
+                      </td>
+                      <td className="py-2 px-2">
+                        {m.duplicate ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">duplicato · skip</span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">ok</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </SectionCard>
+        </>
+      )}
+    </div>
+  );
+}
+
+function MapField({ label, value, cols, onChange, required, hint }) {
+  return (
+    <label className="block">
+      <span className="text-[10px] uppercase tracking-wider text-[#475569] font-medium">{label}{required && <span className="text-[#DC2626]"> *</span>}</span>
+      <select value={value || ""} onChange={(e) => onChange(e.target.value || null)}
+        className="mt-1 w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-md px-2 py-1.5 text-sm outline-none focus:border-[#0066FF]">
+        <option value="">— Nessuna —</option>
+        {cols.map((c, i) => <option key={i} value={c}>{c}</option>)}
+      </select>
+      {hint && <span className="text-[9px] text-[#94A3B8] mt-0.5 block">{hint}</span>}
+    </label>
+  );
+}
+
+function KpiBox({ label, value, color }) {
+  return (
+    <div className="bg-white border border-[#E2E8F0] rounded-lg p-2.5">
+      <div className="text-[9px] uppercase tracking-wider text-[#64748B] mb-0.5">{label}</div>
+      <div className="text-xl font-bold tabular" style={{ color }}>{value}</div>
     </div>
   );
 }

@@ -7,7 +7,7 @@ import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import openpyxl
@@ -118,6 +118,137 @@ def _extract_text_from_upload(content: bytes, filename: str) -> str:
             text = content.decode("latin-1", errors="ignore")
         return text[:30000]
     return content.decode("utf-8", errors="ignore")[:30000]
+
+
+def _read_tabular_robust(content: bytes, filename: str):
+    """Legge CSV (auto-detect separator + encoding) o Excel multi-sheet con skip header smart."""
+    import pandas as pd  # local rebind
+    fl = filename.lower()
+    if fl.endswith(".csv"):
+        for enc in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
+            for sep in (None, ";", ",", "\t", "|"):
+                try:
+                    df = pd.read_csv(io.BytesIO(content), sep=sep, engine="python", encoding=enc)
+                    if df is not None and len(df.columns) >= 2:
+                        return df
+                except Exception:
+                    continue
+        return None
+    if fl.endswith((".xlsx", ".xls")):
+        # Multi-sheet: scegli il foglio con più righe
+        try:
+            xls = pd.ExcelFile(io.BytesIO(content))
+        except Exception:
+            return None
+        best_df = None
+        best_score = -1
+        for sn in xls.sheet_names:
+            for skip in (0, 1, 2, 3, 4, 5):
+                try:
+                    df = pd.read_excel(xls, sheet_name=sn, skiprows=skip)
+                except Exception:
+                    continue
+                if df is None or df.empty:
+                    continue
+                # Cerca un header "decente": almeno 2 colonne, header non Unnamed
+                unnamed = sum(1 for c in df.columns if str(c).startswith("Unnamed"))
+                useful = len(df.columns) - unnamed
+                if useful < 2:
+                    continue
+                score = useful * 10 + min(len(df), 500)
+                if score > best_score:
+                    best_score = score
+                    best_df = df
+        return best_df
+    return None
+
+
+def _parse_amount(v) -> Optional[float]:
+    """Parse robusto di importi: gestisce 1.234,56  vs  1,234.56  vs  €1.234,56  vs  parentesi negativi."""
+    if v is None:
+        return None
+    try:
+        if hasattr(v, "isna") and v.isna():
+            return None
+    except Exception:
+        pass
+    s = str(v).strip()
+    if not s or s.lower() in ("nan", "none", "-"):
+        return None
+    neg = False
+    if s.startswith("(") and s.endswith(")"):
+        neg = True
+        s = s[1:-1]
+    s = s.replace("€", "").replace("EUR", "").replace(" ", "").replace("'", "")
+    # Decide separator: se ho sia . che , l'ultimo è il decimale
+    if "," in s and "." in s:
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    else:
+        s = s.replace(",", ".")
+    try:
+        val = float(s)
+        return -val if neg else val
+    except Exception:
+        return None
+
+
+def _parse_date(v) -> Optional[str]:
+    """Parse data flessibile → ISO YYYY-MM-DD. Gestisce stringhe, Timestamp pandas, datetime."""
+    if v is None:
+        return None
+    try:
+        if hasattr(v, "isna") and v.isna():
+            return None
+    except Exception:
+        pass
+    # pandas Timestamp ha .date()
+    if hasattr(v, "date") and callable(v.date):
+        try:
+            return v.date().isoformat()
+        except Exception:
+            pass
+    s = str(v).strip()
+    if not s or s.lower() in ("nan", "nat"):
+        return None
+    # già ISO?
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        return s[:10]
+    try:
+        from dateutil import parser as dateparser
+        dt = dateparser.parse(s, dayfirst=True, fuzzy=True)
+        return dt.date().isoformat()
+    except Exception:
+        return None
+
+
+async def _ai_detect_columns(llm_key: str, csv_sample: str) -> Optional[dict]:
+    """Chiama Claude per identificare le colonne in un estratto conto sconosciuto."""
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    sys_msg = (
+        "Sei un esperto di estratti conto bancari italiani. Analizza il sample CSV e identifica le colonne. "
+        "Restituisci SOLO JSON valido (no markdown) nel formato: "
+        "{\"data\":\"NomeColonna|null\",\"importo\":\"NomeColonna|null\",\"dare\":\"NomeColonna|null\",\"avere\":\"NomeColonna|null\",\"descrizione\":\"NomeColonna|null\"}. "
+        "Regole: usa i nomi ESATTI delle colonne come appaiono nel CSV. Se non sei sicuro, usa null. "
+        "Se la banca usa colonne separate dare/avere (addebito/accredito), riempi entrambe; altrimenti usa solo 'importo'.\n\nCSV SAMPLE:\n" + csv_sample
+    )
+    chat = LlmChat(api_key=llm_key, session_id="bank-col-detect", system_message=sys_msg).with_model("anthropic", "claude-sonnet-4-6")
+    reply = await chat.send_message(UserMessage(text="Identifica le colonne."))
+    text = reply.strip()
+    if "```" in text:
+        m = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+        if m:
+            text = m.group(1).strip()
+    s = text.find("{")
+    e = text.rfind("}")
+    if s == -1 or e <= s:
+        return None
+    try:
+        return json.loads(text[s:e+1])
+    except Exception:
+        return None
 
 
 def _movimento_signature(user_id: str, m: dict) -> str:
@@ -381,56 +512,112 @@ def make_imports_router(db, current_user, llm_key: str):
 
     # ============= BANCA =============
     @router.post("/banca/parse")
-    async def parse_banca(file: UploadFile = File(...), user: dict = Depends(current_user)):
+    async def parse_banca(
+        file: UploadFile = File(...),
+        mapping_json: Optional[str] = Form(None),  # override esplicito {"data":"Col1","importo":"Col2",...}
+        user: dict = Depends(current_user),
+    ):
         content = await file.read()
         fl = (file.filename or "").lower()
-        try:
-            if fl.endswith(".csv"):
-                try:
-                    df = pd.read_csv(io.BytesIO(content), sep=None, engine="python")
-                except Exception:
-                    df = pd.read_csv(io.BytesIO(content), sep=";", engine="python", encoding="latin-1")
-            elif fl.endswith((".xlsx", ".xls")):
-                df = pd.read_excel(io.BytesIO(content))
-            else:
-                raise HTTPException(status_code=400, detail="Carica un file CSV o Excel.")
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"File non leggibile: {str(e)}")
+        df = _read_tabular_robust(content, fl)
+        if df is None or df.empty:
+            raise HTTPException(400, "File vuoto o non leggibile come tabella")
 
-        cols = {c.lower().strip(): c for c in df.columns}
+        # ===== Mapping colonne: 3-step ladder =====
+        # 1) Override manuale dal frontend (priorità massima)
+        mapping: dict = {}
+        if mapping_json:
+            try:
+                mapping = json.loads(mapping_json)
+            except Exception:
+                mapping = {}
 
-        def find_col(*keys):
+        cols_norm = {c: str(c).lower().strip() for c in df.columns}
+        def find_keyword_col(keys: list[str]) -> Optional[str]:
             for k in keys:
-                for cl, orig in cols.items():
+                for orig, cl in cols_norm.items():
                     if k in cl:
                         return orig
             return None
 
-        col_data = find_col("data")
-        col_desc = find_col("descrizione", "causale", "movimento")
-        col_imp = find_col("importo", "amount", "dare", "avere")
+        # 2) Heuristics
+        col_data = mapping.get("data") or find_keyword_col(["data valuta", "data operazione", "data contabile", "data movimento", "data", "date"])
+        col_imp = mapping.get("importo") or find_keyword_col(["importo", "amount", "valore"])
+        col_dare = mapping.get("dare") or find_keyword_col(["dare", "addebito", "uscita", "debit"])
+        col_avere = mapping.get("avere") or find_keyword_col(["avere", "accredito", "entrata", "credit"])
+        col_desc = mapping.get("descrizione") or find_keyword_col(["descrizione", "causale", "operazione", "dettaglio", "movimento", "narrative"])
 
-        if not col_data or not col_imp:
-            raise HTTPException(status_code=400, detail="Colonne mancanti: serve almeno una colonna 'Data' e una 'Importo'. Trovate: " + ", ".join(df.columns.astype(str)))
-
-        movs = []
-        for _, r in df.iterrows():
-            importo = r.get(col_imp)
-            if pd.isna(importo):
-                continue
+        # 3) AI fallback se mancano data/importo
+        ai_used = False
+        if (not col_data or (not col_imp and not (col_dare or col_avere))) and llm_key:
             try:
-                importo = float(str(importo).replace(",", ".").replace("€", "").strip())
-            except Exception:
-                continue
-            data = str(r.get(col_data, ""))[:10]
-            desc = str(r.get(col_desc, "") or "")[:200]
-            movs.append({
-                "data": data, "descrizione": desc, "importo": importo,
-                "tipo": "entrata" if importo > 0 else "uscita", "match_canone": None,
-            })
+                ai_mapping = await _ai_detect_columns(llm_key, df.head(8).to_csv(index=False))
+                if ai_mapping:
+                    ai_used = True
+                    col_data = col_data or ai_mapping.get("data")
+                    col_imp = col_imp or ai_mapping.get("importo")
+                    col_dare = col_dare or ai_mapping.get("dare")
+                    col_avere = col_avere or ai_mapping.get("avere")
+                    col_desc = col_desc or ai_mapping.get("descrizione")
+            except Exception as ex:
+                logging.warning(f"AI column detection fallita: {ex}")
 
+        missing = []
+        if not col_data:
+            missing.append("data")
+        if not col_imp and not (col_dare and col_avere) and not (col_dare or col_avere):
+            missing.append("importo (o coppia dare/avere)")
+
+        if missing:
+            # NON sollevo eccezione: rispondo con preview parziale + chiedo mapping
+            return {
+                "status": "needs_mapping",
+                "filename": file.filename,
+                "available_columns": [str(c) for c in df.columns],
+                "sample_rows": df.head(5).fillna("").astype(str).values.tolist(),
+                "detected": {"data": col_data, "importo": col_imp, "dare": col_dare, "avere": col_avere, "descrizione": col_desc},
+                "missing": missing,
+                "ai_used": ai_used,
+                "message": f"Non sono riuscito a identificare automaticamente: {', '.join(missing)}. Mappa le colonne manualmente.",
+            }
+
+        # ===== Parsing righe con errori dettagliati =====
+        movs = []
+        errors = []
+        for idx, r in df.iterrows():
+            row_num = int(idx) + 2  # +2 per riga umana (header + 1-based)
+            try:
+                # Importo: 3 vie
+                if col_imp:
+                    val = r.get(col_imp)
+                    if pd.isna(val) or str(val).strip() in ("", "nan"):
+                        continue
+                    importo = _parse_amount(val)
+                else:
+                    dare = _parse_amount(r.get(col_dare)) if col_dare else 0
+                    avere = _parse_amount(r.get(col_avere)) if col_avere else 0
+                    dare = dare or 0
+                    avere = avere or 0
+                    if (dare == 0 and avere == 0):
+                        continue
+                    importo = avere - dare
+                if importo is None:
+                    errors.append({"row": row_num, "error": "importo non riconosciuto"})
+                    continue
+                data_iso = _parse_date(r.get(col_data))
+                if not data_iso:
+                    errors.append({"row": row_num, "error": "data non riconosciuta"})
+                    continue
+                desc = str(r.get(col_desc, "") or "")[:200] if col_desc else ""
+                movs.append({
+                    "data": data_iso, "descrizione": desc, "importo": importo,
+                    "tipo": "entrata" if importo > 0 else "uscita", "match_canone": None,
+                    "_row": row_num,
+                })
+            except Exception as ex:
+                errors.append({"row": row_num, "error": str(ex)[:120]})
+
+        # Match canoni
         properties_user = await db.properties.find({"user_id": user["id"], "canone_mensile": {"$gt": 0}}, {"_id": 0}).to_list(200)
         for m in movs:
             if m["tipo"] != "entrata":
@@ -443,12 +630,28 @@ def make_imports_router(db, current_user, llm_key: str):
                     m["match_canone"] = {"property_id": p["id"], "property_nome": p["nome"], "canone_atteso": canone}
                     break
 
+        # Conteggio duplicati attesi (signature già esistente)
+        existing_sigs = set()
+        if movs:
+            sigs = [_movimento_signature(user["id"], m) for m in movs]
+            existing = await db.movimenti_bancari.find({"user_id": user["id"], "signature": {"$in": sigs}}, {"signature": 1}).to_list(2000)
+            existing_sigs = {e["signature"] for e in existing}
+        for m in movs:
+            m["duplicate"] = _movimento_signature(user["id"], m) in existing_sigs
+
         return {
-            "filename": file.filename, "total": len(movs),
+            "status": "ok",
+            "filename": file.filename,
+            "total": len(movs),
             "entrate": sum(1 for m in movs if m["tipo"] == "entrata"),
             "uscite": sum(1 for m in movs if m["tipo"] == "uscita"),
             "matched": sum(1 for m in movs if m["match_canone"]),
-            "movimenti": movs[:200],
+            "duplicates": sum(1 for m in movs if m["duplicate"]),
+            "errors": errors[:50],
+            "errors_count": len(errors),
+            "mapping_used": {"data": col_data, "importo": col_imp, "dare": col_dare, "avere": col_avere, "descrizione": col_desc},
+            "ai_used": ai_used,
+            "movimenti": movs[:300],
         }
 
     @router.post("/banca/commit")
