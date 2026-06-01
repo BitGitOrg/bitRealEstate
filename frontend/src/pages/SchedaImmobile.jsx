@@ -7,7 +7,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { ScoreGauge } from "../components/ScoreGauge";
 import { getProperty, formatEur, contratti, lavori, documenti, movimenti } from "../lib/demoData";
 import { apiClient } from "../lib/auth";
-import { ArrowLeft, MapPin, FileText, Download, Calendar, Save, User, Home, Loader2, AlertTriangle, Bell, Clock, X } from "lucide-react";
+import { ArrowLeft, MapPin, FileText, Download, Calendar, Save, User, Home, Loader2, AlertTriangle, Bell, Clock, X, LogOut, KeyRound, History, Banknote } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 
 const Row = ({ label, value }) => (
@@ -166,7 +166,11 @@ export default function SchedaImmobile() {
               <Row label="Lavori" value={formatEur(p.lavori)} />
               <Row label="Totale" value={<strong>{formatEur(p.costo_totale)}</strong>} />
             </SectionCard>
-            <SectionCard title="Finanziamento" testId="card-mutuo">
+            <SectionCard title="Finanziamento" testId="card-mutuo" action={
+              <Link to="/mutui" className="inline-flex items-center gap-1 text-xs text-[#2563EB] hover:underline">
+                <Banknote size={12} /> Gestisci mutui
+              </Link>
+            }>
               {p.mutuo ? (
                 <>
                   <Row label="Banca" value={p.mutuo.banca} />
@@ -175,7 +179,9 @@ export default function SchedaImmobile() {
                   <Row label="Tasso" value={`${p.mutuo.tasso}%`} />
                 </>
               ) : (
-                <div className="text-sm text-[#475569] py-4">Nessun finanziamento attivo. Capitale 100% proprio.</div>
+                <div className="text-sm text-[#475569] py-4">
+                  Nessun finanziamento collegato. <Link to="/mutui" className="text-[#2563EB] hover:underline">Aggiungi mutuo</Link> o importa il PDF della banca.
+                </div>
               )}
             </SectionCard>
           </div>
@@ -214,7 +220,7 @@ export default function SchedaImmobile() {
         </TabsContent>
 
         <TabsContent value="locazione" className="mt-4">
-          <LocazioneForm p={p} onSaved={setRemoteP} />
+          <LocazioneSection p={p} onSaved={(updated) => { setRemoteP(updated); refreshAlertsForProperty(); }} />
         </TabsContent>
 
         <TabsContent value="documenti" className="mt-4">
@@ -318,7 +324,7 @@ export default function SchedaImmobile() {
 }
 
 // =============================================================
-// Locazione form — edit tenant + contract details
+// Locazione section — ciclo di vita completo: contratto attivo, disdetta, chiusura, storico, nuovo
 // =============================================================
 const LocField = ({ label, value, onChange, type = "text", placeholder, testId, suffix }) => (
   <label className="block">
@@ -337,7 +343,148 @@ const LocField = ({ label, value, onChange, type = "text", placeholder, testId, 
   </label>
 );
 
-function LocazioneForm({ p, onSaved }) {
+function LocazioneSection({ p, onSaved }) {
+  const hasActive = !!p.inquilino || (p.canone_mensile && p.canone_mensile > 0);
+  const hasDisdetta = !!p.disdetta_ricevuta_il;
+  const [storico, setStorico] = useState([]);
+  const [showDisdetta, setShowDisdetta] = useState(false);
+  const [showChiudi, setShowChiudi] = useState(false);
+
+  const loadStorico = async () => {
+    try {
+      const r = await apiClient().get(`/properties/${p.id}/storico-contratti`);
+      setStorico(r.data || []);
+    } catch {}
+  };
+  useEffect(() => { loadStorico(); }, [p.id]); // eslint-disable-line
+
+  const reload = async () => {
+    try {
+      const r = await apiClient().get(`/properties/${p.id}`);
+      onSaved?.(r.data);
+      loadStorico();
+    } catch {}
+  };
+
+  const annullaDisdetta = async () => {
+    if (!confirm("Annullare la disdetta registrata?")) return;
+    try {
+      await apiClient().post(`/properties/${p.id}/annulla-disdetta`);
+      toast.success("Disdetta annullata");
+      reload();
+    } catch {
+      toast.error("Errore");
+    }
+  };
+
+  // Banner stato contratto
+  let banner = null;
+  if (hasActive) {
+    const today = new Date();
+    const end = p.scadenza_contratto ? new Date(p.scadenza_contratto) : null;
+    const daysLeftScad = end ? Math.round((end - today) / 86400000) : null;
+    if (hasDisdetta) {
+      const dEnd = new Date(p.data_uscita_prevista);
+      const daysLeft = Math.round((dEnd - today) / 86400000);
+      banner = { label: `Disdetta registrata · uscita prevista il ${p.data_uscita_prevista}${daysLeft >= 0 ? ` (tra ${daysLeft}gg)` : ""}`, color: "#B45309", bg: "#FFFBEB" };
+    } else if (daysLeftScad != null && daysLeftScad < 0) {
+      banner = { label: `Contratto SCADUTO da ${-daysLeftScad}gg — chiudilo o registra rinnovo`, color: "#DC2626", bg: "#FEF2F2" };
+    } else if (daysLeftScad != null && daysLeftScad < 90) {
+      banner = { label: `Contratto in scadenza tra ${daysLeftScad} giorni`, color: "#B45309", bg: "#FFFBEB" };
+    } else if (daysLeftScad != null) {
+      banner = { label: `Locazione attiva · scade tra ${daysLeftScad} giorni`, color: "#059669", bg: "#ECFDF5" };
+    } else {
+      banner = { label: "Locazione attiva", color: "#059669", bg: "#ECFDF5" };
+    }
+  } else {
+    banner = { label: "Immobile sfitto · nessuna locazione attiva", color: "#475569", bg: "#F1F5F9" };
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Banner stato + azioni rapide */}
+      <div className="rounded-xl border border-[#E2E8F0] bg-white p-4 flex items-center justify-between gap-4 flex-wrap" data-testid="loc-banner">
+        <div className="flex items-center gap-3">
+          <div className="px-3 py-1.5 rounded-lg text-sm font-semibold" style={{ background: banner.bg, color: banner.color }}>
+            {banner.label}
+          </div>
+          {hasActive && (
+            <div className="text-xs text-[#64748B]">
+              Inquilino: <strong className="text-[#0F172A]">{p.inquilino || "—"}</strong> · Canone <strong className="text-[#0F172A] tabular">{formatEur(p.canone_mensile || 0)}</strong>/mese
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {hasActive && !hasDisdetta && (
+            <button
+              data-testid="loc-disdetta-btn"
+              onClick={() => setShowDisdetta(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#FCD34D] bg-[#FFFBEB] text-[#B45309] hover:bg-[#FEF3C7] text-xs font-medium transition-colors"
+            >
+              <KeyRound size={12} /> Registra disdetta
+            </button>
+          )}
+          {hasDisdetta && (
+            <button
+              data-testid="loc-annulla-disdetta-btn"
+              onClick={annullaDisdetta}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E2E8F0] text-[#475569] hover:bg-[#F8FAFC] text-xs font-medium transition-colors"
+            >
+              <X size={12} /> Annulla disdetta
+            </button>
+          )}
+          {hasActive && (
+            <button
+              data-testid="loc-chiudi-btn"
+              onClick={() => setShowChiudi(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-medium transition-colors"
+            >
+              <LogOut size={12} /> Chiudi contratto
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Form contratto */}
+      <LocazioneForm p={p} onSaved={onSaved} title={hasActive ? "Contratto attivo" : "Nuovo contratto di locazione"} cta={hasActive ? "Salva modifiche" : "Crea contratto"} />
+
+      {/* Storico contratti */}
+      {storico.length > 0 && (
+        <SectionCard
+          title="Storico contratti"
+          subtitle={`${storico.length} contratt${storico.length === 1 ? "o" : "i"} archiviati`}
+          testId="loc-storico"
+          action={<History size={16} className="text-[#64748B]" />}
+        >
+          <div className="space-y-2">
+            {storico.map((s) => (
+              <div key={s.id} className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg p-3 text-sm">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="font-medium text-[#0F172A]">{s.inquilino || "—"}</div>
+                  <div className="text-xs text-[#64748B]">
+                    {s.data_inizio || "?"} → <strong className="text-[#0F172A]">{s.data_uscita_effettiva || "?"}</strong>
+                  </div>
+                </div>
+                <div className="mt-1 grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-1 text-xs">
+                  <span className="text-[#64748B]">Canone: <strong className="text-[#0F172A] tabular">{formatEur(s.canone_mensile || 0)}</strong></span>
+                  <span className="text-[#64748B]">Motivo: <strong className="text-[#0F172A]">{(s.motivo_chiusura || "—").replace(/_/g, " ")}</strong></span>
+                  <span className="text-[#64748B]">Consegna: <strong className="text-[#0F172A]">{s.stato_consegna || "—"}</strong></span>
+                  <span className="text-[#64748B]">Disdetta: <strong className="text-[#0F172A]">{s.parte_disdicente || "—"}</strong></span>
+                </div>
+                {s.note_chiusura && <div className="text-xs text-[#475569] mt-1 italic">«{s.note_chiusura}»</div>}
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      )}
+
+      {showDisdetta && <DisdettaModal p={p} onClose={() => setShowDisdetta(false)} onSaved={() => { setShowDisdetta(false); reload(); }} />}
+      {showChiudi && <ChiudiModal p={p} onClose={() => setShowChiudi(false)} onSaved={() => { setShowChiudi(false); reload(); }} />}
+    </div>
+  );
+}
+
+function LocazioneForm({ p, onSaved, title = "Contratto attivo", cta = "Salva locazione" }) {
   const [form, setForm] = useState({
     inquilino: p.inquilino || "",
     data_inizio_contratto: p.data_inizio_contratto || "",
@@ -350,7 +497,6 @@ function LocazioneForm({ p, onSaved }) {
   });
   const [saving, setSaving] = useState(false);
 
-  // Sync form when property changes
   useEffect(() => {
     setForm({
       inquilino: p.inquilino || "",
@@ -362,14 +508,14 @@ function LocazioneForm({ p, onSaved }) {
       canone_mensile: p.canone_mensile || 0,
       note_locazione: p.note_locazione || "",
     });
-  }, [p.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [p.id]); // eslint-disable-line
 
   const save = async () => {
     setSaving(true);
     try {
       const r = await apiClient().patch(`/properties/${p.id}/locazione`, form);
       onSaved?.(r.data);
-      toast.success("Dati locazione aggiornati");
+      toast.success("Dati locazione salvati");
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Errore salvataggio");
     } finally {
@@ -377,27 +523,12 @@ function LocazioneForm({ p, onSaved }) {
     }
   };
 
-  // Derived: status badge for contract
-  let contractStatus = null;
-  if (form.scadenza_contratto) {
-    const today = new Date();
-    const end = new Date(form.scadenza_contratto);
-    const daysLeft = Math.round((end - today) / 86400000);
-    if (daysLeft < 0) contractStatus = { label: "Contratto SCADUTO", color: "#DC2626", bg: "#FEF2F2" };
-    else if (daysLeft < 90) contractStatus = { label: `Scade tra ${daysLeft} giorni`, color: "#B45309", bg: "#FFFBEB" };
-    else contractStatus = { label: `In corso · scade tra ${daysLeft} giorni`, color: "#059669", bg: "#ECFDF5" };
-  } else if (form.inquilino) {
-    contractStatus = { label: "Locato (scadenza non indicata)", color: "#475569", bg: "#F1F5F9" };
-  } else {
-    contractStatus = { label: "Nessuna locazione attiva", color: "#94A3B8", bg: "#F8FAFC" };
-  }
-
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div className="md:col-span-2">
         <SectionCard
-          title="Locazione in corso"
-          subtitle="Inquilino, contratto, canone e deposito — i dati confluiscono in Affitti, Investor Book e KPI"
+          title={title}
+          subtitle="Inquilino, contratto, canone — confluiscono in Affitti, Cash Flow e Investor Book"
           testId="card-locazione-form"
           action={<User size={16} className="text-[#0066FF]" />}
         >
@@ -441,7 +572,7 @@ function LocazioneForm({ p, onSaved }) {
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#059669] hover:bg-[#047857] text-white text-sm font-medium disabled:opacity-50 transition"
               >
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                {saving ? "Salvataggio…" : "Salva locazione"}
+                {saving ? "Salvataggio…" : cta}
               </button>
             </div>
           </div>
@@ -449,36 +580,164 @@ function LocazioneForm({ p, onSaved }) {
       </div>
 
       <div className="space-y-4">
-        <SectionCard title="Stato contratto" testId="card-locazione-status" action={<Home size={16} className="text-[#2563EB]" />}>
-          <div
-            className="rounded-lg px-3 py-2.5 text-sm font-semibold mb-3"
-            style={{ background: contractStatus.bg, color: contractStatus.color }}
-            data-testid="loc-status"
-          >
-            {contractStatus.label}
-          </div>
+        <SectionCard title="Riepilogo economico" testId="card-locazione-status" action={<Home size={16} className="text-[#2563EB]" />}>
           <div className="space-y-1 text-xs">
             <div className="flex justify-between py-1 border-b border-[#F1F5F9]">
               <span className="text-[#64748B]">Canone annuo</span>
-              <span className="font-semibold text-[#0F172A]">{formatEur((form.canone_mensile || 0) * 12)}</span>
+              <span className="font-semibold text-[#0F172A] tabular">{formatEur((form.canone_mensile || 0) * 12)}</span>
             </div>
             <div className="flex justify-between py-1 border-b border-[#F1F5F9]">
               <span className="text-[#64748B]">Rendimento lordo</span>
-              <span className="font-semibold text-[#059669]">{p.rendimento_lordo > 0 ? `${p.rendimento_lordo}%` : "—"}</span>
+              <span className="font-semibold text-[#059669] tabular">{p.rendimento_lordo > 0 ? `${p.rendimento_lordo}%` : "—"}</span>
             </div>
             <div className="flex justify-between py-1">
               <span className="text-[#64748B]">Rendimento netto</span>
-              <span className="font-semibold text-[#059669]">{p.rendimento_netto > 0 ? `${p.rendimento_netto}%` : "—"}</span>
+              <span className="font-semibold text-[#059669] tabular">{p.rendimento_netto > 0 ? `${p.rendimento_netto}%` : "—"}</span>
             </div>
           </div>
         </SectionCard>
-
-        <SectionCard title="Suggerimenti" testId="card-locazione-tips">
+        <SectionCard title="Tips" testId="card-locazione-tips">
           <ul className="text-xs text-[#475569] space-y-2 leading-relaxed">
             <li className="flex gap-2"><Calendar size={12} className="text-[#0066FF] shrink-0 mt-0.5" /><span>Imposta la scadenza per ricevere alert nei 90 giorni precedenti.</span></li>
-            <li className="flex gap-2"><FileText size={12} className="text-[#0066FF] shrink-0 mt-0.5" /><span>I dati salvati appaiono automaticamente nell'<strong>Investor Book</strong>.</span></li>
+            <li className="flex gap-2"><KeyRound size={12} className="text-[#B45309] shrink-0 mt-0.5" /><span>Quando ricevi una disdetta usa il bottone <strong>Registra disdetta</strong>: lo stato passerà automaticamente a sfitto alla data uscita.</span></li>
+            <li className="flex gap-2"><History size={12} className="text-[#64748B] shrink-0 mt-0.5" /><span>Lo <strong>storico contratti</strong> mantiene la cronologia inquilini per audit e calcoli di tasso occupazione.</span></li>
           </ul>
         </SectionCard>
+      </div>
+    </div>
+  );
+}
+
+function DisdettaModal({ p, onClose, onSaved }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const defaultExit = p.scadenza_contratto || new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
+  const [form, setForm] = useState({
+    data_ricezione: today,
+    data_uscita_prevista: defaultExit,
+    parte_disdicente: "conduttore",
+    motivo: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const submit = async () => {
+    setSaving(true);
+    try {
+      await apiClient().post(`/properties/${p.id}/disdetta`, form);
+      toast.success("Disdetta registrata — alert creato");
+      onSaved();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Errore");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()} data-testid="loc-disdetta-modal">
+        <div className="px-5 py-4 border-b border-[#E2E8F0] flex items-center gap-2">
+          <KeyRound size={16} className="text-[#B45309]" />
+          <div>
+            <div className="text-sm font-semibold text-[#0F172A]">Registra disdetta</div>
+            <div className="text-xs text-[#64748B]">{p.nome} · inquilino {p.inquilino || "—"}</div>
+          </div>
+        </div>
+        <div className="p-5 space-y-3">
+          <LocField label="Data ricezione disdetta" type="date" value={form.data_ricezione} onChange={(v) => setForm({ ...form, data_ricezione: v })} testId="disdetta-data-ricezione" />
+          <LocField label="Data uscita prevista" type="date" value={form.data_uscita_prevista} onChange={(v) => setForm({ ...form, data_uscita_prevista: v })} testId="disdetta-data-uscita" />
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-[#475569] font-medium">Chi disdice</span>
+            <select value={form.parte_disdicente} onChange={(e) => setForm({ ...form, parte_disdicente: e.target.value })} className="mt-1 w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#0066FF]">
+              <option value="conduttore">Conduttore (inquilino)</option>
+              <option value="locatore">Locatore (proprietà)</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-[#475569] font-medium">Motivo (opzionale)</span>
+            <textarea rows={2} value={form.motivo} onChange={(e) => setForm({ ...form, motivo: e.target.value })} placeholder="Es. trasferimento per lavoro, vendita immobile…" className="mt-1 w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#0066FF] resize-none" />
+          </label>
+          <div className="bg-[#FFFBEB] border border-[#FCD34D]/40 rounded-lg p-3 text-xs text-[#92400E]">
+            Alla <strong>data uscita prevista</strong> il sistema chiuderà automaticamente il contratto e l'immobile passerà a <strong>sfitto</strong>. Riceverai un alert finché la disdetta è attiva.
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-[#E2E8F0] flex justify-end gap-2">
+          <button onClick={onClose} className="px-3 py-1.5 rounded-lg border border-[#E2E8F0] hover:bg-[#F8FAFC] text-sm text-[#475569]">Annulla</button>
+          <button onClick={submit} disabled={saving} data-testid="disdetta-submit" className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[#B45309] hover:bg-[#92400E] disabled:opacity-50 text-white text-sm font-semibold">
+            {saving ? <Loader2 size={12} className="animate-spin" /> : <KeyRound size={12} />}
+            Registra disdetta
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChiudiModal({ p, onClose, onSaved }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [form, setForm] = useState({
+    data_uscita_effettiva: p.data_uscita_prevista || today,
+    motivo_chiusura: p.disdetta_ricevuta_il ? "disdetta_conduttore" : "fine_naturale",
+    stato_consegna: "ok",
+    note: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const submit = async () => {
+    if (!confirm("Confermi la chiusura del contratto? L'immobile passerà a sfitto e i dati saranno archiviati nello storico.")) return;
+    setSaving(true);
+    try {
+      await apiClient().post(`/properties/${p.id}/chiudi-contratto`, form);
+      toast.success("Contratto chiuso · immobile ora sfitto");
+      onSaved();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Errore");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()} data-testid="loc-chiudi-modal">
+        <div className="px-5 py-4 border-b border-[#E2E8F0] flex items-center gap-2">
+          <LogOut size={16} className="text-[#DC2626]" />
+          <div>
+            <div className="text-sm font-semibold text-[#0F172A]">Chiudi contratto</div>
+            <div className="text-xs text-[#64748B]">{p.nome} · inquilino {p.inquilino || "—"}</div>
+          </div>
+        </div>
+        <div className="p-5 space-y-3">
+          <LocField label="Data uscita effettiva" type="date" value={form.data_uscita_effettiva} onChange={(v) => setForm({ ...form, data_uscita_effettiva: v })} testId="chiudi-data-uscita" />
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-[#475569] font-medium">Motivo chiusura</span>
+            <select value={form.motivo_chiusura} onChange={(e) => setForm({ ...form, motivo_chiusura: e.target.value })} data-testid="chiudi-motivo" className="mt-1 w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#0066FF]">
+              <option value="fine_naturale">Fine naturale del contratto</option>
+              <option value="disdetta_conduttore">Disdetta conduttore</option>
+              <option value="disdetta_locatore">Disdetta locatore</option>
+              <option value="morosita">Morosità (sfratto)</option>
+              <option value="vendita">Vendita immobile</option>
+              <option value="altro">Altro</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-[#475569] font-medium">Stato consegna</span>
+            <select value={form.stato_consegna} onChange={(e) => setForm({ ...form, stato_consegna: e.target.value })} className="mt-1 w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#0066FF]">
+              <option value="ok">OK – nessun danno</option>
+              <option value="con_riserve">Con riserve / trattenuta deposito</option>
+              <option value="da_ripristinare">Da ripristinare (lavori necessari)</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-[#475569] font-medium">Note (opzionale)</span>
+            <textarea rows={2} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Es. trattenuti 300€ da deposito per imbiancatura" className="mt-1 w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-3 py-2 text-sm outline-none focus:border-[#0066FF] resize-none" />
+          </label>
+          <div className="bg-[#FEF2F2] border border-[#FECACA] rounded-lg p-3 text-xs text-[#991B1B]">
+            <strong>Attenzione:</strong> i campi locazione dell'immobile verranno svuotati e snapshottati nello storico. Lo stato dell'immobile passerà a <strong>sfitto</strong>. Gli incassi previsti futuri non pagati saranno archiviati.
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t border-[#E2E8F0] flex justify-end gap-2">
+          <button onClick={onClose} className="px-3 py-1.5 rounded-lg border border-[#E2E8F0] hover:bg-[#F8FAFC] text-sm text-[#475569]">Annulla</button>
+          <button onClick={submit} disabled={saving} data-testid="chiudi-submit" className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[#DC2626] hover:bg-[#B91C1C] disabled:opacity-50 text-white text-sm font-semibold">
+            {saving ? <Loader2 size={12} className="animate-spin" /> : <LogOut size={12} />}
+            Chiudi contratto
+          </button>
+        </div>
       </div>
     </div>
   );

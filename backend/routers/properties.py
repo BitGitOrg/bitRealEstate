@@ -116,6 +116,12 @@ def make_properties_router(db, current_user):
 
     @router.get("/properties")
     async def list_properties(user: dict = Depends(current_user)):
+        # Auto-chiude contratti con data_uscita_prevista scaduta
+        try:
+            from routers.contracts import _autocheck_disdette
+            await _autocheck_disdette(db, user["id"])
+        except Exception:
+            pass
         items = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
         alerts = await db.alerts.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
         incassi = await db.incassi.find({"user_id": user["id"]}, {"_id": 0}).to_list(2000)

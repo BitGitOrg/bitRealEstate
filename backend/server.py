@@ -32,6 +32,8 @@ from routers.documents import make_documents_router
 from routers.alerts import make_alerts_router
 from routers.incassi import make_incassi_router
 from routers.finance import make_finance_router
+from routers.mutui import make_mutui_router
+from routers.contracts import make_contracts_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -621,6 +623,8 @@ app.include_router(make_documents_router(db, current_user, EMERGENT_LLM_KEY))
 app.include_router(make_alerts_router(db, current_user))
 app.include_router(make_incassi_router(db, current_user))
 app.include_router(make_finance_router(db, current_user))
+app.include_router(make_mutui_router(db, current_user, EMERGENT_LLM_KEY))
+app.include_router(make_contracts_router(db, current_user))
 
 app.add_middleware(
     CORSMiddleware,

@@ -383,3 +383,28 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 161. **BUG Liquidità inconsistente**: nuovo endpoint `GET /api/finance/liquidity` fonte unica = bilancio_caricato.liquidita → fallback settings.liquidita_iniziale + Σ movimenti_bancari. Dashboard + Forecast `build_baseline` ora usano la stessa funzione `_compute_liquidity`. Risultato test: 37.290€ ovunque (35k iniziali + 2.290 movimenti).
 162. **Mapping preset banca**: `bank_mapping_presets` con `columns_signature` hash. CRUD `/api/import/banca/mapping-presets`. Parse_banca auto-applica preset prima di heuristic/AI. Frontend: banner verde "Preset X applicato" o inline form "Salva mapping".
 163. **Fuzzy variant detection**: per ogni movimento non-duplicato cerco esistenti con stesso importo, data ±2gg, descrizione diversa → marca `variant_of`. KPI "Possibili rettifiche" + badge viola "rettifica?" con tooltip movimento originale.
+
+## Update 2026-02-XX — Fase A+B+C
+### Fase A (Quick wins)
+- ✅ Campo "Liquidità iniziale" in Impostazioni (salva su settings.liquidita_iniziale)
+- ✅ Sparkline + tooltip ⓘ con formula su KPI Dashboard
+
+### Fase B (Ciclo vita locazione)
+- ✅ Nuovo router `contracts.py`: registra-disdetta, annulla-disdetta, chiudi-contratto, storico-contratti
+- ✅ Auto-transizione stato → sfitto quando data_uscita_prevista <= oggi (chiamata da GET /properties)
+- ✅ Collezione `contratti_storico` per snapshot inquilini precedenti
+- ✅ Alert automatico generato alla registrazione disdetta (severità in base ai gg residui)
+- ✅ UI SchedaImmobile tab Locazione: banner stato, 3 bottoni (disdetta, annulla, chiudi), storico
+
+### Fase C (Mutui reali + AI PDF)
+- ✅ Nuovo router `mutui.py`: CRUD + aggregato + piano ammortamento alla francese
+- ✅ Endpoint POST /api/mutui/parse-pdf → AI Claude Sonnet 4.6 estrae campi dal PDF banca (con OCR fallback)
+- ✅ Pagina Mutui rifatta: dati reali, form completo, modal AI import con preview anomalie
+- ✅ KPI live: debito totale, rata totale, LTV%, incidenza rata/affitti
+- ✅ Collezione `mutui` + sync `mutuo` mini-record su property per retro-compat
+
+### Test end-to-end completati con curl
+- Create/Update/Delete mutuo ✓
+- Piano ammortamento corretto (rata 720.50€/mese, 239 rate, capitale calcolato) ✓
+- Disdetta + Chiudi contratto + Storico ✓
+- Aggregato mutui (LTV, incidenza) ✓

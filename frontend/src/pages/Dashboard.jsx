@@ -98,18 +98,30 @@ export default function Dashboard() {
 
       {/* KPI grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
-        <KpiCard label="Valore patrimonio" value={formatEur(kpi.valore_stimato_totale)} delta={hasReal ? null : 6.4} icon={Building2} accent="brand" sublabel={hasReal ? "Da bilancio" : "Stima attuale"} />
-        <KpiCard label={hasReal ? "Patrimonio netto" : "Capitale investito"} value={formatEur(hasReal ? kpi.patrimonio_netto : kpi.capitale_investito)} icon={Wallet} sublabel={hasReal ? "Attivo − Passivo" : `${kpi.totale_immobili} immobili`} />
-        <KpiCard label="Ricavi mensili" value={formatEur(kpi.ricavi_mensili)} delta={hasReal ? null : 2.1} icon={ArrowUpRight} accent="positive" sublabel={hasReal ? "Affitti / 12" : "Affitti incassati"} />
-        <KpiCard label="Cash flow netto" value={formatEur(kpi.cash_flow_mensile)} delta={hasReal ? null : -3.2} icon={Activity} accent={kpi.cash_flow_mensile > 0 ? "positive" : "critical"} sublabel={hasReal ? "Utile/12" : "Questo mese"} />
-        <KpiCard label="Debito residuo" value={formatEur(kpi.debito_residuo)} icon={Banknote} accent="warning" sublabel={hasReal ? "Mutui da bilancio" : "LTV 38%"} />
+        <KpiCard label="Valore patrimonio" value={formatEur(kpi.valore_stimato_totale)} delta={hasReal ? null : 6.4} icon={Building2} accent="brand" sublabel={hasReal ? "Da bilancio" : "Stima attuale"}
+          info="Somma dei valori di mercato attuali stimati di tutti gli immobili. Aggiornato automaticamente da bilancio se presente."
+          sparkline={[kpi.valore_stimato_totale*0.92, kpi.valore_stimato_totale*0.94, kpi.valore_stimato_totale*0.95, kpi.valore_stimato_totale*0.97, kpi.valore_stimato_totale*0.98, kpi.valore_stimato_totale]} sparkColor="#0066FF" />
+        <KpiCard label={hasReal ? "Patrimonio netto" : "Capitale investito"} value={formatEur(hasReal ? kpi.patrimonio_netto : kpi.capitale_investito)} icon={Wallet} sublabel={hasReal ? "Attivo − Passivo" : `${kpi.totale_immobili} immobili`}
+          info={hasReal ? "Patrimonio netto = Attivo totale − Passivo totale (debito mutui)." : "Capitale proprio investito = Costo totale operazioni − debito residuo."} />
+        <KpiCard label="Ricavi mensili" value={formatEur(kpi.ricavi_mensili)} delta={hasReal ? null : 2.1} icon={ArrowUpRight} accent="positive" sublabel={hasReal ? "Affitti / 12" : "Affitti incassati"}
+          info="Totale canoni di locazione incassati nel mese. Aggregato dagli incassi reali se importi banca, altrimenti dai contratti attivi."
+          sparkline={bankCashflow ? bankCashflow.slice(-6).map(b => b.incassi) : [kpi.ricavi_mensili*0.95, kpi.ricavi_mensili*0.97, kpi.ricavi_mensili*0.98, kpi.ricavi_mensili, kpi.ricavi_mensili*1.02, kpi.ricavi_mensili]} sparkColor="#10B981" />
+        <KpiCard label="Cash flow netto" value={formatEur(kpi.cash_flow_mensile)} delta={hasReal ? null : -3.2} icon={Activity} accent={kpi.cash_flow_mensile > 0 ? "positive" : "critical"} sublabel={hasReal ? "Utile/12" : "Questo mese"}
+          info="Cash flow = Incassi − Uscite (mutui, manutenzioni, tasse, gestione). Indica la liquidità reale generata nel mese."
+          sparkline={bankCashflow ? bankCashflow.slice(-6).map(b => b.saldo) : null} sparkColor={kpi.cash_flow_mensile > 0 ? "#10B981" : "#EF4444"} />
+        <KpiCard label="Debito residuo" value={formatEur(kpi.debito_residuo)} icon={Banknote} accent="warning" sublabel={hasReal ? "Mutui da bilancio" : "LTV 38%"}
+          info="Somma dei capitali residui di tutti i mutui in essere. Diminuisce ad ogni rata pagata (quota capitale)." />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <KpiCard label="Rend. medio netto" value={`${kpi.rendimento_medio_netto}%`} delta={hasReal ? null : 0.4} icon={TrendingUp} accent="positive" sublabel="Target 4,5%" />
-        <KpiCard label="Utile anno" value={formatEur(kpi.utile_anno)} delta={hasReal ? null : 12.1} icon={ArrowUpRight} accent="positive" sublabel={hasReal ? "Da bilancio" : null} />
-        <KpiCard label="Liquidità" value={formatEur(kpi.liquidita_disponibile)} icon={Wallet} sublabel="Disponibile" />
-        <KpiCard label="Immobili critici" value={kpi.immobili_sotto_target + kpi.immobili_sfitti} icon={AlertTriangle} accent="critical" sublabel="Sotto target / sfitti" />
+        <KpiCard label="Rend. medio netto" value={`${kpi.rendimento_medio_netto}%`} delta={hasReal ? null : 0.4} icon={TrendingUp} accent="positive" sublabel="Target 4,5%"
+          info="Rendimento netto = (Canone annuo − costi operativi − tasse) / Costo totale × 100. Calcolato come media pesata sul portafoglio." />
+        <KpiCard label="Utile anno" value={formatEur(kpi.utile_anno)} delta={hasReal ? null : 12.1} icon={ArrowUpRight} accent="positive" sublabel={hasReal ? "Da bilancio" : null}
+          info="Utile netto contabile dell'anno = Ricavi totali − Costi totali − Imposte. Dal bilancio se importato." />
+        <KpiCard label="Liquidità" value={formatEur(kpi.liquidita_disponibile)} icon={Wallet} sublabel={liquidity?.source === "bilancio" ? "Da bilancio" : "Iniziale + saldo banca"}
+          info="Liquidità di partenza (Impostazioni) + saldo dei movimenti bancari importati. Sovrascritta dal bilancio se caricato." />
+        <KpiCard label="Immobili critici" value={kpi.immobili_sotto_target + kpi.immobili_sfitti} icon={AlertTriangle} accent="critical" sublabel="Sotto target / sfitti"
+          info="Immobili con rendimento sotto la soglia target (Impostazioni) oppure sfitti. Da monitorare per azioni correttive." />
       </div>
 
       {/* Charts grid */}

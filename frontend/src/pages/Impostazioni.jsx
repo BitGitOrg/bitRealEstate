@@ -41,6 +41,7 @@ export default function Impostazioni() {
   const [limiteIndebitamento, setLimiteIndebitamento] = useState(60);
   const [logoBase64, setLogoBase64] = useState(null);
   const [logoMime, setLogoMime] = useState(null);
+  const [liquiditaIniziale, setLiquiditaIniziale] = useState(35000);
 
   const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem("crr_token")}` });
 
@@ -62,6 +63,7 @@ export default function Impostazioni() {
           setLimiteIndebitamento(s.limite_indebitamento ?? 60);
           setLogoBase64(s.logo_base64 || null);
           setLogoMime(s.logo_mime || null);
+          setLiquiditaIniziale(s.liquidita_iniziale ?? 35000);
         }
       } catch {
         toast.error("Impossibile caricare le impostazioni");
@@ -84,6 +86,7 @@ export default function Impostazioni() {
         strategia,
         capitale_disponibile: parseFloat(capitale) || 0,
         limite_indebitamento: parseFloat(limiteIndebitamento) || 0,
+        liquidita_iniziale: parseFloat(liquiditaIniziale) || 0,
       };
       const r = await fetch(`${API_BASE}/settings`, {
         method: "PUT",
@@ -188,6 +191,12 @@ export default function Impostazioni() {
             </div>
             <Field label="Capitale disponibile" value={capitale} onChange={(v) => setCapitale(parseFloat(v) || 0)} type="number" suffix="€" />
             <Field label="Limite indebitamento (LTV)" value={limiteIndebitamento} onChange={(v) => setLimiteIndebitamento(parseFloat(v) || 0)} type="number" suffix="%" />
+            <div className="pt-2 border-t border-[#E2E8F0]">
+              <Field label="Liquidità di partenza (cash a inizio anno)" value={liquiditaIniziale} onChange={(v) => setLiquiditaIniziale(parseFloat(v) || 0)} type="number" suffix="€" />
+              <div className="mt-1 text-[10px] text-[#64748B] leading-relaxed">
+                Cassa di partenza prima dei movimenti bancari importati. La <strong>liquidità in Dashboard</strong> è calcolata come: liquidità iniziale + saldo movimenti banca (o sovrascritta dal bilancio se importato).
+              </div>
+            </div>
           </div>
         </SectionCard>
       </div>
