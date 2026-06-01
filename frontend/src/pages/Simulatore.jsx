@@ -3,11 +3,11 @@ import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import { ScoreGauge } from "../components/ScoreGauge";
 import { formatEur } from "../lib/demoData";
-import { Calculator, Sparkles, Loader2 } from "lucide-react";
+import { Sparkles, Loader2, Info, ChevronDown, ChevronUp } from "lucide-react";
 import { apiClient } from "../lib/auth";
 import { toast } from "sonner";
 
-const Field = ({ label, value, onChange, suffix, type = "number", testId }) => (
+const Field = ({ label, value, onChange, suffix, type = "number", testId, hint }) => (
   <label className="block">
     <span className="text-[10px] uppercase tracking-wider text-[#475569] font-medium">{label}</span>
     <div className="mt-1.5 flex items-center bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg overflow-hidden focus-within:border-[#0066FF] transition-colors">
@@ -19,6 +19,7 @@ const Field = ({ label, value, onChange, suffix, type = "number", testId }) => (
       />
       {suffix && <span className="px-3 text-xs text-[#64748B]">{suffix}</span>}
     </div>
+    {hint && <div className="mt-1 text-[10px] text-[#94A3B8] leading-snug">{hint}</div>}
   </label>
 );
 
@@ -31,33 +32,59 @@ export default function Simulatore() {
   const [mutuoPct, setMutuoPct] = useState(0.6);
   const [tassoMutuo, setTassoMutuo] = useState(3.2);
   const [durata, setDurata] = useState(20);
+  // Costi gestione separati e configurabili (default realistici italiani)
+  const [imuAnnua, setImuAnnua] = useState(450);          // €/anno
+  const [assicurazione, setAssicurazione] = useState(180); // €/anno
+  const [manutenzionePct, setManutenzionePct] = useState(3); // % del canone (riserva)
+  const [sfittanzaPct, setSfittanzaPct] = useState(4);    // % del canone (rischio sfitto)
+  const [cedolare, setCedolare] = useState(true);          // true=21%, false=IRPEF stima 30%
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState(null);
 
   const calc = useMemo(() => {
     const costoTotale = prezzo + notaio + agenzia + lavori;
     const canoneAnnuo = canone * 12;
-    const rendLordo = costoTotale > 0 ? (canoneAnnuo / costoTotale) * 100 : 0;
-    const rendNetto = rendLordo * 0.65; // approssimazione
+    // Tasse sull'affitto
+    const aliquotaTasse = cedolare ? 0.21 : 0.30;
+    const tasseMensili = (canone * aliquotaTasse);
+    // Spese gestione esplicite
+    const imuMensile = imuAnnua / 12;
+    const assicMensile = assicurazione / 12;
+    const manutMensile = canone * (manutenzionePct / 100);
+    const sfittMensile = canone * (sfittanzaPct / 100);
+    const totSpeseMensili = imuMensile + assicMensile + manutMensile + sfittMensile;
+    // Mutuo
     const mutuoImporto = prezzo * mutuoPct;
     const capitaleProprio = costoTotale - mutuoImporto;
-    // Rata stimata (Francese)
     const i = tassoMutuo / 100 / 12;
     const n = durata * 12;
     const rata = mutuoImporto > 0 ? (mutuoImporto * i) / (1 - Math.pow(1 + i, -n)) : 0;
-    const speseGestione = canone * 0.15;
-    const cashFlow = canone - rata - speseGestione;
+    // Cash flow netto = canone - rata - spese - tasse
+    const cashFlow = canone - rata - totSpeseMensili - tasseMensili;
+    // Rendimenti
+    const rendLordo = costoTotale > 0 ? (canoneAnnuo / costoTotale) * 100 : 0;
+    const ricaviNettiAnnui = (canone - totSpeseMensili - tasseMensili) * 12;
+    const rendNetto = costoTotale > 0 ? (ricaviNettiAnnui / costoTotale) * 100 : 0;
     const roi = capitaleProprio > 0 ? (cashFlow * 12) / capitaleProprio * 100 : 0;
     const breakEven = capitaleProprio > 0 && cashFlow > 0 ? capitaleProprio / (cashFlow * 12) : null;
 
-    let score = 50;
-    score += Math.min(30, Math.max(-30, (rendNetto - 5) * 6));
+    // Score più equilibrato
+    let score = 55;
+    score += Math.min(35, Math.max(-35, (rendNetto - 4) * 7));
+    if (cashFlow < 0) score -= 15;
     if (lavori / Math.max(prezzo, 1) > 0.5) score -= 10;
-    if (mutuoPct > 0.8) score -= 8;
+    if (mutuoPct > 0.85) score -= 8;
+    if (rendLordo > 8) score += 5; // bonus deal di valore
     score = Math.max(0, Math.min(100, Math.round(score)));
 
-    return { costoTotale, canoneAnnuo, rendLordo, rendNetto, mutuoImporto, capitaleProprio, rata, cashFlow, roi, breakEven, score };
-  }, [prezzo, notaio, agenzia, lavori, canone, mutuoPct, tassoMutuo, durata]);
+    return {
+      costoTotale, canoneAnnuo, rendLordo, rendNetto,
+      mutuoImporto, capitaleProprio, rata, cashFlow, roi, breakEven, score,
+      imuMensile, assicMensile, manutMensile, sfittMensile, totSpeseMensili,
+      tasseMensili, aliquotaTasse,
+    };
+  }, [prezzo, notaio, agenzia, lavori, canone, mutuoPct, tassoMutuo, durata, imuAnnua, assicurazione, manutenzionePct, sfittanzaPct, cedolare]);
 
   const runAi = async () => {
     setAiLoading(true);
@@ -72,13 +99,13 @@ export default function Simulatore() {
       });
       setAiResult(data);
       toast.success("Analisi AI completata");
-    } catch (e) {
+    } catch {
       toast.error("Errore analisi AI");
     } finally { setAiLoading(false); }
   };
 
   return (
-    <Layout title="Simulatore Investimenti" subtitle="Valuta una nuova operazione di acquisto immobiliare">
+    <Layout title="Simulatore Investimenti" subtitle="Valuta una nuova operazione — tutti i parametri sono modificabili">
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <SectionCard testId="sim-input" title="Parametri operazione" subtitle="Inserisci i dati dell'immobile candidato" className="xl:col-span-1">
           <div className="space-y-3">
@@ -94,6 +121,36 @@ export default function Simulatore() {
               <Field testId="sim-tasso" label="Tasso" value={tassoMutuo} onChange={setTassoMutuo} suffix="%" />
             </div>
             <Field testId="sim-durata" label="Durata" value={durata} onChange={setDurata} suffix="anni" />
+
+            {/* Costi gestione e fiscalità — collassabile */}
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              data-testid="sim-toggle-advanced"
+              className="w-full flex items-center justify-between mt-2 pt-2 border-t border-[#E2E8F0] text-xs text-[#475569] hover:text-[#0F172A]"
+            >
+              <span className="font-medium">Costi gestione & fiscalità</span>
+              {showAdvanced ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}
+            </button>
+            {showAdvanced && (
+              <div className="space-y-3 pt-1">
+                <div className="grid grid-cols-2 gap-3">
+                  <Field testId="sim-imu" label="IMU annua" value={imuAnnua} onChange={setImuAnnua} suffix="€" hint="Stima per immobile a reddito" />
+                  <Field testId="sim-assic" label="Assicurazione annua" value={assicurazione} onChange={setAssicurazione} suffix="€" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field testId="sim-manut" label="Riserva manutenzione" value={manutenzionePct} onChange={setManutenzionePct} suffix="%" hint="% del canone accantonato" />
+                  <Field testId="sim-sfitt" label="Rischio sfittanza" value={sfittanzaPct} onChange={setSfittanzaPct} suffix="%" hint="% per mesi sfitto/morosità" />
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase tracking-wider text-[#475569] font-medium">Regime fiscale</span>
+                  <div className="mt-1.5 grid grid-cols-2 gap-2">
+                    <button data-testid="sim-tax-ced" onClick={() => setCedolare(true)} className={`px-2 py-2 rounded-lg text-xs border transition-colors ${cedolare ? "border-[#0066FF] bg-[rgba(0,102,255,0.1)] text-[#2563EB] font-medium" : "border-[#E2E8F0] text-[#475569]"}`}>Cedolare 21%</button>
+                    <button data-testid="sim-tax-irpef" onClick={() => setCedolare(false)} className={`px-2 py-2 rounded-lg text-xs border transition-colors ${!cedolare ? "border-[#0066FF] bg-[rgba(0,102,255,0.1)] text-[#2563EB] font-medium" : "border-[#E2E8F0] text-[#475569]"}`}>IRPEF ~30%</button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <button
               data-testid="sim-ai-btn"
@@ -131,7 +188,7 @@ export default function Simulatore() {
                 </div>
                 <div>
                   <div className="text-[10px] uppercase text-[#64748B]">Cash flow / mese</div>
-                  <div className={`font-display text-xl font-bold tabular ${calc.cashFlow >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{formatEur(Math.round(calc.cashFlow))}</div>
+                  <div data-testid="sim-cashflow" className={`font-display text-xl font-bold tabular ${calc.cashFlow >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{formatEur(Math.round(calc.cashFlow))}</div>
                 </div>
                 <div>
                   <div className="text-[10px] uppercase text-[#64748B]">ROI (cash on cash)</div>
@@ -158,6 +215,30 @@ export default function Simulatore() {
             </SectionCard>
           </div>
 
+          {/* Breakdown trasparente del Cash Flow */}
+          <SectionCard testId="sim-cashflow-breakdown" title="Da dove esce il Cash Flow mensile" subtitle="Trasparenza totale: ogni euro è tracciato">
+            <div className="space-y-1 text-sm">
+              <BreakRow label="Canone mensile" value={canone} positive />
+              <BreakRow label={`− Rata mutuo (${durata}a @ ${tassoMutuo}%)`} value={-Math.round(calc.rata)} />
+              <BreakRow label={`− IMU mensilizzata (${formatEur(imuAnnua)}/anno)`} value={-Math.round(calc.imuMensile)} muted />
+              <BreakRow label={`− Assicurazione mensilizzata (${formatEur(assicurazione)}/anno)`} value={-Math.round(calc.assicMensile)} muted />
+              <BreakRow label={`− Riserva manutenzione (${manutenzionePct}% canone)`} value={-Math.round(calc.manutMensile)} muted />
+              <BreakRow label={`− Riserva sfittanza (${sfittanzaPct}% canone)`} value={-Math.round(calc.sfittMensile)} muted />
+              <BreakRow label={`− Tasse su affitto (${cedolare ? "Cedolare 21%" : "IRPEF ~30%"})`} value={-Math.round(calc.tasseMensili)} />
+              <div className="flex justify-between items-center pt-2 mt-1 border-t-2 border-[#0F172A] font-bold">
+                <span className="text-sm text-[#0F172A]">= Cash flow netto / mese</span>
+                <span className={`font-display text-lg tabular ${calc.cashFlow >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{formatEur(Math.round(calc.cashFlow))}</span>
+              </div>
+            </div>
+            <div className="mt-3 p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-[11px] text-[#475569] flex items-start gap-2 leading-relaxed">
+              <Info size={13} className="text-[#0066FF] shrink-0 mt-0.5" />
+              <span>
+                Tutti i parametri di gestione (IMU, assicurazione, riserve, regime fiscale) sono modificabili dal pannello a sinistra «Costi gestione & fiscalità». Imposta valori reali del tuo immobile per una stima accurata.
+                <strong className="text-[#0F172A]"> Se non vuoi conteggiare le spese</strong> mettile a 0 e vedrai il canone "lordo".
+              </span>
+            </div>
+          </SectionCard>
+
           {aiResult && (
             <SectionCard testId="sim-ai-result" title="AI Deal Analyzer" subtitle="Valutazione dettagliata con scenari">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -166,6 +247,7 @@ export default function Simulatore() {
                   <div><span className="text-[#475569]">Strategia:</span> <strong>{aiResult.strategia_consigliata}</strong></div>
                   <div><span className="text-[#475569]">Rischio:</span> <strong className={aiResult.rischio === "Basso" ? "text-[#059669]" : aiResult.rischio === "Medio" ? "text-[#B45309]" : "text-[#DC2626]"}>{aiResult.rischio}</strong></div>
                   <div><span className="text-[#475569]">Prezzo max consigliato:</span> <strong className="tabular">{formatEur(aiResult.prezzo_massimo_consigliato)}</strong></div>
+                  <div><span className="text-[#475569]">Deal Score AI:</span> <strong className="tabular">{aiResult.deal_score}/100</strong></div>
                   <div className="mt-3">
                     <div className="text-[10px] uppercase text-[#64748B] mb-2">Punti di attenzione</div>
                     <ul className="space-y-1">
@@ -193,3 +275,12 @@ export default function Simulatore() {
     </Layout>
   );
 }
+
+const BreakRow = ({ label, value, positive, muted }) => (
+  <div className={`flex justify-between items-center py-1.5 border-b border-[#F1F5F9] last:border-0 ${muted ? "text-[#94A3B8]" : ""}`}>
+    <span className="text-xs text-[#475569]">{label}</span>
+    <span className={`tabular text-sm font-medium ${positive ? "text-[#059669]" : value < 0 ? "text-[#DC2626]" : "text-[#0F172A]"}`}>
+      {value >= 0 ? "+" : ""}{formatEur(value)}
+    </span>
+  </div>
+);

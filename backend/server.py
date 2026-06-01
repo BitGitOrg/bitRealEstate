@@ -271,53 +271,64 @@ async def deal_analyze(input: DealAnalyzeIn, user: dict = Depends(current_user))
     costo_totale = prezzo + lavori + accessori
     canone = input.canone_stimato or 0
     rendimento_lordo = (canone * 12) / costo_totale * 100 if costo_totale > 0 else 0
-    rendimento_netto = rendimento_lordo * 0.65
+    # Abbattimento realistico ~25-28% (Cedolare 21% + ~5% costi gestione su rendita netta)
+    rendimento_netto = rendimento_lordo * 0.73
 
-    score = 50
-    score += min(30, max(-30, (rendimento_netto - 5) * 6))
-    if lavori > 0 and lavori / prezzo > 0.5:
-        score -= 10
-    if input.mutuo_pct and input.mutuo_pct > 0.8:
-        score -= 8
+    # Scoring più equilibrato, meno stringente
+    score = 55
+    score += min(35, max(-35, (rendimento_netto - 4) * 7))   # baricentro su 4% netto (era 5%)
+    # Penalità più leggere
+    if lavori > 0 and lavori / max(prezzo, 1) > 0.5:
+        score -= 8       # era -10
+    if input.mutuo_pct and input.mutuo_pct > 0.85:
+        score -= 6       # era -8 a 0.8
     if canone == 0:
-        score -= 15
+        score -= 10      # era -15
+    # Bonus rendimento lordo alto (deal di valore)
+    if rendimento_lordo >= 8:
+        score += 6
+    elif rendimento_lordo >= 6.5:
+        score += 3
     score = max(0, min(100, int(score)))
 
-    if score >= 91:
+    if score >= 88:
         giudizio, strategia = "Operazione eccellente", "Affitto a reddito"
-    elif score >= 76:
+    elif score >= 72:
         giudizio, strategia = "Buona operazione", "Affitto a reddito"
-    elif score >= 61:
+    elif score >= 55:
         giudizio, strategia = "Operazione interessante", "Valutare ristrutturazione+vendita"
-    elif score >= 41:
+    elif score >= 38:
         giudizio, strategia = "Operazione rischiosa", "Negoziare prezzo o passare"
     else:
         giudizio, strategia = "Operazione sconsigliata", "Non procedere"
 
-    rischio = "Basso" if score >= 75 else ("Medio" if score >= 50 else "Alto")
-    target_netto = 6.0
+    rischio = "Basso" if score >= 70 else ("Medio" if score >= 45 else "Alto")
+    # Prezzo max: punto di break-even per target netto 5% (era 6% troppo stringente)
+    target_netto = 5.0
     if canone > 0:
-        prezzo_max = (canone * 12) / (target_netto / 100) / 0.65 - lavori - accessori
+        prezzo_max = (canone * 12) / (target_netto / 100) / 0.73 - lavori - accessori
         prezzo_max = max(0, prezzo_max)
     else:
-        prezzo_max = prezzo * 0.85
+        prezzo_max = prezzo * 0.90  # era 0.85 più severo
 
     punti = []
     if canone == 0:
-        punti.append("Canone stimato mancante: difficile calcolare rendimento.")
+        punti.append("Canone stimato mancante: stima al volo difficile, inserisci un valore di mercato per la zona.")
     if lavori / max(prezzo, 1) > 0.3:
-        punti.append(f"Lavori importanti ({lavori/prezzo*100:.0f}% del prezzo): rischio scostamento budget.")
-    if rendimento_netto < 4:
-        punti.append(f"Rendimento netto stimato {rendimento_netto:.1f}% sotto soglia 4%.")
-    if input.mutuo_pct and input.mutuo_pct > 0.7:
-        punti.append(f"Leva alta ({input.mutuo_pct*100:.0f}%): rata potenzialmente vicina al canone.")
+        punti.append(f"Lavori importanti ({lavori/prezzo*100:.0f}% del prezzo): valuta margine di sicurezza sul budget.")
+    if rendimento_netto > 0 and rendimento_netto < 3.5:
+        punti.append(f"Rendimento netto stimato {rendimento_netto:.1f}% basso (soglia 3.5%): valuta riduzione prezzo o canone più alto.")
+    if input.mutuo_pct and input.mutuo_pct > 0.75:
+        punti.append(f"Leva alta ({input.mutuo_pct*100:.0f}%): la rata assorbe una grossa fetta del canone.")
+    if rendimento_lordo >= 7 and not punti:
+        punti.append(f"Rendimento lordo {rendimento_lordo:.1f}% sopra media: operazione interessante.")
     if not punti:
-        punti.append("Nessuna criticità rilevata sui parametri inseriti.")
+        punti.append("Nessuna criticità rilevata: parametri equilibrati.")
 
     scenari = {
-        "ottimistico": {"rendimento_netto": round(rendimento_netto * 1.2, 2), "note": "Canone +10%, lavori a budget."},
-        "realistico": {"rendimento_netto": round(rendimento_netto, 2), "note": "Parametri attuali."},
-        "pessimistico": {"rendimento_netto": round(rendimento_netto * 0.7, 2), "note": "Sfitto 2 mesi/anno, lavori +20%."},
+        "ottimistico": {"rendimento_netto": round(rendimento_netto * 1.15, 2), "note": "Canone +8%, costi gestione contenuti, sfitto azzerato."},
+        "realistico": {"rendimento_netto": round(rendimento_netto, 2), "note": "Parametri attuali, costi standard, 1 mese sfitto/anno."},
+        "pessimistico": {"rendimento_netto": round(rendimento_netto * 0.78, 2), "note": "Sfitto 2 mesi/anno, lavori +15%, IMU/manutenzioni in linea alta."},
     }
     return DealAnalyzeOut(
         deal_score=score, giudizio=giudizio,
