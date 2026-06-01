@@ -14,11 +14,53 @@ MAX_BYTES = 15 * 1024 * 1024
 ALLOWED_TIPI = {"Rogito", "APE", "Contratto", "Fattura", "Planimetria", "Visura", "Altro"}
 MIME_BY_EXT = {
     "pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg",
-    "jpeg": "image/jpeg", "doc": "application/msword",
+    "jpeg": "image/jpeg", "webp": "image/webp", "tiff": "image/tiff", "tif": "image/tiff",
+    "doc": "application/msword",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "xls": "application/vnd.ms-excel",
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
+
+
+def _ocr_image_bytes(content: bytes) -> str:
+    """Esegue OCR Tesseract su un'immagine. Lingua: italiano + inglese."""
+    try:
+        from PIL import Image
+        import pytesseract
+        img = Image.open(io.BytesIO(content))
+        # Migliora contrasto su immagini chiare (scansioni)
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        # Tesseract con ita+eng (per documenti italiani contenenti termini tecnici inglesi)
+        text = pytesseract.image_to_string(img, lang="ita+eng", config="--psm 6")
+        return text or ""
+    except Exception as e:
+        logging.exception("OCR image failed")
+        raise HTTPException(400, f"Errore OCR: {e}")
+
+
+def _ocr_pdf_pages(pdf_bytes: bytes, max_pages: int = 10) -> str:
+    """OCR di un PDF scansionato (rasterizza ogni pagina e applica Tesseract)."""
+    try:
+        from PIL import Image
+        import pytesseract
+        # Uso pdfplumber per ottenere le immagini delle pagine (ha .to_image())
+        import pdfplumber
+        pages_text = []
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            for i, page in enumerate(pdf.pages[:max_pages]):
+                try:
+                    pil_img = page.to_image(resolution=200).original
+                    if pil_img.mode != "RGB":
+                        pil_img = pil_img.convert("RGB")
+                    page_text = pytesseract.image_to_string(pil_img, lang="ita+eng", config="--psm 6")
+                    pages_text.append(f"--- Pagina {i+1} (OCR) ---\n{page_text or ''}")
+                except Exception as ex:
+                    logging.warning(f"OCR pagina {i+1} fallito: {ex}")
+        return "\n\n".join(pages_text)
+    except Exception as e:
+        logging.exception("OCR PDF failed")
+        return ""
 
 
 def make_documents_router(db, current_user, llm_key: str = ""):
@@ -112,6 +154,10 @@ def make_documents_router(db, current_user, llm_key: str = ""):
                         t = page.extract_text() or ""
                         pages.append(f"--- Pagina {i+1} ---\n{t}")
                 text = "\n\n".join(pages)
+                # Fallback OCR se PDF scansionato (no testo estratto)
+                if len(text.replace("---", "").replace("Pagina", "").strip()) < 30:
+                    logging.info(f"PDF {doc_id}: testo vuoto, tentativo OCR pagine come immagini")
+                    text = _ocr_pdf_pages(content, max_pages=10)
             except Exception as e:
                 logging.exception("PDF extract failed")
                 raise HTTPException(400, f"Impossibile estrarre testo dal PDF: {e}")
@@ -121,7 +167,9 @@ def make_documents_router(db, current_user, llm_key: str = ""):
             except Exception:
                 text = ""
         elif mime.startswith("image/"):
-            raise HTTPException(400, "Analisi immagini OCR non ancora supportata. Caricare il PDF originale.")
+            text = _ocr_image_bytes(content)
+            if not text.strip():
+                raise HTTPException(400, "OCR non ha estratto testo dall'immagine. Verifica risoluzione/contrasto del file.")
         else:
             raise HTTPException(400, f"Tipo file non supportato per analisi: {mime}")
 

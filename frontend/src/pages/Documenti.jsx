@@ -281,7 +281,7 @@ function UploadModal({ open, onClose, onUploaded, properties, loading, setLoadin
                 <div className="text-[11px] text-[#64748B]">o clicca per selezionare</div>
               </>
             )}
-            <input type="file" ref={fileRef} className="hidden" onChange={(e) => pickFile(e.target.files?.[0])} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx" />
+            <input type="file" ref={fileRef} className="hidden" onChange={(e) => pickFile(e.target.files?.[0])} accept=".pdf,.png,.jpg,.jpeg,.webp,.tiff,.tif,.doc,.docx,.xls,.xlsx" />
           </div>
 
           <label className="block">

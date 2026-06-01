@@ -300,6 +300,15 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 - Modale "Nuovo immobile" funzionante
 - Export PDF/Excel reale dei report (oggi è mockato)
 
+## 🆕 OCR per documenti immagine + PDF scansionati (1 Jun 2026 - iter 28)
+117. **Tesseract OCR** installato a livello sistema: `tesseract-ocr` + `tesseract-ocr-ita` + `tesseract-ocr-eng` (3 lingue disponibili). Python: `pytesseract` + `Pillow` aggiunti a requirements.txt.
+118. **Helper `_ocr_image_bytes()`**: apre immagine con Pillow, converte in RGB se necessario, esegue Tesseract con `lang="ita+eng"` e `--psm 6` (assume blocco di testo uniforme — ideale per documenti). Supporta PNG/JPG/JPEG/WEBP/TIFF.
+119. **Helper `_ocr_pdf_pages()`**: fallback per PDF scansionati (immagine, no testo). Rasterizza le pagine via `pdfplumber.page.to_image(resolution=200)` → Tesseract → testo. Limite 10 pagine per non saturare.
+120. **Pipeline analyze aggiornata**: PDF → pdfplumber, se testo estratto <30 char → OCR pagine. Immagine → OCR diretto. Multi-lingua italiano+inglese per gestire documenti misti.
+121. **Test reale OCR su PNG**: visura catastale 1200×1500px scansionata caricata → in 13 secondi totali (OCR + Claude) estratti: comune TORINO, foglio 142, particella 38, sub 7, categoria A/3, rendita 412,38€, superficie 65mq, intestatario "ROSSI MARIO 100/100" + 6 anomalie inclusa una geniale: "campo Consistenza riporta '35vani' (35 vani per 65 mq è incongruente con A/3, probabile errore OCR — verosimilmente 3,5 vani)". L'AI rileva e segnala anche gli errori OCR stessi.
+122. **Frontend**: file upload accetta ora anche `.webp,.tiff,.tif` oltre a PNG/JPG. Workflow invariato: stessa modale di analisi, stessi alert auto-generati.
+
+
 ## Backlog (P2)
 - Integrazione bancaria
 - Notifiche email/PEC su alert critici
