@@ -81,6 +81,23 @@ export default function SchedaImmobile() {
         <div className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl p-6 flex flex-col items-center justify-center">
           <span className="text-[10px] uppercase tracking-widest text-[#64748B] mb-2">Portfolio Score</span>
           <ScoreGauge value={p.portfolio_score} size={140} dataTestId="immobile-score" />
+          {p.score_breakdown && (
+            <div className="w-full mt-3 px-3 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-[10px] space-y-0.5">
+              <div className="flex justify-between text-[#64748B]"><span>Base</span><span className="tabular text-[#0F172A] font-medium">{p.score_breakdown.base}</span></div>
+              {(p.score_breakdown.alerts_alta + p.score_breakdown.alerts_media + p.score_breakdown.alerts_bassa) > 0 && (
+                <div className="flex justify-between text-[#DC2626]">
+                  <span>{p.score_breakdown.alerts_alta + p.score_breakdown.alerts_media + p.score_breakdown.alerts_bassa} alert</span>
+                  <span className="tabular font-medium">-{p.score_breakdown.penalty_alerts}</span>
+                </div>
+              )}
+              {p.score_breakdown.morosi > 0 && (
+                <div className="flex justify-between text-[#DC2626]"><span>{p.score_breakdown.morosi} morosi</span><span className="tabular font-medium">-{p.score_breakdown.morosi * 5}</span></div>
+              )}
+              {p.score_breakdown.bonus_rend_alto > 0 && (
+                <div className="flex justify-between text-[#059669]"><span>Rend. netto &gt; 8%</span><span className="tabular font-medium">+{p.score_breakdown.bonus_rend_alto}</span></div>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3 w-full mt-5">
             <div className="text-center p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
               <div className="text-[10px] uppercase text-[#64748B]">Rend. netto</div>

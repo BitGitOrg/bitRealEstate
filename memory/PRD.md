@@ -332,3 +332,10 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 133. **Frontend `Affitti.jsx` rifatto live**: KPI "Incassato 2026-06 €2.290 · 5/5 · 100%", bottone "Riconcilia con banca", contratti dalla properties live, incassi raggruppati per mese (ultimi 4 mesi visibili), bottone "Segna pagato" inline + modal. Filtro morosi solo mesi passati/corrente (i previsti futuri non sono morosi).
 134. **Test e2e**: regenerate → 70 incassi creati (14 × 5 immobili) → inseriti 5 movimenti test → reconcile → 5/5 matched → completion 100% in dashboard.
 
+
+
+## 🆕 Score breakdown tooltip ovunque (1 Jun 2026 - iter 31)
+135. **Componente `ScoreBadge`** (`/components/ScoreBadge.jsx`): mostra il portfolio_score con tooltip on-hover/click che spiega come è calcolato. Layout: card 64 di larghezza, header "Come è calcolato", righe con base + ogni penalità/bonus colorato + separatore + "Totale X/100" colorato per soglia.
+136. **Applicato in 3 punti**: Patrimonio tabella (tooltip top-right per non uscire dal viewport), Patrimonio card pill `/100`, Dashboard tabella Top immobili.
+137. **SchedaImmobile**: sotto il gauge una mini-card breakdown sempre visibile con Base + Alert penalty + Morosi penalty + Bonus rendimento.
+138. **Logica`?`** visibile solo se score_breakdown disponibile (no su demo).

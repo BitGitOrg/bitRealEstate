@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import { StatusBadge } from "../components/StatusBadge";
+import { ScoreBadge } from "../components/ScoreBadge";
 import { properties, STATI, formatEur } from "../lib/demoData";
 import { Search, Plus, LayoutGrid, List, MapPin, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -151,7 +152,7 @@ export default function Patrimonio() {
                     <td className="px-2 py-3 text-right tabular">{p.rendimento_netto > 0 ? <span className="text-[#059669]">{p.rendimento_netto}%</span> : "—"}</td>
                     <td className={`px-2 py-3 text-right tabular ${p.cash_flow_mensile >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{formatEur(p.cash_flow_mensile)}</td>
                     <td className="px-2 py-3 text-right">
-                      <span className={`tabular font-medium ${p.portfolio_score >= 71 ? "text-[#059669]" : p.portfolio_score >= 41 ? "text-[#B45309]" : "text-[#DC2626]"}`}>{p.portfolio_score}</span>
+                      <ScoreBadge score={p.portfolio_score} breakdown={p.score_breakdown} testId={`score-${p.id}`} />
                     </td>
                   </tr>
                 ))}
@@ -169,9 +170,9 @@ export default function Patrimonio() {
                   <StatusBadge stato={p.stato} />
                   {p.fromDeal && <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[rgba(0,102,255,0.85)] text-white font-semibold">Deal Inbox</span>}
                 </div>
-                <div className="absolute bottom-3 right-3 bg-[#F8FAFC]/90 backdrop-blur border border-[#E2E8F0] rounded-full px-2 py-1 text-[11px] tabular">
-                  <span className={`font-bold ${p.portfolio_score >= 71 ? "text-[#059669]" : p.portfolio_score >= 41 ? "text-[#B45309]" : "text-[#DC2626]"}`}>{p.portfolio_score}</span>
-                  <span className="text-[#64748B]">/100</span>
+                <div className="absolute bottom-3 right-3 bg-[#F8FAFC]/90 backdrop-blur border border-[#E2E8F0] rounded-full px-2 py-1 text-[11px] tabular" onClick={(e) => e.preventDefault()}>
+                  <ScoreBadge score={p.portfolio_score} breakdown={p.score_breakdown} size="sm" testId={`score-card-${p.id}`} />
+                  <span className="text-[#64748B] ml-0.5">/100</span>
                 </div>
               </div>
               <div className="p-4">

@@ -3,6 +3,7 @@ import { KpiCard } from "../components/dashboard/KpiCard";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import { ScoreGauge } from "../components/ScoreGauge";
 import { StatusBadge, SeverityBadge } from "../components/StatusBadge";
+import { ScoreBadge } from "../components/ScoreBadge";
 import {
   Building2, Wallet, TrendingUp, Banknote, AlertTriangle, Sparkles,
   ArrowUpRight, ArrowDownRight, MapPin, Trophy, Activity, FileBarChart
@@ -270,9 +271,7 @@ export default function Dashboard() {
                     </span>
                   </td>
                   <td className="px-2 py-3 text-right">
-                    <span className={`tabular font-medium ${p.portfolio_score >= 71 ? "text-[#059669]" : p.portfolio_score >= 41 ? "text-[#B45309]" : "text-[#DC2626]"}`}>
-                      {p.portfolio_score}
-                    </span>
+                    <ScoreBadge score={p.portfolio_score} breakdown={p.score_breakdown} testId={`dash-score-${p.id}`} />
                   </td>
                 </tr>
               ))}
