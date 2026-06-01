@@ -9,7 +9,7 @@ import {
   ArrowUpRight, ArrowDownRight, MapPin, Trophy, Activity, FileBarChart
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { apiClient } from "../lib/auth";
 import {
   ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis,
