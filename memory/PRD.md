@@ -322,3 +322,13 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 - Notifiche email/PEC su alert critici
 - Multi-società / multi-tenant
 - Mobile-first ottimizzato (oggi responsive ma desktop-first)
+
+## 🆕 3 automazioni potenti (1 Jun 2026 - iter 30)
+128. **Auto-applica dati catastali alla scheda immobile** in `_autoapply_to_property()`: dopo `/analyze` di Visura o Rogito, se l'AI ha estratto foglio/particella/sub/categoria/rendita/superficie/vani e i campi sulla property sono vuoti → applica i valori. Calcolo IMU automatico: `rendita × 1.05 × moltiplicatore (160 abitazione / 55 negozio) × 10.6‰`. Salva `imu_annua_stimata`. No overwrite di dati già inseriti dall'utente.
+129. **Incassi affitto auto-generati** (`_generate_expected_incassi` in properties.py): quando si aggiorna la locazione con canone + data_inizio_contratto, crea automaticamente fino a 14 mesi di incassi previsti in `db.incassi` con id deterministico `INC-{pid}-YYYY-MM` (idempotente). Stato iniziale "previsto", upgrade a "in_ritardo" automatico se data > 7gg dal 1° del mese.
+130. **Nuovo router `/api/incassi`** (`incassi.py`): `GET /incassi` (lista filtrata per immobile), `GET /incassi/stats` (KPI mese corrente con completion %), `POST /incassi/{id}/mark-paid` (registrazione manuale), `POST /incassi/reconcile` (matching automatico con movimenti bancari), `POST /incassi/regenerate` (rigenera per tutti gli affittati).
+131. **Algoritmo riconciliazione bancaria**: per ogni incasso open scansiona i movimenti positivi non abbinati, applica tolleranze (data ±12gg dal 1° del mese, importo ±3% o ±€5 assoluti), sceglie il candidato migliore per score combinato. Marca incasso "pagato" + flagga movimento con `matched_incasso_id`. Test: 5 movimenti bancari di Giugno → 5/5 incassi abbinati istantaneamente.
+132. **Portfolio Score dinamico** in `_shared.py` con `apply_dynamic_score()`: parte dal base, penalità per alert (alta=-10, media=-3, bassa=-1) + morosità (-5 per incasso non a posto) + bonus se rendimento_netto>8% (+5). `score_breakdown` esposto. Test: Via Foligno 84 → **71** (16 alert: 1 media + 15 bassa = -18, +5 bonus rendimento). Endpoint `GET /properties` ora ricarica anche alerts + incassi per applicare lo score.
+133. **Frontend `Affitti.jsx` rifatto live**: KPI "Incassato 2026-06 €2.290 · 5/5 · 100%", bottone "Riconcilia con banca", contratti dalla properties live, incassi raggruppati per mese (ultimi 4 mesi visibili), bottone "Segna pagato" inline + modal. Filtro morosi solo mesi passati/corrente (i previsti futuri non sono morosi).
+134. **Test e2e**: regenerate → 70 incassi creati (14 × 5 immobili) → inseriti 5 movimenti test → reconcile → 5/5 matched → completion 100% in dashboard.
+

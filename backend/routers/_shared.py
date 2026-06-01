@@ -56,7 +56,52 @@ def enrich_property(p: dict) -> dict:
     mutuo_rata = float((p.get("mutuo") or {}).get("rata", 0) or 0)
     p["cash_flow_mensile"] = round(canone - mutuo_rata - canone * 0.15, 0)
     sc = compute_deal_score(prezzo, float(p.get("metratura", 0) or 0), canone, p.get("citta", "") or "")
-    p["portfolio_score"] = sc["deal_score"]
+    p["portfolio_score_base"] = sc["deal_score"]
+    p["portfolio_score"] = sc["deal_score"]  # may be overridden by apply_dynamic_score
+    return p
+
+
+def apply_dynamic_score(p: dict, alerts_by_property: dict, incassi_by_property: dict | None = None) -> dict:
+    """Aggiusta il portfolio_score in funzione di alert attivi + morosità incassi.
+    - Penalità per alert: alta=-10, media=-3, bassa=-1
+    - Penalità per incassi in_ritardo/non_pagato: -5 ciascuno
+    - Bonus se rendimento_netto > 8%: +5
+    - Bonus se cash_flow_mensile > 0: già nello score base
+    Score sempre 0-100, intero.
+    """
+    pid = p.get("id")
+    base = int(p.get("portfolio_score_base", p.get("portfolio_score", 50)) or 50)
+    score = base
+    alerts = alerts_by_property.get(pid, [])
+    sev_counts = {"alta": 0, "media": 0, "bassa": 0}
+    for a in alerts:
+        sev = a.get("severity", "bassa")
+        if sev in sev_counts:
+            sev_counts[sev] += 1
+    penalty_alerts = sev_counts["alta"] * 10 + sev_counts["media"] * 3 + sev_counts["bassa"] * 1
+    score -= penalty_alerts
+
+    morosi = 0
+    if incassi_by_property is not None:
+        for inc in incassi_by_property.get(pid, []):
+            if inc.get("stato") in ("in_ritardo", "non_pagato", "parzialmente_pagato"):
+                morosi += 1
+    score -= morosi * 5
+
+    if (p.get("rendimento_netto") or 0) > 8:
+        score += 5
+
+    score = max(0, min(100, int(score)))
+    p["portfolio_score"] = score
+    p["score_breakdown"] = {
+        "base": base,
+        "penalty_alerts": penalty_alerts,
+        "alerts_alta": sev_counts["alta"],
+        "alerts_media": sev_counts["media"],
+        "alerts_bassa": sev_counts["bassa"],
+        "morosi": morosi,
+        "bonus_rend_alto": 5 if (p.get("rendimento_netto") or 0) > 8 else 0,
+    }
     return p
 
 

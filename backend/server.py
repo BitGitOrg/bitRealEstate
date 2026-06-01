@@ -30,6 +30,7 @@ from routers.reports import make_reports_router
 from routers.forecast import make_forecast_router
 from routers.documents import make_documents_router
 from routers.alerts import make_alerts_router
+from routers.incassi import make_incassi_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -573,6 +574,7 @@ app.include_router(make_reports_router(db, current_user))
 app.include_router(make_forecast_router(db, current_user, EMERGENT_LLM_KEY))
 app.include_router(make_documents_router(db, current_user, EMERGENT_LLM_KEY))
 app.include_router(make_alerts_router(db, current_user))
+app.include_router(make_incassi_router(db, current_user))
 
 app.add_middleware(
     CORSMiddleware,

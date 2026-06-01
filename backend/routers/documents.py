@@ -232,11 +232,75 @@ def make_documents_router(db, current_user, llm_key: str = ""):
             {"$set": {"ai_analysis": analysis, "ai_analyzed_at": now}}
         )
 
-        # Auto-generate alerts dalle anomalie + scadenze estratte
+        # Auto-applica i dati catastali alla property (se documento collegato e tipo Visura/Rogito)
+        property_updated_fields = await _autoapply_to_property(db, user["id"], d, analysis)
+
+        # Auto-genera alert da anomalie + scadenze
         alerts_gen = await _generate_alerts_from_analysis(db, user["id"], d, analysis, now)
-        return {"analysis": analysis, "cached": False, "analyzed_at": now, "alerts_generated": alerts_gen}
+        return {
+            "analysis": analysis, "cached": False, "analyzed_at": now,
+            "alerts_generated": alerts_gen,
+            "property_updated_fields": property_updated_fields,
+        }
 
     return router
+
+
+async def _autoapply_to_property(db, user_id: str, doc: dict, analysis: dict) -> list[str]:
+    """Applica dati catastali (foglio/particella/sub/categoria/rendita/superficie) alla property
+    SOLO se i campi sono vuoti (no overwrite di dati già inseriti dall'utente).
+    Calcola anche IMU stimata.
+    """
+    immobile_id = doc.get("immobile_id")
+    if not immobile_id:
+        return []
+    tipo = doc.get("tipo", "")
+    if tipo not in {"Visura", "Rogito"}:
+        return []
+
+    prop = await db.properties.find_one({"id": immobile_id, "user_id": user_id})
+    if not prop:
+        return []
+
+    # Mapping campi AI → campi property
+    field_map = {
+        "foglio": "catasto_foglio",
+        "particella": "catasto_particella",
+        "subalterno": "catasto_subalterno",
+        "categoria_catastale": "categoria_catastale",
+        "rendita_catastale": "rendita_catastale",
+        "superficie_catastale": "superficie_catastale_mq",
+        "vani": "vani",
+    }
+    updates: dict = {}
+    for ai_key, prop_key in field_map.items():
+        ai_val = analysis.get(ai_key)
+        # Skip se null/empty o se la prop ha già il valore (no overwrite)
+        if ai_val in (None, "", []):
+            continue
+        if prop.get(prop_key) not in (None, "", 0, 0.0):
+            continue
+        updates[prop_key] = ai_val
+
+    # Calcolo IMU stimato se ho rendita catastale (formula: rendita × 1.05 × moltiplicatore × aliquota)
+    # Per A/3 abitazione: moltiplicatore 160, aliquota standard ~10.6‰
+    rendita = analysis.get("rendita_catastale") or prop.get("rendita_catastale")
+    cat = analysis.get("categoria_catastale") or prop.get("categoria_catastale", "")
+    if rendita and isinstance(rendita, (int, float)) and rendita > 0:
+        moltiplicatore = 160  # default abitazione
+        if cat and str(cat).startswith("C/"):
+            moltiplicatore = 55  # negozi/box
+        base_imponibile = rendita * 1.05 * moltiplicatore
+        # Aliquota: 10.6‰ default seconda casa Torino (no abitazione principale)
+        aliquota = 10.6 / 1000
+        imu_stimata = round(base_imponibile * aliquota, 2)
+        if not prop.get("imu_annua_stimata"):
+            updates["imu_annua_stimata"] = imu_stimata
+
+    if not updates:
+        return []
+    await db.properties.update_one({"id": immobile_id, "user_id": user_id}, {"$set": updates})
+    return list(updates.keys())
 
 
 async def _generate_alerts_from_analysis(db, user_id: str, doc: dict, analysis: dict, now_iso: str) -> int:
