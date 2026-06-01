@@ -1,5 +1,6 @@
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
+import { HelpButton } from "../HelpButton";
 
 export const Layout = ({ children, title, subtitle, actions }) => {
   return (
@@ -9,6 +10,7 @@ export const Layout = ({ children, title, subtitle, actions }) => {
         <Topbar title={title} subtitle={subtitle} actions={actions} />
         <div className="flex-1 px-6 py-6 fade-up">{children}</div>
       </main>
+      <HelpButton />
     </div>
   );
 };

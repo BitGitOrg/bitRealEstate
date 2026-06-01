@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import {
@@ -244,7 +245,18 @@ const SECTIONS = [
 ];
 
 export default function Manuale() {
-  const [active, setActive] = useState("introduzione");
+  const [searchParams] = useSearchParams();
+  const initial = searchParams.get("s");
+  const [active, setActive] = useState(
+    initial && SECTIONS.find(s => s.id === initial) ? initial : "introduzione"
+  );
+  useEffect(() => {
+    const s = searchParams.get("s");
+    if (s && SECTIONS.find(x => x.id === s)) {
+      setActive(s);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [searchParams]);
   const [q, setQ] = useState("");
   const filteredSections = useMemo(() => {
     if (!q.trim()) return SECTIONS;

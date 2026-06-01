@@ -346,3 +346,10 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 140. **Nuova pagina `/manuale`** (`Manuale.jsx`): 2-colonne con indice sticky a sinistra (search inclusa) + content a destra. 13 sezioni: Introduzione + 11 pagine + Workflow tipico (Step 1-6 dal nuovo immobile al PDF Piano Industriale).
 141. **Sistema di blocchi**: ogni sezione usa `blocks: [{type, text/items}]` con 4 tipi (subtitle, text, list, tip). Box "Suggerimento" giallo per best practices.
 142. **UX**: footer prev/next, click su screenshot apre fullsize, smooth scroll al cambio sezione, voce sidebar BookOpen sotto Documenti.
+
+
+## 🆕 HelpButton context-aware (1 Jun 2026 - iter 33)
+145. **Componente `HelpButton.jsx`** floating fixed bottom-right (sopra badge Emergent, z-40): mappa il `location.pathname` corrente a una sezione del manuale (`/affitti` → `affitti`, `/forecast` → `forecast`, ecc). Auto-hide su `/manuale` e `/login`.
+146. **UX espandibile**: cerchio 48px chiuso, si allarga su hover mostrando "Aiuto · {NomeSezione}" (es. "Aiuto · 4. Affitti & Locazioni"). Click → naviga a `/manuale?s={section}`.
+147. **Manuale.jsx** legge il query param `?s=` via `useSearchParams` (+ useEffect per cambi dinamici) e apre direttamente sulla sezione richiesta.
+148. **Integrato nel Layout** (visibile ovunque). Test e2e: da `/affitti` → click help → URL `/manuale?s=affitti` → titolo "4. Affitti & Locazioni" caricato.
