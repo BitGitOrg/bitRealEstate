@@ -66,6 +66,21 @@ export default function Dashboard() {
     };
   })();
 
+  // KPI widget: profittevoli/sotto-target/sfitti REALI (calcolati dalle properties)
+  const widgetCount = useMemo(() => {
+    const target = 4.5;  // target netto default
+    const profit = realProps.filter(p => p.canone_mensile > 0 && p.rendimento_netto >= target).length;
+    const sottoTarget = realProps.filter(p => p.canone_mensile > 0 && p.rendimento_netto > 0 && p.rendimento_netto < target).length;
+    const sfitti = realProps.filter(p => (p.stato === "sfitto" || p.stato === "disponibile") && !p.canone_mensile).length;
+    return { profit, sottoTarget, sfitti };
+  }, [realProps]);
+
+  // Score medio reale
+  const portfolioScoreReal = useMemo(() => {
+    const scores = realProps.filter(p => p.portfolio_score).map(p => p.portfolio_score);
+    return scores.length > 0 ? Math.round(scores.reduce((s,v) => s+v, 0) / scores.length) : 72;
+  }, [realProps]);
+
   // KPI override from real bilancio if present
   const hasReal = !!latestBilancio;
   const ce = latestBilancio?.conto_economico || {};
@@ -88,9 +103,9 @@ export default function Dashboard() {
     patrimonio_netto: sp.patrimonio_netto || 0,
     rendimento_medio_netto: rend_medio_netto,
     totale_immobili: realKpiFromProps?.n_props || portfolioKPI.totale_immobili,
-    immobili_profittevoli: portfolioKPI.immobili_profittevoli,
-    immobili_sotto_target: portfolioKPI.immobili_sotto_target,
-    immobili_sfitti: portfolioKPI.immobili_sfitti,
+    immobili_profittevoli: widgetCount.profit,
+    immobili_sotto_target: widgetCount.sottoTarget,
+    immobili_sfitti: widgetCount.sfitti,
   } : {
     ...portfolioKPI,
     liquidita_disponibile: liquidity?.liquidita ?? portfolioKPI.liquidita_disponibile,
@@ -98,6 +113,9 @@ export default function Dashboard() {
     ricavi_mensili: realKpiFromProps?.ricavi_mensili || portfolioKPI.ricavi_mensili,
     cash_flow_mensile: realKpiFromProps?.cash_flow_mensile || portfolioKPI.cash_flow_mensile,
     totale_immobili: realKpiFromProps?.n_props || portfolioKPI.totale_immobili,
+    immobili_profittevoli: realProps.length > 0 ? widgetCount.profit : portfolioKPI.immobili_profittevoli,
+    immobili_sotto_target: realProps.length > 0 ? widgetCount.sottoTarget : portfolioKPI.immobili_sotto_target,
+    immobili_sfitti: realProps.length > 0 ? widgetCount.sfitti : portfolioKPI.immobili_sfitti,
   };
 
   const top = [...properties].sort((a, b) => b.portfolio_score - a.portfolio_score)[0];
@@ -212,15 +230,15 @@ export default function Dashboard() {
 
         <SectionCard testId="portfolio-score-card" title="Portfolio Score" subtitle="Salute complessiva del patrimonio">
           <div className="flex flex-col items-center justify-center py-2">
-            <ScoreGauge value={72} size={160} dataTestId="portfolio-score-main" />
+            <ScoreGauge value={portfolioScoreReal} size={160} dataTestId="portfolio-score-main" />
             <div className="mt-4 grid grid-cols-2 gap-3 w-full">
               <div className="text-center p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
                 <div className="text-[10px] uppercase text-[#64748B]">Profittevoli</div>
-                <div className="font-display text-lg font-bold text-[#059669] tabular">{portfolioKPI.immobili_profittevoli}</div>
+                <div className="font-display text-lg font-bold text-[#059669] tabular">{kpi.immobili_profittevoli}</div>
               </div>
               <div className="text-center p-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
                 <div className="text-[10px] uppercase text-[#64748B]">Sotto target</div>
-                <div className="font-display text-lg font-bold text-[#DC2626] tabular">{portfolioKPI.immobili_sotto_target}</div>
+                <div className="font-display text-lg font-bold text-[#DC2626] tabular">{kpi.immobili_sotto_target}</div>
               </div>
             </div>
           </div>

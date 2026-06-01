@@ -1,7 +1,7 @@
 import { Bell, Search, LogOut, User } from "lucide-react";
-import { useAuth } from "../../lib/auth";
+import { useAuth, apiClient } from "../../lib/auth";
 import { Link, useNavigate } from "react-router-dom";
-import { alerts } from "../../lib/demoData";
+import { useEffect, useState } from "react";
 
 const ROLE_LABEL = {
   admin: "Admin / CEO",
@@ -14,7 +14,19 @@ const ROLE_LABEL = {
 export const Topbar = ({ title, subtitle, actions }) => {
   const { user, logout } = useAuth();
   const nav = useNavigate();
-  const unread = alerts.length;
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    const load = () => apiClient().get("/alerts").then(r => {
+      const alerts = r.data || [];
+      // Conta solo quelli non scaduti e severity media/alta
+      const active = alerts.filter(a => (a.severity === "alta" || a.severity === "media"));
+      setUnread(active.length);
+    }).catch(() => setUnread(0));
+    load();
+    const t = setInterval(load, 60_000);  // refresh ogni minuto
+    return () => clearInterval(t);
+  }, []);
 
   return (
     <header className="sticky top-0 z-20 border-b border-[#E2E8F0] bg-[#F8FAFC]/85 backdrop-blur-xl" data-testid="app-topbar">

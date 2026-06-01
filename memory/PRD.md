@@ -408,3 +408,27 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 - Piano ammortamento corretto (rata 720.50€/mese, 239 rate, capitale calcolato) ✓
 - Disdetta + Chiudi contratto + Storico ✓
 - Aggregato mutui (LTV, incidenza) ✓
+
+## Update — P0 + P1 completati (massiccio refactor dati demo→reali)
+
+### P0 Quick wins
+- ✅ **Topbar campanella**: legge da `/api/alerts` (severity alta/media), refresh ogni 60s
+- ✅ **Dashboard widget "Profittevoli/Sotto target/Sfitti"**: calcolati live dalle properties reali
+- ✅ **Dashboard Portfolio Score**: media reale degli score immobili (non più 72 hardcoded)
+
+### P1 Conversioni complete
+- ✅ **`routers/lavori.py`** (nuovo): CRUD cantieri + aggregato budget + over-budget alert. Categoria, impresa, avanzamento, autocomplete da 100%.
+- ✅ **`routers/vendite.py`** (nuovo): metti-in-vendita, registra-vendita, ritira-da-vendita. Calcolo plusvalenza automatico con regime fiscale (privato vs SRL/SpA + holding 5 anni esenzione).
+- ✅ **`routers/cashflow.py`** (nuovo): storico 12 mesi + forecast 12 mesi + KPI aggregato. Usa incassi reali, rate mutui, IMU/assicurazione mensilizzate, tasse stimate, lavori residui spalmati 6 mesi.
+- ✅ **Vendite.jsx** rifatta: KPI live, lista in-vendita con bottoni «Registra vendita» / «Ritira», storico operazioni con plusvalenza+tasse+ROI, modali per workflow.
+- ✅ **Lavori.jsx** rifatta: CRUD completo con form (categoria, impresa, budget, speso, avanzamento), stato auto-completato a 100%, scostamento %.
+- ✅ **CashFlow.jsx** rifatta: dati live storico + forecast, alert mesi in tensione.
+- ✅ **KPI.jsx** rifatta: rendimento netto/lordo calcolato sul regime società SRL, ROI cash-on-equity, leva finanziaria, classifiche top/worst, Portfolio Score reale.
+- ✅ **CostiRicavi.jsx**: rimossi i 30 movimenti demo. Mostra solo movimenti banca importati + empty state CTA «Importa estratto conto».
+
+### Verifiche E2E con curl
+- Cashflow live: 2.290€ incassi/mese (5 immobili Torino) - 1.124€ uscite = saldo netto 1.166€/mese
+- Lavori, Vendite, Mutui partono vuoti per l'utente (collezioni nuove). Tutto creabile da UI.
+
+### Rimanenze (P2)
+- Mappa Patrimonio geografica (richiede geocoding indirizzi + react-leaflet)

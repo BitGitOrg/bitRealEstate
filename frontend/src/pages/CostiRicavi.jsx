@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
-import { movimenti, properties, formatEur } from "../lib/demoData";
+import { formatEur } from "../lib/demoData";
 import { apiClient } from "../lib/auth";
-import { ArrowUpRight, ArrowDownRight, Plus, Upload, Filter, Banknote, CheckCircle2 } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, Plus, Upload, Banknote, CheckCircle2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
 export default function CostiRicavi() {
@@ -21,7 +21,6 @@ export default function CostiRicavi() {
     params.set("limit", String(PAGE_SIZE));
     if (bankQ) params.set("q", bankQ);
     if (origine === "manuale") {
-      // skip bank fetch entirely
       setBankMovs([]); setBankTotal(0);
       return;
     }
@@ -30,7 +29,7 @@ export default function CostiRicavi() {
       .catch(() => {});
   }, [bankSkip, bankQ, origine]);
 
-  // Normalize bank movements to the same shape as `movimenti`
+  // Normalizza i movimenti bancari
   const bankNormalized = useMemo(() => bankMovs.map(m => ({
     id: m.id,
     data: (m.data || "").slice(0, 10),
@@ -44,9 +43,9 @@ export default function CostiRicavi() {
     matched: !!m.match_canone,
   })), [bankMovs]);
 
+  // Solo dati reali (no più demo)
   const allMovs = useMemo(() => {
-    const arr = [...bankNormalized, ...movimenti.map(m => ({ ...m, fromBank: false }))];
-    return arr.sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+    return [...bankNormalized].sort((a, b) => (b.data || "").localeCompare(a.data || ""));
   }, [bankNormalized]);
 
   const filtered = allMovs.filter(m =>
@@ -128,7 +127,6 @@ export default function CostiRicavi() {
             </thead>
             <tbody>
               {filtered.map(m => {
-                const p = m.immobile_id ? (properties.find(x => x.id === m.immobile_id)) : null;
                 return (
                   <tr key={m.id} className="border-b border-[#E2E8F0] last:border-0">
                     <td className="py-3 text-[#475569] text-xs">{m.data}</td>
@@ -138,7 +136,7 @@ export default function CostiRicavi() {
                       </span>
                     </td>
                     <td className="py-3 text-[#0F172A]">{m.descrizione}</td>
-                    <td className="py-3 text-[#475569]">{m.immobile_nome || p?.nome || (m.fromBank && !m.matched ? <span className="text-[#64748B] italic text-xs">nessun match</span> : "Generale")}</td>
+                    <td className="py-3 text-[#475569]">{m.immobile_nome || (m.fromBank && !m.matched ? <span className="text-[#64748B] italic text-xs">nessun match</span> : "Generale")}</td>
                     <td className="py-3">
                       {m.fromBank ? (
                         <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border border-[rgba(0,102,255,0.3)] bg-[rgba(0,102,255,0.08)] text-[#2563EB]" data-testid="badge-banca">
@@ -155,6 +153,11 @@ export default function CostiRicavi() {
                   </tr>
                 );
               })}
+              {filtered.length === 0 && (
+                <tr><td colSpan={6} className="py-8 text-center text-sm text-[#475569]">
+                  Nessun movimento. <Link to="/import" className="text-[#0066FF] hover:underline">Importa l'estratto conto banca</Link> per iniziare a vedere i movimenti.
+                </td></tr>
+              )}
             </tbody>
           </table>
         </div>
