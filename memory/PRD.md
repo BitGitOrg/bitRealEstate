@@ -339,3 +339,10 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 136. **Applicato in 3 punti**: Patrimonio tabella (tooltip top-right per non uscire dal viewport), Patrimonio card pill `/100`, Dashboard tabella Top immobili.
 137. **SchedaImmobile**: sotto il gauge una mini-card breakdown sempre visibile con Base + Alert penalty + Morosi penalty + Bonus rendimento.
 138. **Logica`?`** visibile solo se score_breakdown disponibile (no su demo).
+
+
+## 🆕 Manuale d'uso integrato (1 Jun 2026 - iter 32)
+139. **11 screenshot generati** in `/app/frontend/public/manual/` per Dashboard, Patrimonio, Scheda, Affitti, Costi&Ricavi, Documenti, Import, AlertCenter, Forecast, Mappa, KPI.
+140. **Nuova pagina `/manuale`** (`Manuale.jsx`): 2-colonne con indice sticky a sinistra (search inclusa) + content a destra. 13 sezioni: Introduzione + 11 pagine + Workflow tipico (Step 1-6 dal nuovo immobile al PDF Piano Industriale).
+141. **Sistema di blocchi**: ogni sezione usa `blocks: [{type, text/items}]` con 4 tipi (subtitle, text, list, tip). Box "Suggerimento" giallo per best practices.
+142. **UX**: footer prev/next, click su screenshot apre fullsize, smooth scroll al cambio sezione, voce sidebar BookOpen sotto Documenti.

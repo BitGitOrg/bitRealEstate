@@ -3,7 +3,7 @@ import {
   LayoutDashboard, TrendingUp, Wallet, Building2, Map, FileText,
   Handshake, Home, ShoppingBag, Hammer, Receipt, Banknote, Calculator,
   Bot, BellRing, FolderArchive, Settings, FileBarChart, ChevronRight, Sparkles, Database,
-  LineChart
+  LineChart, BookOpen
 } from "lucide-react";
 
 const GROUPS = [
@@ -38,6 +38,7 @@ const GROUPS = [
   { name: "Sistema", items: [
     { to: "/import", label: "Centro Import", icon: Database, accent: true },
     { to: "/documenti", label: "Documenti", icon: FolderArchive },
+    { to: "/manuale", label: "Manuale d'uso", icon: BookOpen },
     { to: "/impostazioni", label: "Impostazioni", icon: Settings },
   ]},
 ];

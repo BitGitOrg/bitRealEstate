@@ -27,6 +27,7 @@ import DealInbox from "@/pages/DealInbox";
 import Watchlists from "@/pages/Watchlists";
 import ImportCenter from "@/pages/ImportCenter";
 import ForecastSimple from "@/pages/ForecastSimple";
+import Manuale from "@/pages/Manuale";
 
 const Protected = ({ children }) => {
   const { user, loading } = useAuth();
@@ -64,6 +65,7 @@ function App() {
             <Route path="/watchlists" element={<Protected><Watchlists /></Protected>} />
             <Route path="/import" element={<Protected><ImportCenter /></Protected>} />
             <Route path="/forecast" element={<Protected><ForecastSimple /></Protected>} />
+            <Route path="/manuale" element={<Protected><Manuale /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <Toaster position="top-right" theme="dark" />
