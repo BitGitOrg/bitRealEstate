@@ -125,6 +125,9 @@ def make_properties_router(db, current_user):
         items = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
         alerts = await db.alerts.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
         incassi = await db.incassi.find({"user_id": user["id"]}, {"_id": 0}).to_list(2000)
+        # Carica settings UNA SOLA VOLTA per evitare N+1
+        from routers.settings import get_user_settings
+        settings = await get_user_settings(db, user["id"])
         a_by_p: dict = {}
         for a in alerts:
             pid = a.get("immobile_id")
@@ -137,7 +140,7 @@ def make_properties_router(db, current_user):
                 i_by_p.setdefault(pid, []).append(i)
         out = []
         for p in items:
-            p = _enrich_property(p)
+            p = _enrich_property(p, settings)
             p = apply_dynamic_score(p, a_by_p, i_by_p)
             out.append(p)
         return out
@@ -149,12 +152,16 @@ def make_properties_router(db, current_user):
             raise HTTPException(status_code=404, detail="Immobile non trovato")
         alerts = await db.alerts.find({"user_id": user["id"], "immobile_id": pid}, {"_id": 0}).to_list(500)
         incassi = await db.incassi.find({"user_id": user["id"], "immobile_id": pid}, {"_id": 0}).to_list(500)
-        p = _enrich_property(p)
+        from routers.settings import get_user_settings
+        settings = await get_user_settings(db, user["id"])
+        p = _enrich_property(p, settings)
         p = apply_dynamic_score(p, {pid: alerts}, {pid: incassi})
         return p
 
     @router.post("/properties")
     async def create_property(p: PropertyIn, user: dict = Depends(current_user)):
+        from routers.settings import get_user_settings
+        settings = await get_user_settings(db, user["id"])
         item = {
             "id": f"IMM-{uuid.uuid4().hex[:6].upper()}",
             "user_id": user["id"],
@@ -165,7 +172,7 @@ def make_properties_router(db, current_user):
         }
         await db.properties.insert_one(item.copy())
         item.pop("_id", None)
-        return _enrich_property(item)
+        return _enrich_property(item, settings)
 
     @router.delete("/properties/{pid}")
     async def delete_property(pid: str, user: dict = Depends(current_user)):
@@ -187,7 +194,9 @@ def make_properties_router(db, current_user):
         p = await db.properties.find_one({"id": pid, "user_id": user["id"]}, {"_id": 0})
         # Auto-genera incassi previsti per i 12 mesi successivi se canone + data_inizio_contratto presenti
         gen = await _generate_expected_incassi(db, user["id"], p)
-        result = _enrich_property(p)
+        from routers.settings import get_user_settings
+        settings = await get_user_settings(db, user["id"])
+        result = _enrich_property(p, settings)
         result["incassi_generated"] = gen
         return result
 
@@ -237,6 +246,8 @@ def make_properties_router(db, current_user):
                       "updated_at": datetime.now(timezone.utc).isoformat()}},
         )
         item.pop("_id", None)
-        return _enrich_property(item)
+        from routers.settings import get_user_settings
+        settings = await get_user_settings(db, user["id"])
+        return _enrich_property(item, settings)
 
     return router

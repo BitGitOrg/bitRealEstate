@@ -39,7 +39,7 @@ export const KpiCard = ({
   return (
     <div
       data-testid={testId || `kpi-${(label || "").toLowerCase().replace(/\s+/g, '-')}`}
-      className="group bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl p-5 card-hover relative overflow-hidden"
+      className="group bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl p-5 card-hover relative"
     >
       <div className="flex items-start justify-between mb-3 gap-2">
         <span className="text-[11px] uppercase tracking-[0.12em] text-[#475569] font-medium leading-snug">{label}</span>
@@ -62,11 +62,11 @@ export const KpiCard = ({
               {showInfo && (
                 <div
                   role="tooltip"
-                  className="absolute z-30 top-full right-0 mt-1.5 w-60 bg-[#0F172A] text-white text-[11px] leading-relaxed rounded-lg shadow-xl p-3 pointer-events-none"
+                  className="absolute z-50 top-full right-0 mt-2 w-64 max-w-[16rem] bg-white text-[#0F172A] text-[11px] leading-relaxed rounded-lg shadow-[0_8px_24px_rgba(15,23,42,0.12)] border border-[#E2E8F0] p-3 pointer-events-none"
                 >
-                  <div className="font-semibold mb-1 text-[10px] uppercase tracking-wider text-[#94A3B8]">{label}</div>
-                  {info}
-                  <div className="absolute -top-1 right-3 w-2 h-2 bg-[#0F172A] rotate-45" />
+                  <div className="font-semibold mb-1 text-[10px] uppercase tracking-wider text-[#64748B]">{label}</div>
+                  <div className="text-[#334155]">{info}</div>
+                  <div className="absolute -top-1.5 right-3 w-2.5 h-2.5 bg-white border-t border-l border-[#E2E8F0] rotate-45" />
                 </div>
               )}
             </div>

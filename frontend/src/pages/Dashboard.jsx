@@ -33,6 +33,7 @@ export default function Dashboard() {
   const [latestBilancio, setLatestBilancio] = useState(null);
   const [bankCashflow, setBankCashflow] = useState(null);
   const [liquidity, setLiquidity] = useState(null);
+  const [realProps, setRealProps] = useState([]);
 
   useEffect(() => {
     apiClient().get("/import/bilanci/latest")
@@ -44,29 +45,60 @@ export default function Dashboard() {
     apiClient().get("/finance/liquidity")
       .then(r => setLiquidity(r.data))
       .catch(() => {});
+    apiClient().get("/properties")
+      .then(r => setRealProps(r.data || []))
+      .catch(() => {});
   }, []);
+
+  // Rendimento medio netto REALE (media ponderata per costo totale, calcolato col regime fiscale di Impostazioni)
+  const realKpiFromProps = (() => {
+    const props = realProps.filter(p => p.canone_mensile > 0 && p.costo_totale > 0);
+    if (props.length === 0) return null;
+    const wSum = props.reduce((s, p) => s + (p.rendimento_netto || 0) * p.costo_totale, 0);
+    const totCosto = props.reduce((s, p) => s + p.costo_totale, 0);
+    const ricavi_mensili = realProps.reduce((s, p) => s + (p.canone_mensile || 0), 0);
+    const cash_flow_mensile = realProps.reduce((s, p) => s + (p.cash_flow_mensile || 0), 0);
+    return {
+      rendimento_medio_netto: totCosto > 0 ? +(wSum / totCosto).toFixed(2) : 0,
+      ricavi_mensili: Math.round(ricavi_mensili),
+      cash_flow_mensile: Math.round(cash_flow_mensile),
+      n_props: realProps.length,
+    };
+  })();
 
   // KPI override from real bilancio if present
   const hasReal = !!latestBilancio;
   const ce = latestBilancio?.conto_economico || {};
   const sp = latestBilancio?.stato_patrimoniale || {};
+  // Rendimento medio netto: priorità a (1) bilancio, (2) media ponderata properties reali, (3) demo
+  let rend_medio_netto = portfolioKPI.rendimento_medio_netto;
+  if (hasReal && sp.valore_immobili && ce.utile_netto) {
+    rend_medio_netto = +((ce.utile_netto / sp.valore_immobili) * 100).toFixed(2);
+  } else if (realKpiFromProps?.rendimento_medio_netto) {
+    rend_medio_netto = realKpiFromProps.rendimento_medio_netto;
+  }
   const kpi = hasReal ? {
     valore_stimato_totale: sp.valore_immobili || portfolioKPI.valore_stimato_totale,
     capitale_investito: (sp.valore_immobili || 0) - (sp.debito_mutui || 0) || portfolioKPI.capitale_investito,
-    ricavi_mensili: Math.round((ce.ricavi_affitti || 0) / 12) || portfolioKPI.ricavi_mensili,
-    cash_flow_mensile: Math.round((ce.utile_netto || 0) / 12) || portfolioKPI.cash_flow_mensile,
+    ricavi_mensili: realKpiFromProps?.ricavi_mensili || Math.round((ce.ricavi_affitti || 0) / 12) || portfolioKPI.ricavi_mensili,
+    cash_flow_mensile: realKpiFromProps?.cash_flow_mensile || Math.round((ce.utile_netto || 0) / 12) || portfolioKPI.cash_flow_mensile,
     debito_residuo: sp.debito_mutui || portfolioKPI.debito_residuo,
     liquidita_disponibile: liquidity?.liquidita ?? (sp.liquidita || portfolioKPI.liquidita_disponibile),
     utile_anno: ce.utile_netto || portfolioKPI.utile_anno,
     patrimonio_netto: sp.patrimonio_netto || 0,
-    rendimento_medio_netto: sp.valore_immobili && ce.utile_netto
-      ? +((ce.utile_netto / sp.valore_immobili) * 100).toFixed(2)
-      : portfolioKPI.rendimento_medio_netto,
-    totale_immobili: portfolioKPI.totale_immobili,
+    rendimento_medio_netto: rend_medio_netto,
+    totale_immobili: realKpiFromProps?.n_props || portfolioKPI.totale_immobili,
     immobili_profittevoli: portfolioKPI.immobili_profittevoli,
     immobili_sotto_target: portfolioKPI.immobili_sotto_target,
     immobili_sfitti: portfolioKPI.immobili_sfitti,
-  } : { ...portfolioKPI, liquidita_disponibile: liquidity?.liquidita ?? portfolioKPI.liquidita_disponibile };
+  } : {
+    ...portfolioKPI,
+    liquidita_disponibile: liquidity?.liquidita ?? portfolioKPI.liquidita_disponibile,
+    rendimento_medio_netto: rend_medio_netto,
+    ricavi_mensili: realKpiFromProps?.ricavi_mensili || portfolioKPI.ricavi_mensili,
+    cash_flow_mensile: realKpiFromProps?.cash_flow_mensile || portfolioKPI.cash_flow_mensile,
+    totale_immobili: realKpiFromProps?.n_props || portfolioKPI.totale_immobili,
+  };
 
   const top = [...properties].sort((a, b) => b.portfolio_score - a.portfolio_score)[0];
   const worst = [...properties].sort((a, b) => a.portfolio_score - b.portfolio_score)[0];

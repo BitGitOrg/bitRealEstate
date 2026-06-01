@@ -36,9 +36,12 @@ export default function Simulatore() {
   const [agenzia, setAgenzia] = useState(5500);
   const [lavori, setLavori] = useState(22000);
   const [canone, setCanone] = useState(1100);
+  const [conMutuo, setConMutuo] = useState(true);   // flag finanziamento
   const [mutuoPct, setMutuoPct] = useState(0.6);
   const [tassoMutuo, setTassoMutuo] = useState(3.2);
   const [durata, setDurata] = useState(20);
+  // Vista risultati: lordo (solo canone-rata) vs netto (con spese+tasse)
+  const [vista, setVista] = useState("netto"); // "lordo" | "netto"
   // Costi gestione: inizializzati dai settings appena disponibili
   const [imuAnnua, setImuAnnua] = useState(800);
   const [assicurazione, setAssicurazione] = useState(200);
@@ -88,20 +91,21 @@ export default function Simulatore() {
   const calc = useMemo(() => {
     const costoTotale = prezzo + notaio + agenzia + lavori;
     const canoneAnnuo = canone * 12;
-    const tasseMensili = (canone * aliquotaTasse);
-    // Spese gestione esplicite
-    const imuMensile = imuAnnua / 12;
-    const assicMensile = assicurazione / 12;
-    const manutMensile = canone * (manutenzionePct / 100);
-    const sfittMensile = canone * (sfittanzaPct / 100);
+    const isLordo = vista === "lordo";
+    const tasseMensili = isLordo ? 0 : (canone * aliquotaTasse);
+    // Spese gestione esplicite — in vista LORDO sono azzerate
+    const imuMensile = isLordo ? 0 : imuAnnua / 12;
+    const assicMensile = isLordo ? 0 : assicurazione / 12;
+    const manutMensile = isLordo ? 0 : canone * (manutenzionePct / 100);
+    const sfittMensile = isLordo ? 0 : canone * (sfittanzaPct / 100);
     const totSpeseMensili = imuMensile + assicMensile + manutMensile + sfittMensile;
-    // Mutuo
-    const mutuoImporto = prezzo * mutuoPct;
+    // Mutuo (può essere disabilitato dal flag)
+    const mutuoImporto = conMutuo ? prezzo * mutuoPct : 0;
     const capitaleProprio = costoTotale - mutuoImporto;
     const i = tassoMutuo / 100 / 12;
     const n = durata * 12;
-    const rata = mutuoImporto > 0 ? (mutuoImporto * i) / (1 - Math.pow(1 + i, -n)) : 0;
-    // Cash flow netto = canone - rata - spese - tasse
+    const rata = conMutuo && mutuoImporto > 0 ? (mutuoImporto * i) / (1 - Math.pow(1 + i, -n)) : 0;
+    // Cash flow = canone - rata - spese - tasse
     const cashFlow = canone - rata - totSpeseMensili - tasseMensili;
     // Rendimenti
     const rendLordo = costoTotale > 0 ? (canoneAnnuo / costoTotale) * 100 : 0;
@@ -114,7 +118,7 @@ export default function Simulatore() {
     score += Math.min(35, Math.max(-35, (rendNetto - 4) * 7));
     if (cashFlow < 0) score -= 15;
     if (lavori / Math.max(prezzo, 1) > 0.5) score -= 10;
-    if (mutuoPct > 0.85) score -= 8;
+    if (conMutuo && mutuoPct > 0.85) score -= 8;
     if (rendLordo > 8) score += 5;
     score = Math.max(0, Math.min(100, Math.round(score)));
 
@@ -122,9 +126,9 @@ export default function Simulatore() {
       costoTotale, canoneAnnuo, rendLordo, rendNetto,
       mutuoImporto, capitaleProprio, rata, cashFlow, roi, breakEven, score,
       imuMensile, assicMensile, manutMensile, sfittMensile, totSpeseMensili,
-      tasseMensili,
+      tasseMensili, isLordo,
     };
-  }, [prezzo, notaio, agenzia, lavori, canone, mutuoPct, tassoMutuo, durata, imuAnnua, assicurazione, manutenzionePct, sfittanzaPct, aliquotaTasse]);
+  }, [prezzo, notaio, agenzia, lavori, canone, conMutuo, mutuoPct, tassoMutuo, durata, imuAnnua, assicurazione, manutenzionePct, sfittanzaPct, aliquotaTasse, vista]);
 
   const runAi = async () => {
     setAiLoading(true);
@@ -167,11 +171,36 @@ export default function Simulatore() {
             </div>
             <Field testId="sim-lavori" label="Lavori previsti" value={lavori} onChange={setLavori} suffix="€" />
             <Field testId="sim-canone" label="Canone mensile previsto" value={canone} onChange={setCanone} suffix="€/mese" />
-            <div className="grid grid-cols-2 gap-3">
-              <Field testId="sim-mutuo" label="Mutuo %" value={Math.round(mutuoPct * 100)} onChange={(v) => setMutuoPct(v / 100)} suffix="%" />
-              <Field testId="sim-tasso" label="Tasso" value={tassoMutuo} onChange={setTassoMutuo} suffix="%" />
+
+            {/* Toggle Mutuo */}
+            <div className="pt-2 border-t border-[#E2E8F0]">
+              <label className="flex items-center justify-between gap-2 cursor-pointer mb-2">
+                <span className="text-xs font-medium text-[#0F172A]">Operazione con finanziamento bancario</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={conMutuo}
+                  data-testid="sim-toggle-mutuo"
+                  onClick={() => setConMutuo(!conMutuo)}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${conMutuo ? "bg-[#0066FF]" : "bg-[#CBD5E1]"}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${conMutuo ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
+              </label>
+              {conMutuo ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field testId="sim-mutuo" label="Mutuo %" value={Math.round(mutuoPct * 100)} onChange={(v) => setMutuoPct(v / 100)} suffix="%" />
+                    <Field testId="sim-tasso" label="Tasso" value={tassoMutuo} onChange={setTassoMutuo} suffix="%" />
+                  </div>
+                  <Field testId="sim-durata" label="Durata" value={durata} onChange={setDurata} suffix="anni" />
+                </div>
+              ) : (
+                <div className="text-[11px] text-[#64748B] bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg p-2.5 leading-relaxed" data-testid="sim-no-mutuo-info">
+                  <strong className="text-[#0F172A]">Acquisto in cash:</strong> capitale 100% proprio, nessuna rata mensile, nessun costo interessi.
+                </div>
+              )}
             </div>
-            <Field testId="sim-durata" label="Durata" value={durata} onChange={setDurata} suffix="anni" />
 
             {/* Costi gestione e fiscalità — collassabile */}
             <button
@@ -214,6 +243,34 @@ export default function Simulatore() {
         </SectionCard>
 
         <div className="xl:col-span-2 space-y-4">
+          {/* Toggle vista Lordo / Netto */}
+          <div className="bg-white border border-[#E2E8F0] rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap" data-testid="sim-view-toggle">
+            <div>
+              <div className="text-sm font-semibold text-[#0F172A]">Vista risultati</div>
+              <div className="text-[11px] text-[#64748B]">
+                {vista === "lordo"
+                  ? "Solo canone − rata mutuo (no spese, no tasse)"
+                  : `Cash flow netto: canone − rata − IMU − assicurazione − riserve − tasse (${labelRegime})`}
+              </div>
+            </div>
+            <div className="flex items-center gap-1 bg-[#F1F5F9] rounded-lg p-0.5">
+              <button
+                data-testid="sim-view-lordo"
+                onClick={() => setVista("lordo")}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${vista === "lordo" ? "bg-white text-[#0F172A] shadow-sm" : "text-[#64748B] hover:text-[#0F172A]"}`}
+              >
+                Lordo
+              </button>
+              <button
+                data-testid="sim-view-netto"
+                onClick={() => setVista("netto")}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${vista === "netto" ? "bg-white text-[#0F172A] shadow-sm" : "text-[#64748B] hover:text-[#0F172A]"}`}
+              >
+                Netto (dettagliato)
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <SectionCard testId="sim-result-summary" title="Risultati operazione">
               <div className="grid grid-cols-2 gap-y-3 gap-x-4">
@@ -235,10 +292,10 @@ export default function Simulatore() {
                 </div>
                 <div>
                   <div className="text-[10px] uppercase text-[#64748B]">Rata mutuo</div>
-                  <div className="font-display text-xl font-bold tabular">{formatEur(Math.round(calc.rata))}</div>
+                  <div className="font-display text-xl font-bold tabular">{conMutuo ? formatEur(Math.round(calc.rata)) : "—"}</div>
                 </div>
                 <div>
-                  <div className="text-[10px] uppercase text-[#64748B]">Cash flow / mese</div>
+                  <div className="text-[10px] uppercase text-[#64748B]">Cash flow {vista} / mese</div>
                   <div data-testid="sim-cashflow" className={`font-display text-xl font-bold tabular ${calc.cashFlow >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{formatEur(Math.round(calc.cashFlow))}</div>
                 </div>
                 <div>
@@ -266,29 +323,54 @@ export default function Simulatore() {
             </SectionCard>
           </div>
 
-          {/* Breakdown trasparente del Cash Flow */}
-          <SectionCard testId="sim-cashflow-breakdown" title="Da dove esce il Cash Flow mensile" subtitle="Trasparenza totale: ogni euro è tracciato">
-            <div className="space-y-1 text-sm">
-              <BreakRow label="Canone mensile" value={canone} positive />
-              <BreakRow label={`− Rata mutuo (${durata}a @ ${tassoMutuo}%)`} value={-Math.round(calc.rata)} />
-              <BreakRow label={`− IMU mensilizzata (${formatEur(imuAnnua)}/anno)`} value={-Math.round(calc.imuMensile)} muted />
-              <BreakRow label={`− Assicurazione mensilizzata (${formatEur(assicurazione)}/anno)`} value={-Math.round(calc.assicMensile)} muted />
-              <BreakRow label={`− Riserva manutenzione (${manutenzionePct}% canone)`} value={-Math.round(calc.manutMensile)} muted />
-              <BreakRow label={`− Riserva sfittanza (${sfittanzaPct}% canone)`} value={-Math.round(calc.sfittMensile)} muted />
-              <BreakRow label={`− Tasse su affitto (${labelRegime})`} value={-Math.round(calc.tasseMensili)} />
-              <div className="flex justify-between items-center pt-2 mt-1 border-t-2 border-[#0F172A] font-bold">
-                <span className="text-sm text-[#0F172A]">= Cash flow netto / mese</span>
-                <span className={`font-display text-lg tabular ${calc.cashFlow >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{formatEur(Math.round(calc.cashFlow))}</span>
+          {/* Breakdown trasparente del Cash Flow — visibile solo in vista NETTO */}
+          {vista === "netto" && (
+            <SectionCard testId="sim-cashflow-breakdown" title="Da dove esce il Cash Flow netto mensile" subtitle="Trasparenza totale: ogni euro è tracciato">
+              <div className="space-y-1 text-sm">
+                <BreakRow label="Canone mensile" value={canone} positive />
+                {conMutuo && calc.rata > 0 && (
+                  <BreakRow label={`− Rata mutuo (${durata}a @ ${tassoMutuo}%)`} value={-Math.round(calc.rata)} />
+                )}
+                <BreakRow label={`− IMU mensilizzata (${formatEur(imuAnnua)}/anno)`} value={-Math.round(calc.imuMensile)} muted />
+                <BreakRow label={`− Assicurazione mensilizzata (${formatEur(assicurazione)}/anno)`} value={-Math.round(calc.assicMensile)} muted />
+                <BreakRow label={`− Riserva manutenzione (${manutenzionePct}% canone)`} value={-Math.round(calc.manutMensile)} muted />
+                <BreakRow label={`− Riserva sfittanza (${sfittanzaPct}% canone)`} value={-Math.round(calc.sfittMensile)} muted />
+                <BreakRow label={`− Tasse su affitto (${labelRegime})`} value={-Math.round(calc.tasseMensili)} />
+                <div className="flex justify-between items-center pt-2 mt-1 border-t-2 border-[#0F172A] font-bold">
+                  <span className="text-sm text-[#0F172A]">= Cash flow netto / mese</span>
+                  <span className={`font-display text-lg tabular ${calc.cashFlow >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{formatEur(Math.round(calc.cashFlow))}</span>
+                </div>
               </div>
-            </div>
-            <div className="mt-3 p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-[11px] text-[#475569] flex items-start gap-2 leading-relaxed">
-              <Info size={13} className="text-[#0066FF] shrink-0 mt-0.5" />
-              <span>
-                Tutti i parametri di gestione (IMU, assicurazione, riserve, regime fiscale) sono modificabili dal pannello a sinistra «Costi gestione & fiscalità». Imposta valori reali del tuo immobile per una stima accurata.
-                <strong className="text-[#0F172A]"> Se non vuoi conteggiare le spese</strong> mettile a 0 e vedrai il canone "lordo".
-              </span>
-            </div>
-          </SectionCard>
+              <div className="mt-3 p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-[11px] text-[#475569] flex items-start gap-2 leading-relaxed">
+                <Info size={13} className="text-[#0066FF] shrink-0 mt-0.5" />
+                <span>
+                  I costi gestione default arrivano da <Link to="/impostazioni" className="text-[#0066FF] underline">Impostazioni</Link>. Personalizzali da «Costi gestione & fiscalità» nel pannello a sinistra per stime specifiche di questa operazione.
+                </span>
+              </div>
+            </SectionCard>
+          )}
+
+          {/* Riepilogo Lordo — visibile solo in vista LORDO */}
+          {vista === "lordo" && (
+            <SectionCard testId="sim-cashflow-lordo" title="Cash Flow lordo mensile" subtitle="Solo entrate canone meno rata mutuo (no spese, no tasse)">
+              <div className="space-y-1 text-sm">
+                <BreakRow label="Canone mensile" value={canone} positive />
+                {conMutuo && calc.rata > 0 && (
+                  <BreakRow label={`− Rata mutuo (${durata}a @ ${tassoMutuo}%)`} value={-Math.round(calc.rata)} />
+                )}
+                <div className="flex justify-between items-center pt-2 mt-1 border-t-2 border-[#0F172A] font-bold">
+                  <span className="text-sm text-[#0F172A]">= Cash flow lordo / mese</span>
+                  <span className={`font-display text-lg tabular ${calc.cashFlow >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{formatEur(Math.round(calc.cashFlow))}</span>
+                </div>
+              </div>
+              <div className="mt-3 p-3 bg-[#FFFBEB] border border-[#FCD34D]/40 rounded-lg text-[11px] text-[#92400E] flex items-start gap-2 leading-relaxed">
+                <Info size={13} className="text-[#B45309] shrink-0 mt-0.5" />
+                <span>
+                  <strong>Stima ottimistica:</strong> non considera IMU, assicurazione, manutenzioni, sfittanza e tasse ({labelRegime}). Usa la vista <strong>Netto</strong> per il vero margine post-tasse della società.
+                </span>
+              </div>
+            </SectionCard>
+          )}
 
           {aiResult && (
             <SectionCard testId="sim-ai-result" title="AI Deal Analyzer" subtitle="Valutazione dettagliata con scenari">
