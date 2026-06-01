@@ -1,6 +1,7 @@
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { HelpButton } from "../HelpButton";
+import { OnboardingTour } from "../OnboardingTour";
 
 export const Layout = ({ children, title, subtitle, actions }) => {
   return (
@@ -11,6 +12,7 @@ export const Layout = ({ children, title, subtitle, actions }) => {
         <div className="flex-1 px-6 py-6 fade-up">{children}</div>
       </main>
       <HelpButton />
+      <OnboardingTour />
     </div>
   );
 };

@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
+import { restartTour } from "../components/OnboardingTour";
 import {
   BookOpen, ChevronRight, ChevronDown, Search, Sparkles, Building2, Wallet,
   FileText, Bell, TrendingUp, Map, BarChart3, Upload, Home, AlertTriangle,
@@ -23,6 +24,7 @@ const SECTIONS = [
         "Visualizzare KPI portafoglio: rendimento medio, cash flow, debito, Portfolio Score per immobile.",
       ]},
       { type: "tip", text: "Account demo per provare: ceo@controlroom.it / demo1234 (ruolo CEO). Vedi anche admin/amministrazione/commercialista nel file test_credentials.md." },
+      { type: "tour" },
     ],
   },
   {
@@ -340,6 +342,23 @@ export default function Manuale() {
                     <Sparkles size={13} className="shrink-0 mt-0.5" />
                     <div className="leading-relaxed"><b>Suggerimento — </b>{b.text}</div>
                   </div>
+                );
+                if (b.type === "tour") return (
+                  <button
+                    key={i}
+                    data-testid="restart-tour"
+                    onClick={restartTour}
+                    className="w-full mt-2 flex items-center justify-between gap-3 p-3 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] hover:bg-[#DBEAFE] transition group"
+                  >
+                    <div className="flex items-center gap-2 text-left">
+                      <Sparkles size={14} className="text-[#1E40AF]" />
+                      <div>
+                        <div className="text-sm font-semibold text-[#1E40AF]">Rifai il tour guidato</div>
+                        <div className="text-[11px] text-[#3B82F6]">7 step in 30 secondi sulle sezioni più importanti</div>
+                      </div>
+                    </div>
+                    <ChevronRight size={14} className="text-[#1E40AF] group-hover:translate-x-0.5 transition-transform" />
+                  </button>
                 );
                 return null;
               })}

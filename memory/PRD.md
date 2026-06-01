@@ -352,4 +352,12 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 145. **Componente `HelpButton.jsx`** floating fixed bottom-right (sopra badge Emergent, z-40): mappa il `location.pathname` corrente a una sezione del manuale (`/affitti` → `affitti`, `/forecast` → `forecast`, ecc). Auto-hide su `/manuale` e `/login`.
 146. **UX espandibile**: cerchio 48px chiuso, si allarga su hover mostrando "Aiuto · {NomeSezione}" (es. "Aiuto · 4. Affitti & Locazioni"). Click → naviga a `/manuale?s={section}`.
 147. **Manuale.jsx** legge il query param `?s=` via `useSearchParams` (+ useEffect per cambi dinamici) e apre direttamente sulla sezione richiesta.
+
+## 🆕 Onboarding Tour guidato (1 Jun 2026 - iter 34)
+149. **Componente `OnboardingTour.jsx`** integrato nel Layout (visibile dopo login): tour a 7 step con spotlight ritagliato sull'elemento target (sidebar voci) e tooltip card laterale. Auto-trigger solo se `localStorage.tour_completed != "1"` e path != /login.
+150. **7 step**: Welcome modal centrale → Patrimonio → Documenti → Centro Import → Forecast → HelpButton bottom-right → End ("Vai a Patrimonio" naviga a /patrimonio).
+151. **UX**: progress dots animati che mostrano avanzamento, "Salta il tour" sempre disponibile, "Indietro" da step 2+, anello blu pulsante con `box-shadow` su elemento target. Spotlight implementato con 4 div esterni che oscurano tutto tranne il rect target (più performante di SVG mask).
+152. **Posizionamento adattivo**: placement `right/left/center/bottom` per la card tooltip in base allo step. Re-misurato su resize/scroll via `useLayoutEffect`.
+153. **`restartTour()` helper** esportato per il bottone "Rifai il tour guidato" presente nella sezione Introduzione del Manuale d'uso (rimuove localStorage + redirect a /dashboard).
+
 148. **Integrato nel Layout** (visibile ovunque). Test e2e: da `/affitti` → click help → URL `/manuale?s=affitti` → titolo "4. Affitti & Locazioni" caricato.
