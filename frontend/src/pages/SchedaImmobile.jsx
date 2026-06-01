@@ -7,7 +7,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { ScoreGauge } from "../components/ScoreGauge";
 import { getProperty, formatEur, contratti, lavori, documenti, movimenti } from "../lib/demoData";
 import { apiClient } from "../lib/auth";
-import { ArrowLeft, MapPin, FileText, Download, Calendar, Save, User, Home, Loader2 } from "lucide-react";
+import { ArrowLeft, MapPin, FileText, Download, Calendar, Save, User, Home, Loader2, AlertTriangle, Bell, Clock, X } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 
 const Row = ({ label, value }) => (
@@ -21,6 +21,7 @@ export default function SchedaImmobile() {
   const { id } = useParams();
   const [remoteP, setRemoteP] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [alerts, setAlerts] = useState([]);
 
   useEffect(() => {
     // Try to fetch from API; fall back to demo
@@ -28,7 +29,27 @@ export default function SchedaImmobile() {
       .then(r => setRemoteP(r.data))
       .catch(() => setRemoteP(null))
       .finally(() => setLoading(false));
+    // Carica alert del backend (filtra lato client per immobile_id)
+    apiClient().get(`/alerts`).then(r => {
+      const all = r.data || [];
+      setAlerts(all.filter(a => a.immobile_id === id));
+    }).catch(() => {});
   }, [id]);
+
+  const refreshAlertsForProperty = () => {
+    apiClient().get(`/alerts`).then(r => {
+      setAlerts((r.data || []).filter(a => a.immobile_id === id));
+    });
+  };
+  const dismissAlert = async (alertId) => {
+    try {
+      await apiClient().delete(`/alerts/${alertId}`);
+      toast.success("Alert chiuso");
+      refreshAlertsForProperty();
+    } catch {
+      toast.error("Errore");
+    }
+  };
 
   const demoP = getProperty(id);
   const p = remoteP || demoP;
@@ -70,6 +91,14 @@ export default function SchedaImmobile() {
               <div className={`font-display text-lg font-bold tabular ${p.cash_flow_mensile >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{formatEur(p.cash_flow_mensile)}</div>
             </div>
           </div>
+          {alerts.length > 0 && (
+            <div className="w-full mt-3 flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md bg-[#FFFBEB] border border-[#FCD34D]/40">
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-[#92400E] font-medium">
+                <AlertTriangle size={11} /> {alerts.length} alert attiv{alerts.length === 1 ? "o" : "i"}
+              </span>
+              <a href="#alerts-section" className="text-[10px] text-[#B45309] hover:underline">Vedi sotto ↓</a>
+            </div>
+          )}
         </div>
       </div>
 
@@ -81,6 +110,9 @@ export default function SchedaImmobile() {
           <TabsTrigger value="locazione" data-testid="scheda-tab-locazione">Locazione</TabsTrigger>
           <TabsTrigger value="documenti" data-testid="scheda-tab-documenti">Documenti</TabsTrigger>
           <TabsTrigger value="movimenti" data-testid="scheda-tab-movimenti">Movimenti</TabsTrigger>
+          <TabsTrigger value="alerts" data-testid="scheda-tab-alerts">
+            Alert{alerts.length > 0 && <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] text-[10px] font-bold rounded-full bg-[#FEE2E2] text-[#DC2626] px-1">{alerts.length}</span>}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="anagrafica" className="mt-4">
@@ -203,6 +235,64 @@ export default function SchedaImmobile() {
                 ))}
               </tbody>
             </table>
+          </SectionCard>
+        </TabsContent>
+
+        <TabsContent value="alerts" className="mt-4">
+          <SectionCard
+            title="Alert immobile"
+            subtitle={alerts.length === 0 ? "Tutto sotto controllo — nessun alert attivo" : `${alerts.length} notifich${alerts.length === 1 ? "a" : "e"} attiv${alerts.length === 1 ? "a" : "e"}`}
+            testId="card-alerts"
+            action={
+              <a href="/alert-center" className="inline-flex items-center gap-1 text-xs text-[#2563EB] hover:underline">
+                <Bell size={11} /> Centro Alert
+              </a>
+            }
+          >
+            <div id="alerts-section" />
+            {alerts.length === 0 ? (
+              <div className="py-8 text-center">
+                <Bell size={32} className="mx-auto text-[#CBD5E1] mb-2" />
+                <div className="text-sm text-[#475569]">Nessun alert per questo immobile.</div>
+                <div className="text-[11px] text-[#94A3B8] mt-1">Carica un documento e analizzalo con l'AI per generare alert automatici su anomalie e scadenze.</div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {alerts.map(a => {
+                  const sev = a.severity || "media";
+                  const sevColor = sev === "alta" ? "#DC2626" : sev === "media" ? "#B45309" : "#0066FF";
+                  const sevBg = sev === "alta" ? "#FEE2E2" : sev === "media" ? "#FEF3C7" : "#DBEAFE";
+                  const days = a.days_remaining;
+                  return (
+                    <div key={a.id} className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg p-3 flex items-start gap-3 hover:border-[#CBD5E1]">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: sevBg, border: `1px solid ${sevColor}40` }}>
+                        <AlertTriangle size={14} style={{ color: sevColor }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded" style={{ background: sevBg, color: sevColor }}>
+                            {sev}
+                          </span>
+                          <span className="text-[10px] uppercase tracking-wider text-[#64748B]">{a.tipo}</span>
+                          {typeof days === "number" && (
+                            <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded ${days < 0 ? "bg-red-100 text-red-700" : days <= 30 ? "bg-orange-100 text-orange-700" : days <= 60 ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>
+                              <Clock size={9} />
+                              {days < 0 ? `scaduto da ${-days}gg` : `tra ${days}gg`}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-[#94A3B8] ml-auto">{(a.ts || "").slice(0, 10)}</span>
+                        </div>
+                        <div className="text-sm font-medium text-[#0F172A]">{a.titolo}</div>
+                        <div className="text-xs text-[#475569] mt-0.5">{a.descrizione}</div>
+                      </div>
+                      <button onClick={() => dismissAlert(a.id)} title="Chiudi alert" className="p-1.5 hover:bg-white rounded-lg text-[#64748B] hover:text-[#0F172A]">
+                        <X size={13} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </SectionCard>
         </TabsContent>
       </Tabs>

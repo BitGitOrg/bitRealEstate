@@ -310,6 +310,14 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 
 
 ## Backlog (P2)
+
+## 🆕 Alert sulla Scheda Immobile (1 Jun 2026 - iter 29)
+123. **Banner alert in hero** della scheda: se l'immobile ha alert attivi (filtrati da `immobile_id`), appare un mini-banner giallo "⚠ N alert attivi · Vedi sotto ↓" sotto le card Rendimento/Cash flow del Portfolio Score. Link smooth scroll a `#alerts-section`.
+124. **Tab dedicata "Alert"** in `SchedaImmobile.jsx` con **badge contatore rosso** (`bg-#FEE2E2 text-#DC2626`). Posizionata dopo Movimenti come ultima.
+125. **Pannello alert dettagliato**: lista di card con icona AlertTriangle, badge severity colorato (alta=rosso, media=ambra, bassa=blu), tipo (documentale/economico/strategico), Clock badge con `days_remaining` (scaduto/≤30gg arancio/≤60gg ambra/>60gg blu), titolo, descrizione completa, timestamp, bottone X per dismiss inline.
+126. **Stato vuoto educativo**: "Nessun alert per questo immobile. Carica un documento e analizzalo con l'AI per generare alert automatici su anomalie e scadenze." → invita all'azione.
+127. **Test e2e**: Via Foligno (IMM-001) ha già 16 alert (16 anomalie dai 2 documenti caricati: contratto + visura PNG OCR + APE) → tutti visualizzati correttamente nella nuova tab. Loop chiuso: documento caricato → AI Reader → alert auto → visibile sulla scheda immobile + Centro Alert centralizzato.
+
 - Integrazione bancaria
 - Notifiche email/PEC su alert critici
 - Multi-società / multi-tenant
