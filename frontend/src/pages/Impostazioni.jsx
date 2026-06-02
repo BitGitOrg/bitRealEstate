@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import { useAuth } from "../lib/auth";
-import { Save, Building2, Target, Sparkles, Shield, Image as ImageIcon, Upload, Trash2, Receipt, Wrench } from "lucide-react";
+import { Save, Building2, Target, Sparkles, Shield, Image as ImageIcon, Upload, Trash2, Receipt, Wrench, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 
 const API_BASE = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -42,6 +43,11 @@ export default function Impostazioni() {
   const [logoBase64, setLogoBase64] = useState(null);
   const [logoMime, setLogoMime] = useState(null);
   const [liquiditaIniziale, setLiquiditaIniziale] = useState(35000);
+  // Solleciti automatici
+  const [sollAutoEnabled, setSollAutoEnabled] = useState(true);
+  const [sollGgCortese, setSollGgCortese] = useState(5);
+  const [sollGgFermo, setSollGgFermo] = useState(15);
+  const [sollGgLegale, setSollGgLegale] = useState(30);
   // Fiscale & costi gestione default
   const [tipoSocieta, setTipoSocieta] = useState("srl");
   const [regimeAffitti, setRegimeAffitti] = useState("ordinario");
@@ -74,6 +80,10 @@ export default function Impostazioni() {
           setLogoBase64(s.logo_base64 || null);
           setLogoMime(s.logo_mime || null);
           setLiquiditaIniziale(s.liquidita_iniziale ?? 35000);
+          setSollAutoEnabled(s.sollecito_auto_enabled ?? true);
+          setSollGgCortese(s.sollecito_giorni_cortese ?? 5);
+          setSollGgFermo(s.sollecito_giorni_fermo ?? 15);
+          setSollGgLegale(s.sollecito_giorni_legale ?? 30);
           setTipoSocieta(s.tipo_societa || "srl");
           setRegimeAffitti(s.regime_affitti || "ordinario");
           setAliquotaIres(s.aliquota_ires ?? 24);
@@ -106,6 +116,10 @@ export default function Impostazioni() {
         capitale_disponibile: parseFloat(capitale) || 0,
         limite_indebitamento: parseFloat(limiteIndebitamento) || 0,
         liquidita_iniziale: parseFloat(liquiditaIniziale) || 0,
+        sollecito_auto_enabled: !!sollAutoEnabled,
+        sollecito_giorni_cortese: parseInt(sollGgCortese) || 5,
+        sollecito_giorni_fermo: parseInt(sollGgFermo) || 15,
+        sollecito_giorni_legale: parseInt(sollGgLegale) || 30,
         tipo_societa: tipoSocieta,
         regime_affitti: regimeAffitti,
         aliquota_ires: parseFloat(aliquotaIres) || 0,
@@ -277,6 +291,38 @@ export default function Impostazioni() {
             <span className="text-xs text-[#64748B]">PNG / JPG / SVG · max 1 MB · meglio se sfondo trasparente</span>
           </div>
         </div>
+      </SectionCard>
+
+      {/* Solleciti automatici */}
+      <SectionCard
+        testId="settings-solleciti"
+        title="Solleciti automatici"
+        subtitle="Quando un affitto è in ritardo, il sistema crea automaticamente la notifica con il tono corretto"
+        action={<MessageCircle size={16} className="text-[#059669]" />}
+        className="mb-4"
+      >
+        <label className="flex items-center gap-2 mb-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={sollAutoEnabled}
+            onChange={(e) => setSollAutoEnabled(e.target.checked)}
+            data-testid="sollecito-auto-toggle"
+            className="w-4 h-4 rounded border-[#CBD5E1] text-[#0066FF] focus:ring-[#0066FF]"
+          />
+          <span className="text-sm text-[#0F172A]">Attiva il rilevamento automatico</span>
+        </label>
+        {sollAutoEnabled && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Field label="Sollecito CORTESE dopo (gg)" value={sollGgCortese} onChange={(v) => setSollGgCortese(parseInt(v) || 5)} type="number" suffix="gg" />
+              <Field label="Sollecito FERMO dopo (gg)" value={sollGgFermo} onChange={(v) => setSollGgFermo(parseInt(v) || 15)} type="number" suffix="gg" />
+              <Field label="Diffida LEGALE dopo (gg)" value={sollGgLegale} onChange={(v) => setSollGgLegale(parseInt(v) || 30)} type="number" suffix="gg" />
+            </div>
+            <div className="mt-3 text-[11px] text-[#475569] bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg p-3 leading-relaxed">
+              Il sistema controlla gli incassi non pagati ad ogni apertura dell'app. Quando un inquilino è in ritardo di <strong className="tabular">{sollGgCortese}/{sollGgFermo}/{sollGgLegale}</strong> giorni, riceverai una notifica nella campanella e nella pagina <Link to="/notifiche" className="text-[#0066FF] underline">Solleciti & Notifiche</Link> con il testo AI già pronto. <strong className="text-[#0F172A]">Non viene mai inviato nulla senza la tua conferma.</strong>
+            </div>
+          </>
+        )}
       </SectionCard>
 
       {/* Regime fiscale */}

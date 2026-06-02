@@ -33,12 +33,81 @@ class MarcaInviatoIn(BaseModel):
     note: Optional[str] = ""
 
 
-def _classifica_tono(giorni_ritardo: int) -> str:
-    if giorni_ritardo <= 10:
-        return "cortese"
-    if giorni_ritardo <= 30:
+def _classifica_tono(giorni_ritardo: int, settings: dict = None) -> str:
+    s = settings or {}
+    g_cortese = int(s.get("sollecito_giorni_cortese", 5) or 5)
+    g_fermo = int(s.get("sollecito_giorni_fermo", 15) or 15)
+    g_legale = int(s.get("sollecito_giorni_legale", 30) or 30)
+    if giorni_ritardo >= g_legale:
+        return "legale"
+    if giorni_ritardo >= g_fermo:
         return "fermo"
-    return "legale"
+    if giorni_ritardo >= g_cortese:
+        return "cortese"
+    return "watching"   # non ancora dovuto un sollecito
+
+
+def _stage_da_tono(tono: str) -> int:
+    return {"watching": 0, "cortese": 1, "fermo": 2, "legale": 3}.get(tono, 0)
+
+
+async def _auto_scan_solleciti(db, user_id: str) -> int:
+    """Scansiona i solleciti dovuti e genera (idempotentemente) alert nella campanella.
+    Restituisce il numero di alert creati/aggiornati.
+    """
+    settings = await db.settings.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    if not settings.get("sollecito_auto_enabled", True):
+        return 0
+    today = date.today()
+    incassi = await db.incassi.find({
+        "user_id": user_id,
+        "stato": {"$in": ["previsto", "in_ritardo", "sollecitato"]},
+    }, {"_id": 0}).to_list(500)
+    created = 0
+    for i in incassi:
+        anno = int(i.get("anno", 0) or 0)
+        mese = int(i.get("mese", 0) or 0)
+        if anno == 0 or mese == 0:
+            continue
+        scad = date(anno, mese, 5)
+        gg = (today - scad).days
+        tono = _classifica_tono(gg, settings)
+        if tono == "watching":
+            continue
+        stage_needed = _stage_da_tono(tono)
+        # Quanti solleciti effettivi sono stati inviati per questo incasso?
+        sent = await db.solleciti.count_documents({"user_id": user_id, "incasso_id": i.get("id")})
+        if sent >= stage_needed:
+            continue   # già inviato il sollecito di questo stadio o superiore
+        # Crea/aggiorna alert (un solo alert per incasso, idempotente)
+        p = await db.properties.find_one({"id": i.get("immobile_id"), "user_id": user_id}, {"_id": 0})
+        if not p or not p.get("inquilino"):
+            continue
+        importo = float(i.get("previsto") or i.get("importo", 0) or p.get("canone_mensile", 0) or 0)
+        alert_id = f"A-SOLL-{i.get('id')}"
+        sev = {"cortese": "media", "fermo": "alta", "legale": "alta"}.get(tono, "media")
+        await db.alerts.update_one(
+            {"id": alert_id, "user_id": user_id},
+            {"$set": {
+                "id": alert_id,
+                "user_id": user_id,
+                "tipo": "sollecito",
+                "severity": sev,
+                "titolo": f"Sollecito {tono} dovuto · {p.get('nome')}",
+                "descrizione": f"{p.get('inquilino')} è in ritardo di {gg} giorni · € {importo:.0f}",
+                "immobile_id": p["id"],
+                "incasso_id": i.get("id"),
+                "tono": tono,
+                "stage_da_inviare": stage_needed,
+                "days_remaining": -gg,
+                "auto_generated": True,
+                "kind": "sollecito_auto",
+                "ts": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+        created += 1
+    return created
 
 
 def make_notifications_router(db, current_user, llm_key: str = ""):
@@ -46,35 +115,40 @@ def make_notifications_router(db, current_user, llm_key: str = ""):
 
     @router.get("/solleciti-da-inviare")
     async def solleciti_da_inviare(user: dict = Depends(current_user)):
-        """Lista degli incassi in ritardo che richiedono un sollecito."""
+        """Lista degli incassi in ritardo che richiedono un sollecito. Esegue auto-scan."""
+        # 1. Auto-scan crea/aggiorna alert nella campanella
+        await _auto_scan_solleciti(db, user["id"])
+        # 2. Restituisce solleciti dovuti
         today = date.today()
-        # Incassi previsti del mese corrente o passato non pagati
-        cursor = db.incassi.find({
+        settings = await db.settings.find_one({"user_id": user["id"]}, {"_id": 0}) or {}
+        all_inc = await db.incassi.find({
             "user_id": user["id"],
-            "stato": {"$in": ["previsto", "in_ritardo"]},
+            "stato": {"$in": ["previsto", "in_ritardo", "sollecitato"]},
         }, {"_id": 0}).to_list(500)
-        all_inc = await cursor
-        # Filtra solo quelli con mese-anno <= mese-anno corrente
         out = []
         for i in all_inc:
             anno = int(i.get("anno", 0) or 0)
             mese = int(i.get("mese", 0) or 0)
             if anno == 0 or mese == 0:
                 continue
-            scad_date = date(anno, mese, 5)  # affitti tipicamente dovuti entro il 5
+            scad_date = date(anno, mese, 5)
             if scad_date > today:
                 continue
             giorni_ritardo = (today - scad_date).days
             if giorni_ritardo < 1:
                 continue
-            # Carica property + ultimo sollecito
+            tono = _classifica_tono(giorni_ritardo, settings)
+            stage_needed = _stage_da_tono(tono)
             p = await db.properties.find_one({"id": i.get("immobile_id"), "user_id": user["id"]}, {"_id": 0})
             if not p or not p.get("inquilino"):
                 continue
+            sent_count = await db.solleciti.count_documents({"user_id": user["id"], "incasso_id": i.get("id")})
             last_sollecito = await db.solleciti.find_one(
                 {"user_id": user["id"], "incasso_id": i.get("id")},
                 sort=[("inviato_il", -1)]
             )
+            # ready_to_send: c'è uno stadio nuovo da inviare
+            ready = sent_count < stage_needed and tono != "watching"
             out.append({
                 "incasso_id": i.get("id"),
                 "immobile_id": p["id"],
@@ -87,11 +161,14 @@ def make_notifications_router(db, current_user, llm_key: str = ""):
                 "anno": anno,
                 "scadenza": scad_date.isoformat(),
                 "giorni_ritardo": giorni_ritardo,
-                "tono_consigliato": _classifica_tono(giorni_ritardo),
+                "tono_consigliato": tono if tono != "watching" else "cortese",
+                "stage_da_inviare": stage_needed,
+                "solleciti_inviati": sent_count,
+                "ready_to_send": ready,
                 "ultimo_sollecito": (last_sollecito or {}).get("inviato_il"),
             })
-        # Ordina per gg ritardo
-        out.sort(key=lambda x: -x["giorni_ritardo"])
+        # Ordina: prima i ready_to_send, poi per gg ritardo
+        out.sort(key=lambda x: (not x["ready_to_send"], -x["giorni_ritardo"]))
         return out
 
     @router.post("/genera-testo")
@@ -103,7 +180,7 @@ def make_notifications_router(db, current_user, llm_key: str = ""):
         settings = await db.settings.find_one({"user_id": user["id"]}, {"_id": 0}) or {}
         societa = settings.get("nome_societa") or "la proprietà"
         inquilino = p.get("inquilino", "Gentile inquilino")
-        tono = payload.tono if payload.tono != "auto" else _classifica_tono(payload.mesi_in_ritardo * 30)
+        tono = payload.tono if payload.tono != "auto" else _classifica_tono(payload.mesi_in_ritardo * 30, settings)
         ctx = {
             "inquilino": inquilino,
             "immobile_nome": p.get("nome"),
@@ -170,6 +247,12 @@ def make_notifications_router(db, current_user, llm_key: str = ""):
             {"id": incasso_id, "user_id": user["id"]},
             {"$set": {"stato": "sollecitato"}}
         )
+        # Cancella alert auto-generato corrispondente
+        await db.alerts.delete_many({
+            "user_id": user["id"],
+            "kind": "sollecito_auto",
+            "incasso_id": incasso_id,
+        })
         return {"ok": True}
 
     @router.get("/storico")

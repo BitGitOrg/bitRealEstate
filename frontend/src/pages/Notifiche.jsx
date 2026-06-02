@@ -4,7 +4,8 @@ import { SectionCard } from "../components/dashboard/SectionCard";
 import { apiClient } from "../lib/auth";
 import { formatEur } from "../lib/demoData";
 import { toast } from "sonner";
-import { Bell, Mail, MessageCircle, Loader2, Sparkles, CheckCircle2, Clock, Copy, History } from "lucide-react";
+import { Bell, Mail, MessageCircle, Loader2, Sparkles, CheckCircle2, Clock, Copy, History, Settings as SettingsIcon } from "lucide-react";
+import { Link } from "react-router-dom";
 
 const TONI = {
   cortese: { label: "Cortese", color: "#059669", bg: "rgba(16,185,129,0.10)", border: "rgba(16,185,129,0.3)" },
@@ -33,6 +34,8 @@ export default function Notifiche() {
   useEffect(() => { load(); }, []);
 
   const importoTotale = solleciti.reduce((sum, s) => sum + (s.importo || 0), 0);
+  const ready = solleciti.filter(s => s.ready_to_send);
+  const waiting = solleciti.filter(s => !s.ready_to_send);
 
   return (
     <Layout
@@ -44,68 +47,59 @@ export default function Notifiche() {
           <div className="flex items-center gap-2 text-[10px] uppercase text-[#64748B]"><Bell size={12}/> Affitti in ritardo</div>
           <div className="font-display text-3xl font-bold tabular mt-1 text-[#DC2626]">{solleciti.length}</div>
         </SectionCard>
-        <SectionCard testId="not-kpi-importo">
-          <div className="text-[10px] uppercase text-[#64748B]">Importo da recuperare</div>
-          <div className="font-display text-3xl font-bold tabular mt-1 text-[#DC2626]">{formatEur(importoTotale)}</div>
+        <SectionCard testId="not-kpi-ready">
+          <div className="text-[10px] uppercase text-[#64748B]">Da inviare ora</div>
+          <div className="font-display text-3xl font-bold tabular mt-1 text-[#B45309]">{ready.length}</div>
+          <div className="text-[11px] text-[#64748B]">Soglia raggiunta</div>
         </SectionCard>
-        <SectionCard testId="not-kpi-piu-grave">
-          <div className="text-[10px] uppercase text-[#64748B]">Caso più grave</div>
-          <div className="font-display text-3xl font-bold tabular mt-1">{solleciti[0]?.giorni_ritardo || 0} gg</div>
-          <div className="text-[11px] text-[#64748B] truncate">{solleciti[0]?.inquilino || "—"}</div>
+        <SectionCard testId="not-kpi-importo">
+          <div className="text-[10px] uppercase text-[#64748B]">Importo totale</div>
+          <div className="font-display text-2xl font-bold tabular mt-1 text-[#DC2626]">{formatEur(importoTotale)}</div>
         </SectionCard>
         <SectionCard testId="not-kpi-storico">
-          <div className="flex items-center gap-2 text-[10px] uppercase text-[#64748B]"><History size={12}/> Solleciti inviati</div>
+          <div className="flex items-center gap-2 text-[10px] uppercase text-[#64748B]"><History size={12}/> Inviati totali</div>
           <div className="font-display text-3xl font-bold tabular mt-1">{storico.length}</div>
-          <div className="text-[11px] text-[#64748B]">Storico totale</div>
         </SectionCard>
       </div>
 
-      <SectionCard
-        title="Da sollecitare adesso"
-        subtitle="L'AI genera il testo personalizzato in base ai giorni di ritardo — invii via mail o WhatsApp con un click"
-        testId="not-lista"
-        className="mb-4"
-      >
-        {loading ? (
-          <div className="py-10 flex justify-center"><Loader2 size={24} className="animate-spin text-[#0066FF]"/></div>
-        ) : solleciti.length === 0 ? (
+      {ready.length > 0 && (
+        <SectionCard
+          title={`⚡ ${ready.length} solleciti raccomandati ora`}
+          subtitle="Hanno raggiunto la soglia automatica configurata · pronti per essere inviati"
+          testId="not-ready"
+          className="mb-4"
+          action={<Link to="/impostazioni" className="text-xs text-[#64748B] hover:text-[#0F172A] inline-flex items-center gap-1"><SettingsIcon size={11}/> Soglie</Link>}
+        >
+          <div className="space-y-2">
+            {ready.map(s => <SollecitoRow key={s.incasso_id} s={s} onClick={() => setComposing(s)} />)}
+          </div>
+        </SectionCard>
+      )}
+
+      {waiting.length > 0 && (
+        <SectionCard
+          title="In monitoraggio"
+          subtitle={`Ritardi sotto soglia o solleciti recenti già inviati (totale ${waiting.length})`}
+          testId="not-waiting"
+        >
+          {loading ? (
+            <div className="py-6 flex justify-center"><Loader2 size={24} className="animate-spin text-[#0066FF]"/></div>
+          ) : (
+            <div className="space-y-2">
+              {waiting.map(s => <SollecitoRow key={s.incasso_id} s={s} onClick={() => setComposing(s)} muted />)}
+            </div>
+          )}
+        </SectionCard>
+      )}
+
+      {ready.length === 0 && waiting.length === 0 && !loading && (
+        <SectionCard testId="not-empty">
           <div className="py-10 text-center">
             <CheckCircle2 size={36} className="mx-auto text-[#10B981] mb-2"/>
             <div className="text-sm text-[#475569]">Nessun affitto in ritardo. Tutti gli inquilini hanno pagato puntualmente.</div>
           </div>
-        ) : (
-          <div className="space-y-2">
-            {solleciti.map(s => {
-              const tono = TONI[s.tono_consigliato] || TONI.cortese;
-              return (
-                <div key={s.incasso_id} className="flex items-center gap-3 p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg" data-testid={`sollecito-${s.incasso_id}`}>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-[#0F172A]">{s.inquilino}</span>
-                      <span className="text-xs text-[#64748B]">· {s.immobile_nome}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full border" style={{ background: tono.bg, color: tono.color, borderColor: tono.border }}>{tono.label}</span>
-                      {s.ultimo_sollecito && <span className="text-[10px] text-[#64748B] inline-flex items-center gap-1"><Clock size={10}/> già sollecitato {new Date(s.ultimo_sollecito).toLocaleDateString("it-IT")}</span>}
-                    </div>
-                    <div className="text-[11px] text-[#64748B] mt-0.5">
-                      Affitto {s.mese}/{s.anno} · scaduto da <strong className="text-[#DC2626]">{s.giorni_ritardo} giorni</strong>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0 mr-3">
-                    <div className="font-display text-lg font-bold tabular text-[#DC2626]">{formatEur(s.importo)}</div>
-                  </div>
-                  <button
-                    onClick={() => setComposing(s)}
-                    data-testid={`sollecito-prepara-${s.incasso_id}`}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#7C3AED] to-[#2563EB] hover:opacity-90 text-white text-xs font-medium"
-                  >
-                    <Sparkles size={12}/> Prepara sollecito AI
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </SectionCard>
+        </SectionCard>
+      )}
 
       {storico.length > 0 && (
         <SectionCard title="Storico solleciti inviati" testId="not-storico">
@@ -124,6 +118,43 @@ export default function Notifiche() {
 
       {composing && <ComposeModal sollecito={composing} onClose={() => setComposing(null)} onSent={() => { setComposing(null); load(); }} />}
     </Layout>
+  );
+}
+
+function SollecitoRow({ s, onClick, muted }) {
+  const tono = TONI[s.tono_consigliato] || TONI.cortese;
+  return (
+    <div className={`flex items-center gap-3 p-3 rounded-lg border ${muted ? "bg-white border-[#E2E8F0] opacity-80" : "bg-[#F8FAFC] border-[#E2E8F0]"}`} data-testid={`sollecito-${s.incasso_id}`}>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-medium text-[#0F172A]">{s.inquilino}</span>
+          <span className="text-xs text-[#64748B]">· {s.immobile_nome}</span>
+          <span className="text-[10px] px-2 py-0.5 rounded-full border" style={{ background: tono.bg, color: tono.color, borderColor: tono.border }}>{tono.label}</span>
+          {s.solleciti_inviati > 0 && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#F1F5F9] text-[#475569] border border-[#E2E8F0]">
+              {s.solleciti_inviati} inviat{s.solleciti_inviati === 1 ? "o" : "i"}
+            </span>
+          )}
+          {s.ultimo_sollecito && <span className="text-[10px] text-[#64748B] inline-flex items-center gap-1"><Clock size={10}/> ultimo {new Date(s.ultimo_sollecito).toLocaleDateString("it-IT")}</span>}
+        </div>
+        <div className="text-[11px] text-[#64748B] mt-0.5">
+          Affitto {s.mese}/{s.anno} · scaduto da <strong className={muted ? "text-[#475569]" : "text-[#DC2626]"}>{s.giorni_ritardo} giorni</strong>
+          {!s.ready_to_send && s.solleciti_inviati >= s.stage_da_inviare && (
+            <span className="ml-2 text-[#059669]">✓ sollecito {tono.label.toLowerCase()} già inviato</span>
+          )}
+        </div>
+      </div>
+      <div className="text-right shrink-0 mr-3">
+        <div className={`font-display text-lg font-bold tabular ${muted ? "text-[#475569]" : "text-[#DC2626]"}`}>{formatEur(s.importo)}</div>
+      </div>
+      <button
+        onClick={onClick}
+        data-testid={`sollecito-prepara-${s.incasso_id}`}
+        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-medium ${s.ready_to_send ? "bg-gradient-to-r from-[#7C3AED] to-[#2563EB] hover:opacity-90" : "bg-[#94A3B8] hover:bg-[#64748B]"}`}
+      >
+        <Sparkles size={12}/> {s.ready_to_send ? "Prepara sollecito" : "Forza invio"}
+      </button>
+    </div>
   );
 }
 

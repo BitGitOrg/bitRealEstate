@@ -28,7 +28,12 @@ DEFAULT_SETTINGS = {
     "aliquota_plusvalenza": 26.0,
     "aliquota_ires": 24.0,
     "aliquota_irap": 3.9,
-    # === Liquidità di partenza (fonte di verità per Dashboard/Forecast) ===
+    # === Solleciti automatici ===
+    "sollecito_auto_enabled": True,
+    "sollecito_giorni_cortese": 5,      # T+5gg → primo sollecito cortese
+    "sollecito_giorni_fermo": 15,       # T+15gg → secondo sollecito fermo
+    "sollecito_giorni_legale": 30,      # T+30gg → diffida legale
+    # === Liquidità di partenza ===
     "liquidita_iniziale": 35000.0,
 }
 
@@ -55,6 +60,11 @@ class SettingsIn(BaseModel):
     assicurazione_media_per_immobile: Optional[float] = None
     manutenzione_pct_default: Optional[float] = None
     sfittanza_pct_default: Optional[float] = None
+    # Solleciti automatici
+    sollecito_auto_enabled: Optional[bool] = None
+    sollecito_giorni_cortese: Optional[int] = None
+    sollecito_giorni_fermo: Optional[int] = None
+    sollecito_giorni_legale: Optional[int] = None
 
 
 async def get_user_settings(db, user_id: str) -> dict:
