@@ -18,6 +18,7 @@ const GROUPS = [
   ]},
   { name: "Operazioni", items: [
     { to: "/operazioni", label: "Operazioni", icon: Handshake },
+    { to: "/pipeline", label: "Pipeline Acquisizioni", icon: Sparkles, accent: true },
     { to: "/affitti", label: "Affitti & Locazioni", icon: Home },
     { to: "/notifiche", label: "Solleciti & Notifiche", icon: MessageCircle, accent: true },
     { to: "/vendite", label: "Vendite & Rivendite", icon: ShoppingBag },
