@@ -109,6 +109,44 @@ def make_pipeline_router(db, current_user):
     @router.post("")
     async def create_deal(payload: DealIn, user: dict = Depends(current_user)):
         now = datetime.now(timezone.utc).isoformat()
+        # AI Deal Score immediato (riusa logica esistente /api/ai/deal-analyze)
+        ai_score = None
+        ai_giudizio = None
+        ai_prezzo_max = None
+        ai_punti = []
+        try:
+            from routers._shared import tax_rate_from_settings
+            settings = await db.settings.find_one({"user_id": user["id"]}, {"_id": 0}) or {}
+            costo_tot = payload.prezzo_richiesto + 8000  # stima costi accessori
+            canone_a = float(payload.canone_atteso or 0) * 12
+            rend_lordo = (canone_a / costo_tot * 100) if costo_tot > 0 else 0
+            rend_netto = rend_lordo * (1 - tax_rate_from_settings(settings) - 0.08)  # tasse + ~8% costi gestione
+            score = 55
+            score += min(35, max(-35, (rend_netto - 4) * 7))
+            if canone_a == 0:
+                score -= 10
+            if rend_lordo >= 8:
+                score += 6
+            elif rend_lordo >= 6.5:
+                score += 3
+            score = max(0, min(100, int(score)))
+            target_n = float(settings.get("target_netto", 4.5) or 4.5)
+            if canone_a > 0:
+                prezzo_max = (canone_a / (target_n / 100)) / (1 - tax_rate_from_settings(settings) - 0.08) - 8000
+                ai_prezzo_max = max(0, round(prezzo_max, 0))
+            ai_score = score
+            ai_giudizio = "eccellente" if score >= 88 else "buona" if score >= 72 else "interessante" if score >= 55 else "rischiosa" if score >= 38 else "sconsigliata"
+            if payload.canone_atteso == 0 or payload.canone_atteso is None:
+                ai_punti.append("Canone atteso mancante: stima difficile")
+            if rend_netto < 3.5 and canone_a > 0:
+                ai_punti.append(f"Rendimento netto stimato {rend_netto:.1f}% sotto soglia")
+            if rend_lordo >= 7:
+                ai_punti.append(f"Rendimento lordo {rend_lordo:.1f}% sopra media")
+            if not ai_punti:
+                ai_punti.append("Parametri equilibrati")
+        except Exception:
+            pass
+
         item = {
             "id": f"DEAL-{uuid.uuid4().hex[:6].upper()}",
             "user_id": user["id"],
@@ -117,13 +155,17 @@ def make_pipeline_router(db, current_user):
             "convertito": False,
             "prezzo_corrente": payload.prezzo_richiesto,
             **payload.model_dump(),
+            "ai_deal_score": ai_score,
+            "ai_giudizio": ai_giudizio,
+            "ai_prezzo_max": ai_prezzo_max,
+            "ai_punti": ai_punti,
             "created_at": now,
             "stage_updated_at": now,
             "timeline": [{
                 "id": f"EVT-{uuid.uuid4().hex[:6].upper()}",
                 "tipo": "visione",
                 "data": date.today().isoformat(),
-                "descrizione": f"Annuncio visto su {payload.fonte} a {payload.prezzo_richiesto:.0f}€",
+                "descrizione": f"Annuncio visto su {payload.fonte} a {payload.prezzo_richiesto:.0f}€" + (f" · AI Score {ai_score}/100 ({ai_giudizio})" if ai_score else ""),
                 "stage_dopo": "visionato",
             }],
         }

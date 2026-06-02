@@ -109,7 +109,17 @@ export default function Pipeline() {
                         data-testid={`pipe-card-${d.id}`}
                         className="w-full text-left bg-white border border-[#E2E8F0] rounded-lg p-2.5 hover:border-[#0066FF] hover:shadow-md transition-all"
                       >
-                        <div className="text-xs font-semibold text-[#0F172A] truncate">{d.indirizzo}</div>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="text-xs font-semibold text-[#0F172A] truncate flex-1">{d.indirizzo}</div>
+                          {d.ai_deal_score != null && (
+                            <span className="shrink-0 text-[9px] font-bold tabular px-1.5 py-0.5 rounded" style={{
+                              background: d.ai_deal_score >= 72 ? "#D1FAE5" : d.ai_deal_score >= 55 ? "#FEF3C7" : "#FEE2E2",
+                              color: d.ai_deal_score >= 72 ? "#065F46" : d.ai_deal_score >= 55 ? "#92400E" : "#991B1B",
+                            }} title={`AI Score ${d.ai_deal_score}/100 · ${d.ai_giudizio || ""}`}>
+                              {d.ai_deal_score}
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[10px] text-[#64748B] truncate">{d.citta} {d.metratura && `· ${d.metratura}m²`}</div>
                         <div className="mt-1.5 flex items-center justify-between">
                           <div className="font-display text-sm font-bold tabular">{formatEur(d.prezzo_corrente || d.prezzo_richiesto)}</div>
@@ -271,6 +281,30 @@ function DealDetail({ id, onClose, onUpdated }) {
             <div className="bg-[#F8FAFC] rounded-lg p-3"><div className="text-[10px] uppercase text-[#64748B]">Prezzo corrente</div><div className="font-display text-lg font-bold tabular text-[#0066FF]">{formatEur(deal.prezzo_corrente)}</div></div>
             <div className="bg-[#F8FAFC] rounded-lg p-3"><div className="text-[10px] uppercase text-[#64748B]">Sconto</div><div className="font-display text-lg font-bold tabular text-[#059669]">−{deal.sconto_pct}%</div></div>
           </div>
+
+          {/* AI Deal Analyzer panel */}
+          {deal.ai_deal_score != null && (
+            <div className="rounded-lg p-4 border" style={{
+              background: deal.ai_deal_score >= 72 ? "rgba(16,185,129,0.06)" : deal.ai_deal_score >= 55 ? "rgba(245,158,11,0.06)" : "rgba(239,68,68,0.06)",
+              borderColor: deal.ai_deal_score >= 72 ? "rgba(16,185,129,0.3)" : deal.ai_deal_score >= 55 ? "rgba(245,158,11,0.3)" : "rgba(239,68,68,0.3)",
+            }} data-testid="pipe-ai-panel">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs uppercase tracking-wider text-[#475569] font-bold">🤖 AI Deal Analyzer</div>
+                <div className="font-display text-2xl font-bold tabular" style={{
+                  color: deal.ai_deal_score >= 72 ? "#059669" : deal.ai_deal_score >= 55 ? "#B45309" : "#DC2626",
+                }}>{deal.ai_deal_score}/100</div>
+              </div>
+              <div className="text-sm text-[#0F172A] mb-2">
+                Operazione <strong>{deal.ai_giudizio}</strong>
+                {deal.ai_prezzo_max ? <> · Prezzo max consigliato: <strong className="tabular">{formatEur(deal.ai_prezzo_max)}</strong></> : null}
+              </div>
+              {Array.isArray(deal.ai_punti) && deal.ai_punti.length > 0 && (
+                <ul className="text-xs text-[#475569] space-y-1">
+                  {deal.ai_punti.map((p, i) => <li key={i}>• {p}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
 
           {/* Azioni rapide eventi */}
           {!adding && deal.stage !== "rogito" && (
