@@ -81,6 +81,8 @@ class PropertyIn(BaseModel):
     img: Optional[str] = "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?crop=entropy&cs=srgb&fm=jpg&w=800"
     # Locazione
     inquilino: Optional[str] = None
+    inquilino_email: Optional[str] = None
+    inquilino_telefono: Optional[str] = None
     data_inizio_contratto: Optional[str] = None
     scadenza_contratto: Optional[str] = None
     deposito_cauzionale: Optional[float] = 0
@@ -90,6 +92,8 @@ class PropertyIn(BaseModel):
 
 class LocazioneIn(BaseModel):
     inquilino: Optional[str] = None
+    inquilino_email: Optional[str] = None
+    inquilino_telefono: Optional[str] = None
     data_inizio_contratto: Optional[str] = None
     scadenza_contratto: Optional[str] = None
     deposito_cauzionale: Optional[float] = None

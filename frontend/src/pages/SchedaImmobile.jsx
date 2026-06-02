@@ -511,6 +511,8 @@ function LocazioneSection({ p, onSaved }) {
 function LocazioneForm({ p, onSaved, title = "Contratto attivo", cta = "Salva locazione" }) {
   const [form, setForm] = useState({
     inquilino: p.inquilino || "",
+    inquilino_email: p.inquilino_email || "",
+    inquilino_telefono: p.inquilino_telefono || "",
     data_inizio_contratto: p.data_inizio_contratto || "",
     scadenza_contratto: p.scadenza_contratto || "",
     deposito_cauzionale: p.deposito_cauzionale || 0,
@@ -524,6 +526,8 @@ function LocazioneForm({ p, onSaved, title = "Contratto attivo", cta = "Salva lo
   useEffect(() => {
     setForm({
       inquilino: p.inquilino || "",
+      inquilino_email: p.inquilino_email || "",
+      inquilino_telefono: p.inquilino_telefono || "",
       data_inizio_contratto: p.data_inizio_contratto || "",
       scadenza_contratto: p.scadenza_contratto || "",
       deposito_cauzionale: p.deposito_cauzionale || 0,
@@ -558,6 +562,10 @@ function LocazioneForm({ p, onSaved, title = "Contratto attivo", cta = "Salva lo
         >
           <div className="space-y-4">
             <LocField label="Inquilino / Conduttore" testId="loc-inquilino" value={form.inquilino} onChange={(v) => setForm({ ...form, inquilino: v })} placeholder="Nome inquilino o ragione sociale" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <LocField label="Email inquilino" testId="loc-inquilino-email" type="email" value={form.inquilino_email} onChange={(v) => setForm({ ...form, inquilino_email: v })} placeholder="es. mario.rossi@email.it" />
+              <LocField label="Telefono / WhatsApp" testId="loc-inquilino-tel" type="tel" value={form.inquilino_telefono} onChange={(v) => setForm({ ...form, inquilino_telefono: v })} placeholder="+39 333 1234567" />
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <LocField label="Data inizio contratto" testId="loc-inizio" type="date" value={form.data_inizio_contratto} onChange={(v) => setForm({ ...form, data_inizio_contratto: v })} />
               <LocField label="Scadenza contratto" testId="loc-scadenza" type="date" value={form.scadenza_contratto} onChange={(v) => setForm({ ...form, scadenza_contratto: v })} />

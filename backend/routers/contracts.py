@@ -67,6 +67,8 @@ async def _do_chiudi_contratto(db, user_id: str, prop: dict, payload: dict, auto
         "immobile_id": prop["id"],
         "immobile_nome": prop.get("nome"),
         "inquilino": prop.get("inquilino"),
+        "inquilino_email": prop.get("inquilino_email"),
+        "inquilino_telefono": prop.get("inquilino_telefono"),
         "canone_mensile": prop.get("canone_mensile"),
         "deposito_cauzionale": prop.get("deposito_cauzionale"),
         "data_inizio": prop.get("data_inizio_contratto"),
@@ -95,6 +97,8 @@ async def _do_chiudi_contratto(db, user_id: str, prop: dict, payload: dict, auto
             "$set": {
                 "stato": "sfitto",
                 "inquilino": None,
+                "inquilino_email": None,
+                "inquilino_telefono": None,
                 "data_inizio_contratto": None,
                 "scadenza_contratto": None,
                 "canone_mensile": 0,
