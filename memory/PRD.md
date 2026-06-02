@@ -480,3 +480,13 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 ### Sidebar
 - Nuova voce "Solleciti & Notifiche" in gruppo Operazioni
 - Nuova voce "Scadenzario Fiscale" in gruppo Finanza
+
+## 2026-06-02 — AI Deal Scoring nella Pipeline (verificato)
+- POST `/api/pipeline` ora calcola automaticamente `ai_deal_score` (0-100), `ai_giudizio`, `ai_prezzo_max` e `ai_punti` ad ogni creazione di deal.
+- Algoritmo deterministico basato su rendimento lordo/netto e impostazioni fiscali utente (SRL/privato).
+- Verificato con 4 scenari:
+  - Deal equilibrato (€85k / €600/mese) → 63 "interessante"
+  - Deal sopravvalutato (€250k / €700/mese) → 40 "rischiosa"
+  - Deal affare (€55k / €550/mese) → 77 "buona"
+  - Deal senza canone → 17 "sconsigliata"
+- UI: `Pipeline.jsx` mostra il punteggio come badge colorato sulla card Kanban + pannello dettagliato nel modal del deal con prezzo max consigliato e punti di attenzione.
