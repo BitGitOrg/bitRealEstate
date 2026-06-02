@@ -447,3 +447,36 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 ### Stato finale "demo"
 - Demo presente: `formatEur`, `STATI`, `getProperty` (helper di utilità statici, non dati)
 - Demo residuo come fallback se DB vuoto: Patrimonio, Dashboard, AlertCenter, Operazioni, Affitti (tutti già passano automaticamente ai dati live se presenti).
+
+## Update — Workflow zoppi chiusi (3 features)
+
+### 1. Solleciti & Notifiche (workflow cassa)
+- ✅ Nuovo router `routers/notifications.py`: `/solleciti-da-inviare`, `/genera-testo` (AI Claude Sonnet 4.6), `/marca-inviato`, `/storico`
+- ✅ Trova incassi previsti in ritardo, classifica tono automaticamente (cortese ≤10gg / fermo ≤30gg / legale >30gg)
+- ✅ AI genera **email completo + WhatsApp breve** in italiano, tono adattivo, con riferimenti art. 1218 c.c. solo se "legale"
+- ✅ Fallback templates statici se AI non disponibile
+- ✅ Tracking storico solleciti per audit
+- ✅ Frontend `Notifiche.jsx`: lista solleciti, modal con testi editabili, bottoni `mailto:` + `https://wa.me/` precompilati (zero costo, zero API key)
+
+### 2. Scadenzario Fiscale (compliance)
+- ✅ Nuovo router `routers/tax_calendar.py`: `/annuale?anno=YYYY`
+- ✅ Calcolo **IMU automatico** per immobile: `rendita × 1.05 × moltiplicatore_categoria (160 A/55 C1/80 A10/65 D) × aliquota`
+- ✅ Stima TARI per metratura
+- ✅ Calendario IRES/IRAP/IVA/Dichiarazione redditi per SRL, Cedolare per privati
+- ✅ Codici tributo F24 inclusi (3918, 1840, 2003, 3800, 6035, ecc.)
+- ✅ Stato auto (scaduta/imminente/in_arrivo/futura)
+- ✅ Frontend `Scadenzario.jsx`: KPI imminenti, calendario mese-per-mese 12 mesi, dettaglio per immobile, link a Impostazioni per aliquote
+
+### 3. Banker Pack PDF (P2 chiuso)
+- ✅ Nuovo router `routers/banker_pack.py` con ReportLab
+- ✅ Genera PDF strutturato con: cover anagrafica società, executive summary (10 KPI), tabella portafoglio, mutui esistenti, operazione proposta (se fornita)
+- ✅ Bottone "Banker Pack PDF" in Dashboard topbar → download immediato
+
+### Verifica E2E (con dati Torino)
+- Scadenzario 2026: IMU stimata 4.000€, TARI 723€, 11 scadenze totali, prossime: 16 giu IMU acconto 2.000€
+- Solleciti generati: 10 (5 immobili × 2 mesi), importi corretti, toni "fermo"/"legale" auto-classificati
+- Banker Pack: PDF 3.460 bytes valido (% PDF-1.4)
+
+### Sidebar
+- Nuova voce "Solleciti & Notifiche" in gruppo Operazioni
+- Nuova voce "Scadenzario Fiscale" in gruppo Finanza

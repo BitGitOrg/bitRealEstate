@@ -126,9 +126,23 @@ export default function Dashboard() {
       title="Dashboard Generale"
       subtitle={hasReal ? `KPI da bilancio ${latestBilancio.periodo} (${latestBilancio.tipo})` : "Vista sintetica del portafoglio · Dati demo"}
       actions={
-        <Link to="/ai-autopilot" data-testid="dashboard-ai-cta" className="hidden md:inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[rgba(0,102,255,0.1)] border border-[rgba(0,102,255,0.3)] text-[#2563EB] hover:bg-[rgba(0,102,255,0.2)] text-sm font-medium transition-colors">
-          <Sparkles size={14} /> Chiedi ad AI Autopilot
-        </Link>
+        <div className="flex items-center gap-2">
+          <button onClick={async () => {
+            try {
+              const r = await apiClient().post("/banker-pack/generate", {}, { responseType: "blob" });
+              const url = URL.createObjectURL(new Blob([r.data], { type: "application/pdf" }));
+              const a = document.createElement("a");
+              a.href = url; a.download = `banker-pack-${new Date().toISOString().slice(0,10)}.pdf`;
+              document.body.appendChild(a); a.click(); a.remove();
+              URL.revokeObjectURL(url);
+            } catch { import("sonner").then(({toast}) => toast.error("Errore generazione PDF")); }
+          }} data-testid="dashboard-banker-pack" className="hidden md:inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-[#E2E8F0] text-[#475569] hover:border-[#0066FF] hover:text-[#2563EB] text-sm font-medium transition-colors">
+            <FileBarChart size={14}/> Banker Pack PDF
+          </button>
+          <Link to="/ai-autopilot" data-testid="dashboard-ai-cta" className="hidden md:inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[rgba(0,102,255,0.1)] border border-[rgba(0,102,255,0.3)] text-[#2563EB] hover:bg-[rgba(0,102,255,0.2)] text-sm font-medium transition-colors">
+            <Sparkles size={14} /> Chiedi ad AI Autopilot
+          </Link>
+        </div>
       }
     >
       {hasReal && (

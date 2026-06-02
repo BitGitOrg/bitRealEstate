@@ -3,7 +3,7 @@ import {
   LayoutDashboard, TrendingUp, Wallet, Building2, Map, FileText,
   Handshake, Home, ShoppingBag, Hammer, Receipt, Banknote, Calculator,
   Bot, BellRing, FolderArchive, Settings, FileBarChart, ChevronRight, Sparkles, Database,
-  LineChart, BookOpen
+  LineChart, BookOpen, MessageCircle, Calendar
 } from "lucide-react";
 
 const GROUPS = [
@@ -19,12 +19,14 @@ const GROUPS = [
   { name: "Operazioni", items: [
     { to: "/operazioni", label: "Operazioni", icon: Handshake },
     { to: "/affitti", label: "Affitti & Locazioni", icon: Home },
+    { to: "/notifiche", label: "Solleciti & Notifiche", icon: MessageCircle, accent: true },
     { to: "/vendite", label: "Vendite & Rivendite", icon: ShoppingBag },
     { to: "/lavori", label: "Lavori & Ristrutturazioni", icon: Hammer },
   ]},
   { name: "Finanza", items: [
     { to: "/costi-ricavi", label: "Costi & Ricavi", icon: Receipt },
     { to: "/mutui", label: "Mutui & Finanziamenti", icon: Banknote },
+    { to: "/scadenzario", label: "Scadenzario Fiscale", icon: Calendar, accent: true },
     { to: "/simulatore", label: "Simulatore", icon: Calculator },
     { to: "/forecast", label: "Forecast & Piano Industriale", icon: LineChart, accent: true },
   ]},

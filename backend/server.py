@@ -38,6 +38,9 @@ from routers.lavori import make_lavori_router
 from routers.vendite import make_vendite_router
 from routers.cashflow import make_cashflow_router
 from routers.geo import make_geo_router
+from routers.notifications import make_notifications_router
+from routers.tax_calendar import make_tax_calendar_router
+from routers.banker_pack import make_banker_pack_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -644,6 +647,9 @@ app.include_router(make_lavori_router(db, current_user))
 app.include_router(make_vendite_router(db, current_user))
 app.include_router(make_cashflow_router(db, current_user))
 app.include_router(make_geo_router(db, current_user))
+app.include_router(make_notifications_router(db, current_user, EMERGENT_LLM_KEY))
+app.include_router(make_tax_calendar_router(db, current_user))
+app.include_router(make_banker_pack_router(db, current_user))
 
 app.add_middleware(
     CORSMiddleware,
