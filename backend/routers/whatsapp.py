@@ -132,6 +132,100 @@ def _twiml_reply(message: str) -> Response:
     return Response(content=body, media_type="application/xml")
 
 
+def _help_text() -> str:
+    return (
+        "🤖 *Control Room — comandi WhatsApp*\n"
+        "\n"
+        "🏠 *Crea deal*\n"
+        "  `Aggiungi <indirizzo>, <città>, <prezzo>€, <mq>mq`\n"
+        "  es: Aggiungi via Roma 12 Milano, 180000€, 55mq, canone 800\n"
+        "\n"
+        "📈 *Aggiorna stage*\n"
+        "  `<DEAL-ID o indirizzo>: <stage>`\n"
+        "  Stages: visitato · offerta_inviata · trattativa · accettato · "
+        "verifica_doc · mutuo_richiesto · preliminare · rogito\n"
+        "  es: DEAL-AB1234: offerta inviata a 175000\n"
+        "\n"
+        "📝 *Nota rapida*\n"
+        "  `<DEAL-ID>: nota libera`\n"
+        "  es: DEAL-AB1234: il proprietario chiede chiusura entro luglio\n"
+        "\n"
+        "📊 *stats* — KPI pipeline di oggi\n"
+        "🔍 *lista* — top 5 deal aperti per AI Score\n"
+        "🆘 *help* — questo menu"
+    )
+
+
+async def _stats_text(db, user_id: str) -> str:
+    try:
+        from datetime import timedelta
+        now = datetime.now(timezone.utc)
+        week_ago = (now - timedelta(days=7)).isoformat()
+        all_open = await db.deals.find(
+            {"user_id": user_id, "is_pipeline": True, "convertito": {"$ne": True}},
+            {"_id": 0, "stage": 1, "ai_deal_score": 1, "created_at": 1, "prezzo_corrente": 1}
+        ).to_list(500)
+        n_total = len(all_open)
+        n_new = sum(1 for d in all_open if (d.get("created_at") or "") >= week_ago)
+        in_tratt = sum(1 for d in all_open if d.get("stage") in ("trattativa", "offerta_inviata", "accettato"))
+        in_chius = sum(1 for d in all_open if d.get("stage") in ("verifica_doc", "mutuo_richiesto", "preliminare"))
+        scores = [d.get("ai_deal_score") for d in all_open if d.get("ai_deal_score") is not None]
+        avg_score = round(sum(scores) / len(scores), 1) if scores else 0
+        max_score_d = max(all_open, key=lambda x: x.get("ai_deal_score") or 0, default=None)
+        tot_eur = sum(float(d.get("prezzo_corrente") or 0) for d in all_open)
+        lines = [
+            "📊 *Stats Pipeline*",
+            f"Deal aperti: *{n_total}*  ·  Nuovi 7gg: *{n_new}*",
+            f"In trattativa: *{in_tratt}*  ·  Verso closing: *{in_chius}*",
+            f"AI Score medio: *{avg_score}/100*",
+            f"Valore complessivo: *{tot_eur:,.0f}€*".replace(",", "."),
+        ]
+        if max_score_d and max_score_d.get("ai_deal_score"):
+            lines.append(
+                f"⭐ Top: {max_score_d['id']} · score {max_score_d.get('ai_deal_score')}/100"
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        logger.warning(f"stats failed: {e}")
+        return "Impossibile generare le statistiche al momento."
+
+
+async def _list_text(db, user_id: str) -> str:
+    try:
+        items = await db.deals.find(
+            {"user_id": user_id, "is_pipeline": True, "convertito": {"$ne": True}},
+            {"_id": 0}
+        ).sort([("ai_deal_score", -1), ("created_at", -1)]).to_list(5)
+        if not items:
+            return "Nessun deal in pipeline. Inviami il primo annuncio per cominciare."
+        out = ["🔍 *Top deal aperti (per AI Score)*"]
+        for d in items:
+            score = d.get("ai_deal_score")
+            score_s = f" · score {score}/100" if score is not None else ""
+            prezzo = float(d.get("prezzo_corrente") or d.get("prezzo_richiesto") or 0)
+            out.append(
+                f"• *{d.get('id')}* {d.get('indirizzo','')[:30]} ({d.get('citta','')[:20]}) · "
+                f"{prezzo:,.0f}€".replace(",", ".") + f" · {d.get('stage','')}{score_s}"
+            )
+        return "\n".join(out)
+    except Exception as e:
+        logger.warning(f"list failed: {e}")
+        return "Impossibile recuperare la lista al momento."
+
+
+async def _touch_inbound(db, webhook_token: str, from_phone: str, body: str, azione: str):
+    try:
+        await db.whatsapp_config.update_one(
+            {"webhook_token": webhook_token},
+            {"$set": {
+                "last_inbound_at": datetime.now(timezone.utc).isoformat(),
+                "last_inbound_summary": {"from": from_phone, "body": body[:240], "azione": azione},
+            }}
+        )
+    except Exception:
+        pass
+
+
 def make_whatsapp_router(db, current_user, llm_key: Optional[str] = None):
     router = APIRouter(prefix="/api/whatsapp")
 
@@ -210,8 +304,10 @@ def make_whatsapp_router(db, current_user, llm_key: Optional[str] = None):
 
     @router.post("/test-send")
     async def test_send(payload: dict, user: dict = Depends(current_user)):
-        """Invia un messaggio di test al numero indicato (whatsapp:+...)."""
+        """Invia un messaggio al numero indicato (whatsapp:+...).
+        Se payload.template == 'help' invia il menu comandi, altrimenti un test breve."""
         to = (payload or {}).get("to", "").strip()
+        template = (payload or {}).get("template") or "ping"
         if not to:
             raise HTTPException(400, "Campo 'to' obbligatorio (es. whatsapp:+39333...)")
         if not to.lower().startswith("whatsapp:"):
@@ -224,13 +320,16 @@ def make_whatsapp_router(db, current_user, llm_key: Optional[str] = None):
         frm = cfg.get("whatsapp_number")
         if not sid or not tok or not frm:
             raise HTTPException(400, "Credenziali Twilio incomplete")
+        if template == "help":
+            body_msg = _help_text()
+        else:
+            body_msg = "✅ Control Room WhatsApp Bot connesso. Scrivimi 'help' per i comandi."
         try:
             from twilio.rest import Client
             client = Client(sid, tok)
             msg = await asyncio.to_thread(
                 client.messages.create,
-                from_=frm, to=to,
-                body="✅ Control Room WhatsApp Bot connesso. Inviami un annuncio o un aggiornamento."
+                from_=frm, to=to, body=body_msg
             )
             return {"ok": True, "sid": msg.sid}
         except Exception as e:
@@ -275,12 +374,28 @@ def make_whatsapp_router(db, current_user, llm_key: Optional[str] = None):
         if not body:
             return _twiml_reply("Messaggio vuoto. Inviami l'indirizzo + prezzo dell'annuncio oppure un aggiornamento.")
 
+        user_id = cfg["user_id"]
+        low = body.lower().strip()
+
+        # ── Comandi rapidi (no LLM, risposta immediata) ──────────────────
+        if low in ("help", "aiuto", "menu", "comandi", "?"):
+            await _touch_inbound(db, webhook_token, from_phone, body, "help")
+            return _twiml_reply(_help_text())
+
+        if low in ("stats", "statistiche", "stats oggi", "statistiche oggi"):
+            txt = await _stats_text(db, user_id)
+            await _touch_inbound(db, webhook_token, from_phone, body, "stats")
+            return _twiml_reply(txt)
+
+        if low in ("lista", "list", "deal aperti", "deals", "pipeline"):
+            txt = await _list_text(db, user_id)
+            await _touch_inbound(db, webhook_token, from_phone, body, "lista")
+            return _twiml_reply(txt)
+
         if not llm_key:
             return _twiml_reply("AI non configurata sul server.")
 
-        user_id = cfg["user_id"]
-
-        # Recupera deals recenti per match
+        # Recupera deals recenti per match (LLM parser)
         try:
             recent = await db.deals.find(
                 {"user_id": user_id, "is_pipeline": True, "convertito": {"$ne": True}},
@@ -301,13 +416,7 @@ def make_whatsapp_router(db, current_user, llm_key: Optional[str] = None):
 
         try:
             if azione == "help":
-                result_text = (
-                    "📋 *Comandi WhatsApp Control Room*\n"
-                    "• `Aggiungi <indirizzo>, <città>, <prezzo>€, <metratura>mq` → nuovo deal\n"
-                    "• `<indirizzo>: offerta inviata` o `compromesso firmato` → aggiorna stage\n"
-                    "• `DEAL-XXXX: nota qualsiasi` → aggiungi nota a deal esistente\n"
-                    "• `help` → questo messaggio"
-                )
+                result_text = _help_text()
 
             elif azione == "create_deal":
                 indirizzo = (parsed.get("indirizzo") or "").strip()
@@ -437,17 +546,7 @@ def make_whatsapp_router(db, current_user, llm_key: Optional[str] = None):
                 )
 
             # Aggiorna ultima attività
-            await db.whatsapp_config.update_one(
-                {"webhook_token": webhook_token},
-                {"$set": {
-                    "last_inbound_at": datetime.now(timezone.utc).isoformat(),
-                    "last_inbound_summary": {
-                        "from": from_phone,
-                        "body": body[:240],
-                        "azione": azione,
-                    }
-                }}
-            )
+            await _touch_inbound(db, webhook_token, from_phone, body, azione)
         except Exception as e:
             logger.exception(f"WhatsApp action failed: {e}")
             result_text = "Errore nell'elaborazione del messaggio. Riprova."

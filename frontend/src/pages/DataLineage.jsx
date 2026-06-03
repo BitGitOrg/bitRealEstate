@@ -518,7 +518,7 @@ const SETTINGS_USED = [
   { key: "imu_media_pct", default: "0.86%", usato_in: "Generazione automatica scadenze IMU nel Scadenzario" },
 ];
 
-export default function DataLineage() {
+export default function DataLineage({ embedded = false }) {
   const [active, setActive] = useState("dashboard");
   const navigate = useNavigate();
   const page = PAGES.find(p => p.id === active);
@@ -532,9 +532,8 @@ export default function DataLineage() {
     else navigate(route);
   };
 
-  return (
-    <Layout title="Data Lineage" subtitle="Da dove arriva ogni numero che vedi nell'app">
-      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
+  const content = (
+    <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4">
         {/* Sidebar */}
         <SectionCard testId="lineage-pages-nav" title="Pagine">
           <nav className="space-y-1">
@@ -696,7 +695,13 @@ export default function DataLineage() {
             </div>
           </SectionCard>
         </div>
-      </div>
+    </div>
+  );
+
+  if (embedded) return content;
+  return (
+    <Layout title="Data Lineage" subtitle="Da dove arriva ogni numero che vedi nell'app">
+      {content}
     </Layout>
   );
 }

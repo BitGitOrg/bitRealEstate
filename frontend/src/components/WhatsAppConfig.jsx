@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import {
   MessageCircle, CheckCircle2, AlertTriangle, Loader2, Save, Trash2, Copy,
-  Eye, EyeOff, Send, ExternalLink, ShieldCheck, Plus, X as XIcon
+  Eye, EyeOff, Send, ExternalLink, ShieldCheck, Plus, X as XIcon,
+  Home, TrendingUp, BarChart3, ListChecks, HelpCircle
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -100,17 +101,22 @@ export default function WhatsAppConfig() {
     toast.success("URL webhook copiato negli appunti");
   };
 
-  const testSend = async () => {
+  const testSend = async (template) => {
     if (!testTo) { toast.error("Inserisci il tuo numero WhatsApp per il test"); return; }
     setTesting(true);
     try {
-      await axios.post(`${API_BASE}/whatsapp/test-send`, { to: testTo }, { headers: headers() });
-      toast.success("Messaggio di test inviato. Controlla WhatsApp.");
+      await axios.post(`${API_BASE}/whatsapp/test-send`, { to: testTo, template: template || "ping" }, { headers: headers() });
+      toast.success(template === "help" ? "Menu comandi inviato al tuo WhatsApp." : "Messaggio di test inviato. Controlla WhatsApp.");
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Errore invio test");
     } finally {
       setTesting(false);
     }
+  };
+
+  const copyTemplate = (text) => {
+    navigator.clipboard.writeText(text);
+    toast.success("Template copiato");
   };
 
   const addSender = () => {
@@ -265,11 +271,116 @@ export default function WhatsAppConfig() {
               data-testid="wa-test-to"
               className="flex-1 bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-2 text-sm outline-none focus:border-[#0066FF] font-mono"
             />
-            <button onClick={testSend} disabled={testing} data-testid="wa-test-send" className="inline-flex items-center gap-1.5 px-3 py-2 border border-[#059669] text-[#059669] text-sm font-medium hover:bg-[#ECFDF5] disabled:opacity-50">
-              {testing ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Invia test
+            <button onClick={() => testSend("ping")} disabled={testing} data-testid="wa-test-send" className="inline-flex items-center gap-1.5 px-3 py-2 border border-[#059669] text-[#059669] text-sm font-medium hover:bg-[#ECFDF5] disabled:opacity-50">
+              {testing ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Ping di test
+            </button>
+            <button onClick={() => testSend("help")} disabled={testing} data-testid="wa-send-help" className="inline-flex items-center gap-1.5 px-3 py-2 border border-[#0066FF] text-[#0066FF] text-sm font-medium hover:bg-[rgba(0,102,255,0.05)] disabled:opacity-50">
+              {testing ? <Loader2 size={14} className="animate-spin" /> : <HelpCircle size={14} />} Invia menu comandi
             </button>
           </div>
           <span className="text-[10px] text-[#64748B]">Devi prima aver completato il join al sandbox da WhatsApp (comando indicato nella console Twilio).</span>
+        </div>
+      )}
+
+      {/* Templates di comandi rapidi */}
+      {meta.configured && (
+        <div className="bg-white border border-[#E2E8F0] p-3 space-y-3" data-testid="wa-templates">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-[#475569] font-medium">Template comandi rapidi</div>
+              <div className="text-[11px] text-[#64748B] mt-0.5">Copia il template e condividilo con i collaboratori sul campo. Funzionano anche scrivendo al bot.</div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {[
+              {
+                key: "create",
+                icon: Home,
+                color: "#0066FF",
+                bg: "rgba(0,102,255,0.06)",
+                title: "Crea deal da WhatsApp",
+                hint: "Aggiunge un immobile alla Pipeline con AI Score",
+                text: "Aggiungi via Roma 12 Milano, 180000€, 55mq, canone 800",
+              },
+              {
+                key: "stage",
+                icon: TrendingUp,
+                color: "#B45309",
+                bg: "rgba(180,83,9,0.06)",
+                title: "Aggiorna stage",
+                hint: "Sposta il deal nel funnel (visitato → offerta → preliminare → rogito)",
+                text: "DEAL-AB1234: offerta inviata a 175000",
+              },
+              {
+                key: "note",
+                icon: ListChecks,
+                color: "#7C3AED",
+                bg: "rgba(124,58,237,0.06)",
+                title: "Nota rapida",
+                hint: "Aggiungi una nota datata alla timeline di un deal",
+                text: "DEAL-AB1234: il proprietario chiede chiusura entro luglio",
+              },
+              {
+                key: "stats",
+                icon: BarChart3,
+                color: "#059669",
+                bg: "rgba(5,150,105,0.06)",
+                title: "Statistiche oggi",
+                hint: "Pipeline aperti, score medio, valore complessivo, top deal",
+                text: "stats",
+              },
+              {
+                key: "list",
+                icon: ListChecks,
+                color: "#0EA5E9",
+                bg: "rgba(14,165,233,0.06)",
+                title: "Top 5 deal aperti",
+                hint: "I migliori 5 deal ordinati per AI Score",
+                text: "lista",
+              },
+              {
+                key: "help",
+                icon: HelpCircle,
+                color: "#475569",
+                bg: "rgba(71,85,105,0.06)",
+                title: "Aiuto / menu",
+                hint: "Mostra l'elenco completo dei comandi disponibili",
+                text: "help",
+              },
+            ].map((t) => {
+              const TIcon = t.icon;
+              return (
+                <div
+                  key={t.key}
+                  data-testid={`wa-tpl-${t.key}`}
+                  className="border border-[#E2E8F0] p-2.5 hover:border-[#CBD5E1] transition-colors group"
+                  style={{ background: t.bg }}
+                >
+                  <div className="flex items-start gap-2">
+                    <div className="w-7 h-7 flex items-center justify-center shrink-0" style={{ background: "#fff", border: `1px solid ${t.color}33`, color: t.color }}>
+                      <TIcon size={14} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[12px] font-semibold" style={{ color: t.color }}>{t.title}</div>
+                      <div className="text-[10px] text-[#64748B] leading-snug mt-0.5">{t.hint}</div>
+                    </div>
+                  </div>
+                  <code className="block mt-2 text-[10.5px] font-mono text-[#0F172A] bg-white border border-[#E2E8F0] px-2 py-1.5 leading-relaxed break-words">
+                    {t.text}
+                  </code>
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <button
+                      onClick={() => copyTemplate(t.text)}
+                      data-testid={`wa-tpl-copy-${t.key}`}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-[10px] border border-[#E2E8F0] text-[#475569] hover:border-[#0066FF] hover:text-[#0066FF] bg-white"
+                    >
+                      <Copy size={10}/> Copia
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

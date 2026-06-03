@@ -499,7 +499,7 @@ const SECTIONS = [
   },
 ];
 
-export default function Manuale() {
+export default function Manuale({ embedded = false }) {
   const [searchParams] = useSearchParams();
   const initial = searchParams.get("s");
   const [active, setActive] = useState(
@@ -523,8 +523,7 @@ export default function Manuale() {
   }, [q]);
   const current = SECTIONS.find(s => s.id === active) || SECTIONS[0];
 
-  return (
-    <Layout title="Manuale d'uso" subtitle="Guida completa alla Real Estate Control Room con screenshot e workflow tipico">
+  const content = (
       <div className="grid grid-cols-1 lg:grid-cols-[260px,1fr] gap-6">
         {/* Sidebar indice */}
         <nav className="bg-white border border-[#E2E8F0] rounded-xl p-3 h-fit lg:sticky lg:top-4">
@@ -640,6 +639,12 @@ export default function Manuale() {
           </SectionCard>
         </div>
       </div>
+  );
+
+  if (embedded) return content;
+  return (
+    <Layout title="Manuale d'uso" subtitle="Guida completa alla Real Estate Control Room con screenshot e workflow tipico">
+      {content}
     </Layout>
   );
 }
