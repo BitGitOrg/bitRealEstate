@@ -4,6 +4,7 @@ import { SectionCard } from "../components/dashboard/SectionCard";
 import { ScoreGauge } from "../components/ScoreGauge";
 import { StatusBadge, SeverityBadge } from "../components/StatusBadge";
 import { ScoreBadge } from "../components/ScoreBadge";
+import { MiniSparkline } from "../components/MiniSparkline";
 import {
   Building2, Wallet, TrendingUp, Banknote, AlertTriangle, Sparkles,
   ArrowUpRight, ArrowDownRight, MapPin, Trophy, Activity, FileBarChart
@@ -34,6 +35,8 @@ export default function Dashboard() {
   const [bankCashflow, setBankCashflow] = useState(null);
   const [liquidity, setLiquidity] = useState(null);
   const [realProps, setRealProps] = useState([]);
+  const [cfAgg, setCfAgg] = useState(null);
+  const [cfForecast, setCfForecast] = useState(null);
 
   useEffect(() => {
     apiClient().get("/import/bilanci/latest")
@@ -47,6 +50,12 @@ export default function Dashboard() {
       .catch(() => {});
     apiClient().get("/properties")
       .then(r => setRealProps(r.data || []))
+      .catch(() => {});
+    apiClient().get("/cashflow/aggregato")
+      .then(r => setCfAgg(r.data))
+      .catch(() => {});
+    apiClient().get("/cashflow/forecast?months=6")
+      .then(r => setCfForecast(r.data?.rows || null))
       .catch(() => {});
   }, []);
 
@@ -164,28 +173,43 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">
         <KpiCard label="Valore patrimonio" value={formatEur(kpi.valore_stimato_totale)} delta={hasReal ? null : 6.4} icon={Building2} accent="brand" sublabel={hasReal ? "Da bilancio" : "Stima attuale"}
           info="Somma dei valori di mercato attuali stimati di tutti gli immobili. Aggiornato automaticamente da bilancio se presente."
-          sparkline={[kpi.valore_stimato_totale*0.92, kpi.valore_stimato_totale*0.94, kpi.valore_stimato_totale*0.95, kpi.valore_stimato_totale*0.97, kpi.valore_stimato_totale*0.98, kpi.valore_stimato_totale]} sparkColor="#0066FF" />
+          sparkline={[kpi.valore_stimato_totale*0.92, kpi.valore_stimato_totale*0.94, kpi.valore_stimato_totale*0.95, kpi.valore_stimato_totale*0.97, kpi.valore_stimato_totale*0.98, kpi.valore_stimato_totale]}
+          sparkLabels={["−5m","−4m","−3m","−2m","−1m","Oggi"]}
+          sparkFormat={(v) => formatEur(v)}
+          sparkColor="#0066FF" />
         <KpiCard label={hasReal ? "Patrimonio netto" : "Capitale investito"} value={formatEur(hasReal ? kpi.patrimonio_netto : kpi.capitale_investito)} icon={Wallet} sublabel={hasReal ? "Attivo − Passivo" : `${kpi.totale_immobili} immobili`}
-          info={hasReal ? "Patrimonio netto = Attivo totale − Passivo totale (debito mutui)." : "Capitale proprio investito = Costo totale operazioni − debito residuo."} />
+          info={hasReal ? "Patrimonio netto = Attivo totale − Passivo totale (debito mutui)." : "Capitale proprio investito = Costo totale operazioni − debito residuo."}
+          sparkFormat={(v) => formatEur(v)} />
         <KpiCard label="Ricavi mensili" value={formatEur(kpi.ricavi_mensili)} delta={hasReal ? null : 2.1} icon={ArrowUpRight} accent="positive" sublabel={hasReal ? "Affitti / 12" : "Affitti incassati"}
           info="Totale canoni di locazione incassati nel mese. Aggregato dagli incassi reali se importi banca, altrimenti dai contratti attivi."
-          sparkline={bankCashflow ? bankCashflow.slice(-6).map(b => b.incassi) : [kpi.ricavi_mensili*0.95, kpi.ricavi_mensili*0.97, kpi.ricavi_mensili*0.98, kpi.ricavi_mensili, kpi.ricavi_mensili*1.02, kpi.ricavi_mensili]} sparkColor="#10B981" />
+          sparkline={bankCashflow ? bankCashflow.slice(-6).map(b => b.incassi) : [kpi.ricavi_mensili*0.95, kpi.ricavi_mensili*0.97, kpi.ricavi_mensili*0.98, kpi.ricavi_mensili, kpi.ricavi_mensili*1.02, kpi.ricavi_mensili]}
+          sparkLabels={bankCashflow ? bankCashflow.slice(-6).map(b => b.label || b.month || "") : ["−5m","−4m","−3m","−2m","−1m","Oggi"]}
+          sparkFormat={(v) => formatEur(v)}
+          sparkColor="#10B981" />
         <KpiCard label="Cash flow netto" value={formatEur(kpi.cash_flow_mensile)} delta={hasReal ? null : -3.2} icon={Activity} accent={kpi.cash_flow_mensile > 0 ? "positive" : "critical"} sublabel={hasReal ? "Utile/12" : "Questo mese"}
           info="Cash flow = Incassi − Uscite (mutui, manutenzioni, tasse, gestione). Indica la liquidità reale generata nel mese."
-          sparkline={bankCashflow ? bankCashflow.slice(-6).map(b => b.saldo) : null} sparkColor={kpi.cash_flow_mensile > 0 ? "#10B981" : "#EF4444"} />
+          sparkline={bankCashflow ? bankCashflow.slice(-6).map(b => b.saldo) : null}
+          sparkLabels={bankCashflow ? bankCashflow.slice(-6).map(b => b.label || b.month || "") : null}
+          sparkFormat={(v) => formatEur(v)}
+          sparkColor={kpi.cash_flow_mensile > 0 ? "#10B981" : "#EF4444"} />
         <KpiCard label="Debito residuo" value={formatEur(kpi.debito_residuo)} icon={Banknote} accent="warning" sublabel={hasReal ? "Mutui da bilancio" : "LTV 38%"}
-          info="Somma dei capitali residui di tutti i mutui in essere. Diminuisce ad ogni rata pagata (quota capitale)." />
+          info="Somma dei capitali residui di tutti i mutui in essere. Diminuisce ad ogni rata pagata (quota capitale)."
+          sparkFormat={(v) => formatEur(v)} />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <KpiCard label="Rend. medio netto" value={`${kpi.rendimento_medio_netto}%`} delta={hasReal ? null : 0.4} icon={TrendingUp} accent="positive" sublabel="Target 4,5%"
-          info="Rendimento netto = (Canone annuo − costi operativi − tasse) / Costo totale × 100. Calcolato come media pesata sul portafoglio." />
+          info="Rendimento netto = (Canone annuo − costi operativi − tasse) / Costo totale × 100. Calcolato come media pesata sul portafoglio."
+          sparkFormat={(v) => v.toFixed(2) + "%"} />
         <KpiCard label="Utile anno" value={formatEur(kpi.utile_anno)} delta={hasReal ? null : 12.1} icon={ArrowUpRight} accent="positive" sublabel={hasReal ? "Da bilancio" : null}
-          info="Utile netto contabile dell'anno = Ricavi totali − Costi totali − Imposte. Dal bilancio se importato." />
+          info="Utile netto contabile dell'anno = Ricavi totali − Costi totali − Imposte. Dal bilancio se importato."
+          sparkFormat={(v) => formatEur(v)} />
         <KpiCard label="Liquidità" value={formatEur(kpi.liquidita_disponibile)} icon={Wallet} sublabel={liquidity?.source === "bilancio" ? "Da bilancio" : "Iniziale + saldo banca"}
-          info="Liquidità di partenza (Impostazioni) + saldo dei movimenti bancari importati. Sovrascritta dal bilancio se caricato." />
+          info="Liquidità di partenza (Impostazioni) + saldo dei movimenti bancari importati. Sovrascritta dal bilancio se caricato."
+          sparkFormat={(v) => formatEur(v)} />
         <KpiCard label="Immobili critici" value={kpi.immobili_sotto_target + kpi.immobili_sfitti} icon={AlertTriangle} accent="critical" sublabel="Sotto target / sfitti"
-          info="Immobili con rendimento sotto la soglia target (Impostazioni) oppure sfitti. Da monitorare per azioni correttive." />
+          info="Immobili con rendimento sotto la soglia target (Impostazioni) oppure sfitti. Da monitorare per azioni correttive."
+          sparkFormat={(v) => Math.round(v) + " immob."} />
       </div>
 
       {/* Charts grid */}
@@ -298,16 +322,46 @@ export default function Dashboard() {
         </SectionCard>
 
         <SectionCard testId="widget-forecast" title="Liquidità 90 gg" action={<Activity size={16} className="text-[#2563EB]" />}>
-          <div className="font-display text-3xl font-bold tabular text-[#0F172A]">{formatEur(168200)}</div>
-          <div className="text-xs text-[#475569] mt-1">Previsione netta forecast</div>
-          <div className="mt-4 h-12">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={[{v:142},{v:155},{v:148},{v:162},{v:168}]}>
-                <Line type="monotone" dataKey="v" stroke="#10B981" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <Link to="/cash-flow" className="text-xs text-[#2563EB] hover:underline">Vedi forecast →</Link>
+          {(() => {
+            const liq90 = cfAgg?.liquidita_90gg;
+            const liqOggi = liquidity?.liquidita_disponibile ?? liquidity?.liquidita ?? null;
+            const fcRows = (cfForecast || []).slice(0, 3);
+            // Serie sparkline: parte dalla liquidità attuale e somma il saldo previsto dei prossimi 3 mesi
+            const startBal = liqOggi != null ? liqOggi : (liq90 ?? 0);
+            const sparkData = [];
+            const sparkLabels = ["Oggi"];
+            let running = startBal;
+            sparkData.push(running);
+            for (const r of fcRows) {
+              running += (r.saldo_previsto || 0);
+              sparkData.push(Math.round(running));
+              sparkLabels.push(r.label || "");
+            }
+            const noData = liq90 == null && fcRows.length === 0;
+            const trend = sparkData.length >= 2 ? sparkData[sparkData.length - 1] - sparkData[0] : 0;
+            const accent = trend >= 0 ? "positive" : "critical";
+            return (
+              <>
+                <div className={`font-display text-3xl font-bold tabular ${noData ? "text-[#94A3B8]" : trend >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>
+                  {noData ? "—" : formatEur(liq90)}
+                </div>
+                <div className="text-xs text-[#475569] mt-1">
+                  {noData ? "Configura forecast in CashFlow" : `Da liquidità attuale ${formatEur(startBal)} + saldo 3m`}
+                </div>
+                {sparkData.length >= 2 && (
+                  <MiniSparkline
+                    data={sparkData}
+                    labels={sparkLabels}
+                    accent={accent}
+                    seed="dash-liq90"
+                    height={48}
+                    format={(v) => "€ " + Math.round(v).toLocaleString("it-IT")}
+                  />
+                )}
+                <Link to="/cash-flow" className="text-xs text-[#2563EB] hover:underline">Vedi forecast →</Link>
+              </>
+            );
+          })()}
         </SectionCard>
       </div>
 

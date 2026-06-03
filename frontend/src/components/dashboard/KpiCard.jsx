@@ -1,16 +1,18 @@
 import { TrendingUp, TrendingDown, Info } from "lucide-react";
-import { ResponsiveContainer, AreaChart, Area, Tooltip as ReTooltip } from "recharts";
 import { useState, useMemo } from "react";
+import { MiniSparkline } from "../MiniSparkline";
 
 /**
  * Generic KPI card. New props:
- *  - sparkline: array of numbers OR array of { v: number }. If provided, mini chart shown.
- *  - sparkColor: hex color for the spark line (default: brand or accent)
- *  - info: string description shown inside tooltip popover (formula / definition)
+ *  - sparkline: array of numbers (storico reale). Se passato → priorità su default.
+ *  - sparkLabels: array di labels per i punti (per tooltip)
+ *  - sparkColor: hex color
+ *  - sparkFormat: funzione formattatrice per il tooltip (es. (v) => "€ " + v)
+ *  - info: stringa descrittiva mostrata nel tooltip popover
  */
 export const KpiCard = ({
   label, value, delta, icon: Icon, accent = "default", sublabel, testId,
-  sparkline, sparkColor, info,
+  sparkline, sparkLabels, sparkColor, sparkFormat, info,
 }) => {
   const accentClasses = {
     default: "text-[#0F172A]",
@@ -19,58 +21,22 @@ export const KpiCard = ({
     critical: "text-[#DC2626]",
     brand: "text-[#2563EB]",
   };
-  const accentHex = {
-    default: "#0F172A",
-    positive: "#10B981",
-    warning: "#B45309",
-    critical: "#EF4444",
-    brand: "#0066FF",
-  };
   const deltaPositive = typeof delta === "number" ? delta >= 0 : null;
   const [showInfo, setShowInfo] = useState(false);
 
-  // Normalize sparkline data — se non fornita, genera serie sintetica realistica
-  // basata sul valore corrente e l'accent (trend coerente con il sentiment del KPI)
-  const numericValue = useMemo(() => {
-    if (typeof value === "number") return value;
+  // Verifica se è disponibile uno sparkline (passato o auto-generabile)
+  const hasSparkline = useMemo(() => {
+    if (Array.isArray(sparkline) && sparkline.length > 1) return true;
+    if (sparkline === false) return false;
+    // Auto-genera se value è numerico o parsabile
+    if (typeof value === "number" && value !== 0) return true;
     if (typeof value === "string") {
-      // Estrae il primo numero dalla stringa (es. "€ 1.250,00" → 1250 oppure "4,5%" → 4.5)
-      const cleaned = value.replace(/[^\d,.-]/g, "").replace(/\.(?=\d{3})/g, "").replace(",", ".");
+      const cleaned = value.replace(/[^\d,.-]/g, "").replace(",", ".");
       const n = parseFloat(cleaned);
-      return isNaN(n) ? null : n;
+      return !isNaN(n) && n !== 0;
     }
-    return null;
-  }, [value]);
-
-  const spark = useMemo(() => {
-    if (Array.isArray(sparkline) && sparkline.length > 1) {
-      return sparkline.map((v, i) => (typeof v === "number" ? { i, v } : { i, v: v.v ?? v.value ?? 0 }));
-    }
-    if (sparkline === false || numericValue === null || numericValue === 0) return null;
-    // Genera serie sintetica con trend coerente all'accent
-    const trendBias = {
-      positive: 0.08,   // +8% da inizio a fine
-      brand: 0.06,
-      default: 0.02,
-      warning: -0.05,
-      critical: -0.10,
-    }[accent] ?? 0;
-    const points = 8;
-    // Seed deterministico basato sul label per evitare reflows random
-    const seed = (label || "").split("").reduce((s, c) => s + c.charCodeAt(0), 0);
-    const rand = (i) => {
-      const x = Math.sin(seed * 9301 + i * 49297) * 233280;
-      return x - Math.floor(x); // 0..1
-    };
-    return Array.from({ length: points }, (_, i) => {
-      const trendValue = numericValue * (1 - trendBias) + (numericValue * trendBias * (i / (points - 1)));
-      const noise = (rand(i) - 0.5) * 0.04 * numericValue; // ±2% noise
-      return { i, v: trendValue + noise };
-    });
-  }, [sparkline, numericValue, accent, label]);
-
-  const lineColor = sparkColor || accentHex[accent] || "#0066FF";
-  const gradientId = `grad-${(label || "kpi").replace(/\s+/g, "-")}`;
+    return false;
+  }, [sparkline, value]);
 
   return (
     <div
@@ -124,31 +90,18 @@ export const KpiCard = ({
           </span>
         )}
       </div>
-      {spark && (
-        <div className="mt-3 h-10 -mx-1" data-testid={`kpi-spark-${(label || "").toLowerCase().replace(/\s+/g, '-')}`}>
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={spark} margin={{ top: 1, right: 1, left: 1, bottom: 1 }}>
-              <defs>
-                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={lineColor} stopOpacity={0.35} />
-                  <stop offset="100%" stopColor={lineColor} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <ReTooltip
-                cursor={false}
-                contentStyle={{ display: "none" }}
-              />
-              <Area
-                type="monotone"
-                dataKey="v"
-                stroke={lineColor}
-                strokeWidth={1.5}
-                fill={`url(#${gradientId})`}
-                dot={false}
-                isAnimationActive={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+      {hasSparkline && (
+        <div data-testid={`kpi-spark-${(label || "").toLowerCase().replace(/\s+/g, '-')}`}>
+          <MiniSparkline
+            value={value}
+            data={sparkline}
+            labels={sparkLabels}
+            accent={accent}
+            color={sparkColor}
+            seed={`kpi-${label}`}
+            height={42}
+            format={sparkFormat}
+          />
         </div>
       )}
     </div>
