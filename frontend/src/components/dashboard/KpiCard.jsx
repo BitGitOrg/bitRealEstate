@@ -1,6 +1,7 @@
 import { TrendingUp, TrendingDown, Info } from "lucide-react";
 import { useState, useMemo } from "react";
 import { MiniSparkline } from "../MiniSparkline";
+import { useKpiHighlight } from "../../hooks/useKpiHighlight";
 
 /**
  * Generic KPI card. New props:
@@ -12,7 +13,7 @@ import { MiniSparkline } from "../MiniSparkline";
  */
 export const KpiCard = ({
   label, value, delta, icon: Icon, accent = "default", sublabel, testId,
-  sparkline, sparkLabels, sparkColor, sparkFormat, info,
+  sparkline, sparkLabels, sparkColor, sparkFormat, info, highlightKey,
 }) => {
   const accentClasses = {
     default: "text-[#0F172A]",
@@ -23,6 +24,7 @@ export const KpiCard = ({
   };
   const deltaPositive = typeof delta === "number" ? delta >= 0 : null;
   const [showInfo, setShowInfo] = useState(false);
+  const highlightRef = useKpiHighlight(highlightKey || label);
 
   // Verifica se è disponibile uno sparkline (passato o auto-generabile)
   const hasSparkline = useMemo(() => {
@@ -40,7 +42,9 @@ export const KpiCard = ({
 
   return (
     <div
+      ref={highlightRef}
       data-testid={testId || `kpi-${(label || "").toLowerCase().replace(/\s+/g, '-')}`}
+      data-kpi-key={highlightKey || label}
       className="group bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl p-5 card-hover relative"
     >
       <div className="flex items-start justify-between mb-3 gap-2">

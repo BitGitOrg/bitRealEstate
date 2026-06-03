@@ -18,7 +18,7 @@ import { useNavigate } from "react-router-dom";
 const PAGES = [
   {
     id: "dashboard",
-    route: "/dashboard",
+    route: "/",
     title: "Dashboard",
     icon: Activity,
     kpis: [
@@ -523,8 +523,13 @@ export default function DataLineage() {
   const navigate = useNavigate();
   const page = PAGES.find(p => p.id === active);
 
-  const goTo = (route) => {
-    if (route) navigate(route);
+  const goTo = (route, kpiName) => {
+    if (!route) return;
+    const slug = (kpiName || "")
+      .toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    if (slug) navigate(`${route}?highlight=${slug}`);
+    else navigate(route);
   };
 
   return (
@@ -597,7 +602,7 @@ export default function DataLineage() {
                   {page.kpis.map((k, i) => (
                     <tr
                       key={i}
-                      onClick={() => goTo(page.route)}
+                      onClick={() => goTo(page.route, k.nome)}
                       className={`border-b border-[#E2E8F0] last:border-0 hover:bg-[#F0F7FF] transition-colors group ${page.route ? "cursor-pointer" : ""}`}
                       data-testid={`lineage-kpi-${i}`}
                     >

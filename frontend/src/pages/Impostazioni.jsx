@@ -6,6 +6,7 @@ import { useAuth } from "../lib/auth";
 import { Save, Building2, Target, Sparkles, Shield, Image as ImageIcon, Upload, Trash2, Receipt, Wrench, MessageCircle, Mail } from "lucide-react";
 import { toast } from "sonner";
 import EmailInboxConfig from "../components/EmailInboxConfig";
+import WhatsAppConfig from "../components/WhatsAppConfig";
 
 const API_BASE = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -469,6 +470,16 @@ export default function Impostazioni({ embedded = false }) {
         className="mb-4"
       >
         <EmailInboxConfig />
+      </SectionCard>
+
+      <SectionCard
+        testId="settings-whatsapp"
+        title="WhatsApp Bot per Pipeline (Twilio)"
+        subtitle="Crea o aggiorna deal in Pipeline inviando un messaggio WhatsApp. L'AI interpreta indirizzo, prezzo, stage e note."
+        action={<MessageCircle size={16} className="text-[#059669]" />}
+        className="mb-4"
+      >
+        <WhatsAppConfig />
       </SectionCard>
 
       <SectionCard testId="settings-user" title="Account & ruoli" action={<Shield size={16} className="text-[#B45309]" />}>

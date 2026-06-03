@@ -22,7 +22,6 @@ import AlertCenter from "@/pages/AlertCenter";
 import Documenti from "@/pages/Documenti";
 import Report from "@/pages/Report";
 import Impostazioni from "@/pages/Impostazioni";import Mappa from "@/pages/Mappa";
-import DealInbox from "@/pages/DealInbox";
 import Watchlists from "@/pages/Watchlists";
 import ImportCenter from "@/pages/ImportCenter";
 import ImpostazioniWrapper from "@/pages/ImpostazioniWrapper";
@@ -65,7 +64,7 @@ function App() {
             <Route path="/report" element={<Protected><Report /></Protected>} />
             <Route path="/impostazioni" element={<Protected><ImpostazioniWrapper /></Protected>} />
             <Route path="/mappa" element={<Protected><Mappa /></Protected>} />
-            <Route path="/deal-inbox" element={<Protected><DealInbox /></Protected>} />
+            <Route path="/deal-inbox" element={<Navigate to="/pipeline" replace />} />
             <Route path="/watchlists" element={<Protected><Watchlists /></Protected>} />
             <Route path="/import" element={<Navigate to="/impostazioni?tab=import" replace />} />
             <Route path="/forecast" element={<Protected><ForecastSimple /></Protected>} />

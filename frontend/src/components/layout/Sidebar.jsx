@@ -32,7 +32,6 @@ const GROUPS = [
     { to: "/forecast", label: "Forecast & Piano Industriale", icon: LineChart, accent: true },
   ]},
   { name: "Intelligenza", items: [
-    { to: "/deal-inbox", label: "Deal Inbox", icon: Sparkles, accent: true },
     { to: "/watchlists", label: "Watchlists", icon: BellRing },
     { to: "/ai-autopilot", label: "AI Autopilot", icon: Bot, accent: true },
     { to: "/alert-center", label: "Alert Center", icon: BellRing },

@@ -184,7 +184,7 @@ export default function Dashboard() {
           sparkLabels={["−5m","−4m","−3m","−2m","−1m","Oggi"]}
           sparkFormat={(v) => formatEur(v)}
           sparkColor="#0066FF" />
-        <KpiCard label={hasReal ? "Patrimonio netto" : "Capitale investito"} value={formatEur(hasReal ? kpi.patrimonio_netto : kpi.capitale_investito)} icon={Wallet} sublabel={hasReal ? "Attivo − Passivo" : `${kpi.totale_immobili} immobili`}
+        <KpiCard label={hasReal ? "Patrimonio netto" : "Capitale investito"} highlightKey="Patrimonio netto" value={formatEur(hasReal ? kpi.patrimonio_netto : kpi.capitale_investito)} icon={Wallet} sublabel={hasReal ? "Attivo − Passivo" : `${kpi.totale_immobili} immobili`}
           info={hasReal ? "Patrimonio netto = Attivo totale − Passivo totale (debito mutui)." : "Capitale proprio investito = Costo totale operazioni − debito residuo."}
           sparkFormat={(v) => formatEur(v)} />
         <KpiCard label="Ricavi mensili" value={formatEur(kpi.ricavi_mensili)} delta={hasReal ? null : 2.1} icon={ArrowUpRight} accent="positive" sublabel={hasReal ? "Affitti / 12" : "Affitti incassati"}
@@ -205,7 +205,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <KpiCard label="Rend. medio netto" value={`${kpi.rendimento_medio_netto}%`} delta={hasReal ? null : 0.4} icon={TrendingUp} accent="positive" sublabel="Target 4,5%"
+        <KpiCard label="Rend. medio netto" highlightKey="Rendimento medio netto" value={`${kpi.rendimento_medio_netto}%`} delta={hasReal ? null : 0.4} icon={TrendingUp} accent="positive" sublabel="Target 4,5%"
           info="Rendimento netto = (Canone annuo − costi operativi − tasse) / Costo totale × 100. Calcolato come media pesata sul portafoglio."
           sparkFormat={(v) => v.toFixed(2) + "%"} />
         <KpiCard label="Utile anno" value={formatEur(kpi.utile_anno)} delta={hasReal ? null : 12.1} icon={ArrowUpRight} accent="positive" sublabel={hasReal ? "Da bilancio" : null}

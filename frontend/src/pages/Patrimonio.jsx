@@ -65,7 +65,7 @@ export default function Patrimonio() {
       subtitle={`${filtered.length} immobili${dealsInTrattativa.length > 0 ? ` · ${dealsInTrattativa.length} in trattativa` : ""}`}
       actions={
         <div className="hidden md:flex items-center gap-2">
-          <Link to="/deal-inbox" data-testid="goto-deal-inbox" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[rgba(0,102,255,0.1)] border border-[rgba(0,102,255,0.3)] text-[#2563EB] hover:bg-[rgba(0,102,255,0.2)] text-sm font-medium transition-colors">
+          <Link to="/pipeline" data-testid="goto-pipeline" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[rgba(0,102,255,0.1)] border border-[rgba(0,102,255,0.3)] text-[#2563EB] hover:bg-[rgba(0,102,255,0.2)] text-sm font-medium transition-colors">
             <Sparkles size={14}/> AI Deal Scout
           </Link>
           <button data-testid="add-property-btn" onClick={() => setModalOpen(true)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0066FF] hover:bg-[#2563EB] text-white text-sm font-medium transition-colors">
@@ -129,7 +129,7 @@ export default function Patrimonio() {
                 {filtered.map(p => (
                   <tr key={p.id} className="border-b border-[#E2E8F0] last:border-0 hover:bg-[#F8FAFC]/50 transition-colors">
                     <td className="px-2 py-3">
-                      <Link to={p.id?.startsWith('DEAL-') ? "/deal-inbox" : `/immobile/${p.id}`} className="flex items-center gap-3 hover:text-[#2563EB]" data-testid={`property-link-${p.id}`}>
+                      <Link to={p.id?.startsWith('DEAL-') ? "/pipeline" : `/immobile/${p.id}`} className="flex items-center gap-3 hover:text-[#2563EB]" data-testid={`property-link-${p.id}`}>
                         <img src={p.img} className="w-10 h-10 rounded object-cover" alt="" />
                         <div>
                           <div className="font-medium text-[#0F172A] flex items-center gap-2">
@@ -165,7 +165,7 @@ export default function Patrimonio() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(p => (
-            <Link key={p.id} to={p.id?.startsWith('DEAL-') ? "/deal-inbox" : `/immobile/${p.id}`} data-testid={`property-card-${p.id}`} className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl overflow-hidden card-hover group">
+            <Link key={p.id} to={p.id?.startsWith('DEAL-') ? "/pipeline" : `/immobile/${p.id}`} data-testid={`property-card-${p.id}`} className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl overflow-hidden card-hover group">
               <div className="relative h-44">
                 <img src={p.img} alt={p.nome} className="w-full h-full object-cover" />
                 <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
