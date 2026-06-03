@@ -10,6 +10,7 @@ import {
   CheckCircle2, Clock, AlertCircle, XCircle, RefreshCw, Loader2, Edit2,
   Calendar, ExternalLink, Search, Filter, X, FileText, AlertTriangle, Save,
 } from "lucide-react";
+import { MiniSparkline } from "../components/MiniSparkline";
 
 const STATO_INCASSO = {
   pagato: { label: "Pagato", icon: CheckCircle2, color: "#059669", bg: "#D1FAE5" },
@@ -105,6 +106,7 @@ export default function Affitti() {
         <SectionCard testId="affitti-kpi-canone">
           <div className="text-[10px] uppercase text-[#64748B] tracking-wider">Canone mensile atteso</div>
           <div className="font-display text-3xl font-bold tabular mt-1">{formatEur(totMensile)}</div>
+          <MiniSparkline value={totMensile} accent="brand" seed="canone" />
         </SectionCard>
         <SectionCard testId="affitti-kpi-incassato">
           <div className="text-[10px] uppercase text-[#64748B] tracking-wider">Incassato {stats?.current_month || "mese"}</div>
@@ -112,15 +114,18 @@ export default function Affitti() {
           {stats && (
             <div className="text-[11px] text-[#475569] mt-0.5">{stats.paid_count}/{stats.expected_count} pagamenti · {stats.completion_pct}%</div>
           )}
+          <MiniSparkline value={stats?.paid_eur || 1} accent="positive" seed="incassato" />
         </SectionCard>
         <SectionCard testId="affitti-kpi-occupazione">
           <div className="text-[10px] uppercase text-[#64748B] tracking-wider">Tasso occupazione</div>
           <div className="font-display text-3xl font-bold tabular mt-1">{occupazione}%</div>
+          <MiniSparkline value={occupazione || 1} accent={occupazione >= 80 ? "positive" : "warning"} seed="occupazione" />
         </SectionCard>
         <SectionCard testId="affitti-kpi-morosita">
           <div className="text-[10px] uppercase text-[#64748B] tracking-wider">Morosità</div>
           <div className={`font-display text-3xl font-bold tabular mt-1 ${morosi > 0 ? "text-[#DC2626]" : "text-[#0F172A]"}`}>{morosi}</div>
           <div className="text-xs text-[#475569] mt-0.5">incass{morosi === 1 ? "o" : "i"} non a posto</div>
+          <MiniSparkline value={Math.max(morosi, 1)} accent={morosi > 0 ? "critical" : "default"} seed="morosi" />
         </SectionCard>
       </div>
 

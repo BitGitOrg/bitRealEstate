@@ -7,6 +7,7 @@ import { formatEur } from "../lib/demoData";
 import { Link } from "react-router-dom";
 import { Trophy, AlertTriangle, ArrowUpRight, Loader2 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
+import { MiniSparkline } from "../components/MiniSparkline";
 
 const tooltipStyle = { backgroundColor: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12, color: "#0F172A", boxShadow: "0 4px 12px rgba(15,23,42,0.08)" };
 
@@ -113,18 +114,22 @@ export default function KPI() {
         <SectionCard testId="kpi-card-totale">
           <div className="text-[10px] uppercase text-[#64748B]">Valore patrimonio</div>
           <div className="font-display text-2xl font-bold tabular mt-1">{formatEur(kpi.tot_valore)}</div>
+          <MiniSparkline value={kpi.tot_valore} accent="brand" seed="patrimonio" />
         </SectionCard>
         <SectionCard testId="kpi-card-medio">
           <div className="text-[10px] uppercase text-[#64748B]">Rendimento medio netto</div>
           <div className="font-display text-2xl font-bold tabular mt-1 text-[#059669]">{kpi.rendMedioNetto}%</div>
+          <MiniSparkline value={kpi.rendMedioNetto || 1} accent="positive" seed="rendnetto" />
         </SectionCard>
         <SectionCard testId="kpi-card-roi">
           <div className="text-[10px] uppercase text-[#64748B]">ROI medio (cash/equity)</div>
           <div className="font-display text-2xl font-bold tabular mt-1">{kpi.roi}%</div>
+          <MiniSparkline value={kpi.roi || 1} accent="positive" seed="roi" />
         </SectionCard>
         <SectionCard testId="kpi-card-leva">
           <div className="text-[10px] uppercase text-[#64748B]">Leva finanziaria</div>
           <div className="font-display text-2xl font-bold tabular mt-1">{kpi.leva}×</div>
+          <MiniSparkline value={kpi.leva || 1} accent="warning" seed="leva" />
         </SectionCard>
       </div>
 

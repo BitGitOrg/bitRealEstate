@@ -9,6 +9,7 @@ import {
   AreaChart, Area, ReferenceLine,
 } from "recharts";
 import { Wallet, TrendingUp, AlertTriangle, Loader2 } from "lucide-react";
+import { MiniSparkline } from "../components/MiniSparkline";
 
 const tooltipStyle = { backgroundColor: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12, color: "#0F172A", boxShadow: "0 4px 12px rgba(15,23,42,0.08)" };
 
@@ -45,19 +46,23 @@ export default function CashFlow() {
         <SectionCard testId="cf-kpi-current">
           <div className="flex items-center gap-2 text-[10px] uppercase text-[#64748B]"><Wallet size={12}/> Saldo mese corrente</div>
           <div className={`font-display text-3xl font-bold tabular mt-1 ${saldoCorrente >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{formatEur(saldoCorrente)}</div>
+          <MiniSparkline value={saldoCorrente} accent={saldoCorrente >= 0 ? 'positive' : 'critical'} seed="saldo_corr" />
         </SectionCard>
         <SectionCard testId="cf-kpi-medio">
           <div className="flex items-center gap-2 text-[10px] uppercase text-[#64748B]"><TrendingUp size={12}/> Media 12 mesi</div>
           <div className="font-display text-3xl font-bold tabular mt-1">{formatEur(saldoMedio)}</div>
+          <MiniSparkline value={saldoMedio} accent={'brand'} seed="saldo_medio" />
         </SectionCard>
         <SectionCard testId="cf-kpi-90">
           <div className="text-[10px] uppercase text-[#64748B]">Liquidità prevista 90 gg</div>
           <div className="font-display text-3xl font-bold tabular mt-1 text-[#2563EB]">{formatEur(liq90)}</div>
+          <MiniSparkline value={liq90} accent={'brand'} seed="liq90" />
         </SectionCard>
         <SectionCard testId="cf-kpi-tensione">
           <div className="flex items-center gap-2 text-[10px] uppercase text-[#64748B]"><AlertTriangle size={12}/> Mesi in tensione</div>
           <div className="font-display text-3xl font-bold tabular mt-1 text-[#DC2626]">{mesiTensione}</div>
           <div className="text-[11px] text-[#64748B]">Prossimi 12 mesi</div>
+          <MiniSparkline value={Math.max(mesiTensione,1)} accent={'critical'} seed="tensione" />
         </SectionCard>
       </div>
 

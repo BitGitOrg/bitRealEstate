@@ -6,6 +6,7 @@ import { apiClient } from "../lib/auth";
 import { formatEur } from "../lib/demoData";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Hammer, Plus, Loader2, X, Edit2, Trash2 } from "lucide-react";
+import { MiniSparkline } from "../components/MiniSparkline";
 
 const CATEGORIE = ["Muratura", "Impianto elettrico", "Impianto idraulico", "Serramenti", "Pavimenti", "Bagno", "Cucina", "Tinteggiatura", "Arredamento", "Pratiche tecniche", "Direzione lavori", "Imprevisti", "Generico"];
 
@@ -56,18 +57,22 @@ export default function Lavori() {
         <SectionCard testId="lavori-kpi-cantieri">
           <div className="text-[10px] uppercase text-[#64748B]">Cantieri attivi</div>
           <div className="font-display text-3xl font-bold tabular mt-1">{agg?.n_in_corso ?? 0}</div>
+          <MiniSparkline value={(agg?.n_in_corso || 1)} accent={'brand'} seed="cantieri" />
         </SectionCard>
         <SectionCard testId="lavori-kpi-budget">
           <div className="text-[10px] uppercase text-[#64748B]">Budget totale</div>
           <div className="font-display text-3xl font-bold tabular mt-1">{formatEur(agg?.tot_budget || 0)}</div>
+          <MiniSparkline value={(agg?.tot_budget || 1)} accent={'default'} seed="budget" />
         </SectionCard>
         <SectionCard testId="lavori-kpi-speso">
           <div className="text-[10px] uppercase text-[#64748B]">Speso ad oggi</div>
           <div className={`font-display text-3xl font-bold tabular mt-1 ${(agg?.tot_speso || 0) > (agg?.tot_budget || 0) ? "text-[#DC2626]" : ""}`}>{formatEur(agg?.tot_speso || 0)}</div>
+          <MiniSparkline value={(agg?.tot_speso || 1)} accent={((agg?.tot_speso||0) > (agg?.tot_budget||0)) ? 'critical' : 'positive'} seed="speso" />
         </SectionCard>
         <SectionCard testId="lavori-kpi-fuori">
           <div className="text-[10px] uppercase text-[#64748B]">Fuori budget</div>
           <div className="font-display text-3xl font-bold tabular mt-1 text-[#DC2626]">{agg?.fuori_budget ?? 0}</div>
+          <MiniSparkline value={((agg?.fuori_budget || 0) + 1)} accent={'critical'} seed="fuoribudget" />
         </SectionCard>
       </div>
 

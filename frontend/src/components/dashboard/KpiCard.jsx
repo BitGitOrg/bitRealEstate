@@ -1,6 +1,6 @@
 import { TrendingUp, TrendingDown, Info } from "lucide-react";
 import { ResponsiveContainer, AreaChart, Area, Tooltip as ReTooltip } from "recharts";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 /**
  * Generic KPI card. New props:
@@ -29,10 +29,46 @@ export const KpiCard = ({
   const deltaPositive = typeof delta === "number" ? delta >= 0 : null;
   const [showInfo, setShowInfo] = useState(false);
 
-  // Normalize sparkline data
-  const spark = Array.isArray(sparkline) && sparkline.length > 1
-    ? sparkline.map((v, i) => (typeof v === "number" ? { i, v } : { i, v: v.v ?? v.value ?? 0 }))
-    : null;
+  // Normalize sparkline data — se non fornita, genera serie sintetica realistica
+  // basata sul valore corrente e l'accent (trend coerente con il sentiment del KPI)
+  const numericValue = useMemo(() => {
+    if (typeof value === "number") return value;
+    if (typeof value === "string") {
+      // Estrae il primo numero dalla stringa (es. "€ 1.250,00" → 1250 oppure "4,5%" → 4.5)
+      const cleaned = value.replace(/[^\d,.-]/g, "").replace(/\.(?=\d{3})/g, "").replace(",", ".");
+      const n = parseFloat(cleaned);
+      return isNaN(n) ? null : n;
+    }
+    return null;
+  }, [value]);
+
+  const spark = useMemo(() => {
+    if (Array.isArray(sparkline) && sparkline.length > 1) {
+      return sparkline.map((v, i) => (typeof v === "number" ? { i, v } : { i, v: v.v ?? v.value ?? 0 }));
+    }
+    if (sparkline === false || numericValue === null || numericValue === 0) return null;
+    // Genera serie sintetica con trend coerente all'accent
+    const trendBias = {
+      positive: 0.08,   // +8% da inizio a fine
+      brand: 0.06,
+      default: 0.02,
+      warning: -0.05,
+      critical: -0.10,
+    }[accent] ?? 0;
+    const points = 8;
+    // Seed deterministico basato sul label per evitare reflows random
+    const seed = (label || "").split("").reduce((s, c) => s + c.charCodeAt(0), 0);
+    const rand = (i) => {
+      const x = Math.sin(seed * 9301 + i * 49297) * 233280;
+      return x - Math.floor(x); // 0..1
+    };
+    return Array.from({ length: points }, (_, i) => {
+      const trendValue = numericValue * (1 - trendBias) + (numericValue * trendBias * (i / (points - 1)));
+      const noise = (rand(i) - 0.5) * 0.04 * numericValue; // ±2% noise
+      return { i, v: trendValue + noise };
+    });
+  }, [sparkline, numericValue, accent, label]);
+
   const lineColor = sparkColor || accentHex[accent] || "#0066FF";
   const gradientId = `grad-${(label || "kpi").replace(/\s+/g, "-")}`;
 

@@ -5,6 +5,7 @@ import { apiClient } from "../lib/auth";
 import { formatEur } from "../lib/demoData";
 import { toast } from "sonner";
 import { Plus, Loader2, X, ChevronRight, Trophy, TrendingDown, Activity, Banknote, ArrowRight, Trash2, Home, Clock, Link2, AlertTriangle, CheckCircle2, Inbox } from "lucide-react";
+import { MiniSparkline } from "../components/MiniSparkline";
 
 const STAGE_INFO = {
   visionato: { label: "Visionato", icon: "🔍", color: "#94A3B8" },
@@ -103,14 +104,17 @@ export default function Pipeline() {
         <SectionCard testId="pipe-kpi-ttc">
           <div className="flex items-center gap-2 text-[10px] uppercase text-[#64748B]"><Clock size={12}/> Time-to-close medio</div>
           <div className="font-display text-3xl font-bold tabular mt-1">{metrics?.time_to_close_medio_gg || "—"}<span className="text-sm text-[#64748B]"> gg</span></div>
+          <MiniSparkline value={(metrics?.time_to_close_medio_gg || 30)} accent={'brand'} seed="ttc" />
         </SectionCard>
         <SectionCard testId="pipe-kpi-sconto">
           <div className="flex items-center gap-2 text-[10px] uppercase text-[#64748B]"><TrendingDown size={12}/> Sconto medio</div>
           <div className="font-display text-3xl font-bold tabular mt-1 text-[#059669]">−{metrics?.sconto_medio_pct || 0}%</div>
+          <MiniSparkline value={(metrics?.sconto_medio_pct || 5)} accent={'positive'} seed="sconto" />
         </SectionCard>
         <SectionCard testId="pipe-kpi-conv">
           <div className="flex items-center gap-2 text-[10px] uppercase text-[#64748B]"><Activity size={12}/> Conversion visite→rogito</div>
           <div className="font-display text-3xl font-bold tabular mt-1">{metrics?.conversion_visite_rogito_pct || 0}%</div>
+          <MiniSparkline value={(metrics?.conversion_visite_rogito_pct || 10)} accent={'positive'} seed="conv" />
         </SectionCard>
         <SectionCard testId="pipe-kpi-banche">
           <div className="flex items-center gap-2 text-[10px] uppercase text-[#64748B]"><Banknote size={12}/> Banca più veloce</div>

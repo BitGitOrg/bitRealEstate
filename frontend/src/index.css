@@ -114,3 +114,56 @@ h1, h2, h3, h4, .font-display {
 .fade-up { animation: fadeUp 400ms ease-out both; }
 
 ::selection { background: rgba(0, 102, 255, 0.2); color: #0F172A; }
+
+
+/* ============================================================
+ * GLOBAL: niente angoli arrotondati (richiesta utente)
+ * Override di tutte le classi Tailwind rounded-*
+ * ============================================================ */
+.rounded,
+.rounded-sm,
+.rounded-md,
+.rounded-lg,
+.rounded-xl,
+.rounded-2xl,
+.rounded-3xl,
+.rounded-t,
+.rounded-t-sm,
+.rounded-t-md,
+.rounded-t-lg,
+.rounded-t-xl,
+.rounded-t-2xl,
+.rounded-b,
+.rounded-b-sm,
+.rounded-b-md,
+.rounded-b-lg,
+.rounded-b-xl,
+.rounded-b-2xl,
+.rounded-l,
+.rounded-l-md,
+.rounded-l-lg,
+.rounded-r,
+.rounded-r-md,
+.rounded-r-lg,
+.rounded-tl,
+.rounded-tr,
+.rounded-bl,
+.rounded-br,
+button,
+input,
+select,
+textarea,
+table,
+th,
+td,
+.card,
+[class*="rounded-"]:not(.rounded-full):not(.keep-rounded) {
+  border-radius: 0 !important;
+}
+
+/* Mantieni circolari gli elementi che DEVONO esserlo:
+   avatar, spinner, badge dot, tooltip indicator, ecc. */
+.rounded-full,
+.keep-rounded {
+  border-radius: 9999px !important;
+}

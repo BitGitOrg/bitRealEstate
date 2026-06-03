@@ -6,6 +6,7 @@ import { apiClient } from "../lib/auth";
 import { formatEur } from "../lib/demoData";
 import { toast } from "sonner";
 import { TrendingUp, Calendar, Trophy, Loader2, X, Tag, CheckCircle2, ArrowLeftCircle } from "lucide-react";
+import { MiniSparkline } from "../components/MiniSparkline";
 
 export default function Vendite() {
   const [agg, setAgg] = useState(null);
@@ -56,6 +57,7 @@ export default function Vendite() {
               <div className="font-display text-2xl font-bold tabular">{agg?.n_concluse ?? 0}</div>
             </div>
           </div>
+          <MiniSparkline value={((agg?.n_conclusi || 0) + 1)} accent={'positive'} seed="conclusi" />
         </SectionCard>
         <SectionCard testId="vendite-kpi-in-vendita">
           <div className="flex items-center gap-3">
@@ -65,6 +67,7 @@ export default function Vendite() {
               <div className="font-display text-2xl font-bold tabular">{agg?.n_in_vendita ?? 0}</div>
             </div>
           </div>
+          <MiniSparkline value={((agg?.n_in_vendita || 0) + 1)} accent={'brand'} seed="invendita" />
         </SectionCard>
         <SectionCard testId="vendite-kpi-utile-ytd">
           <div className="flex items-center gap-3">
@@ -74,10 +77,12 @@ export default function Vendite() {
               <div className="font-display text-2xl font-bold tabular text-[#059669]">{formatEur(agg?.utile_ytd || 0)}</div>
             </div>
           </div>
+          <MiniSparkline value={(Math.abs(agg?.utile_ytd) || 1)} accent={(agg?.utile_ytd||0) >= 0 ? 'positive' : 'critical'} seed="utileytd" />
         </SectionCard>
         <SectionCard testId="vendite-kpi-roi-medio">
           <div className="text-[10px] uppercase text-[#64748B]">ROI medio operazioni</div>
           <div className="font-display text-3xl font-bold tabular mt-1 text-[#059669]">{agg?.roi_medio_pct || 0}%</div>
+          <MiniSparkline value={(agg?.roi_medio_pct || 1)} accent={'positive'} seed="roimedio" />
         </SectionCard>
       </div>
 
