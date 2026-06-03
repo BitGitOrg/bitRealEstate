@@ -6,8 +6,10 @@ import { apiClient } from "../lib/auth";
 import { ArrowUpRight, ArrowDownRight, Plus, Upload, Banknote, CheckCircle2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { MiniSparkline } from "../components/MiniSparkline";
+import { useKpiTrends } from "../lib/useKpiTrends";
 
 export default function CostiRicavi() {
+  const { trends } = useKpiTrends();
   const [tipo, setTipo] = useState("tutti");
   const [origine, setOrigine] = useState("tutte"); // tutte | manuale | banca
   const [bankMovs, setBankMovs] = useState([]);
@@ -70,7 +72,7 @@ export default function CostiRicavi() {
               <div className="font-display text-2xl font-bold tabular text-[#059669]">{formatEur(totRicavi)}</div>
             </div>
           </div>
-          <MiniSparkline value={(totRicavi || 1)} accent={'positive'} seed="ricavi" />
+          <MiniSparkline value={(totRicavi || 1)} accent={'positive'} data={trends?.ricavi} labels={trends?.month_labels_short} seed="ricavi" />
         </SectionCard>
         <SectionCard testId="cr-kpi-costi">
           <div className="flex items-center gap-3">
@@ -82,12 +84,12 @@ export default function CostiRicavi() {
               <div className="font-display text-2xl font-bold tabular text-[#DC2626]">{formatEur(totCosti)}</div>
             </div>
           </div>
-          <MiniSparkline value={(totCosti || 1)} accent={'critical'} seed="costi" />
+          <MiniSparkline value={(totCosti || 1)} accent={'critical'} data={trends?.costi} labels={trends?.month_labels_short} seed="costi" />
         </SectionCard>
         <SectionCard testId="cr-kpi-saldo">
           <div className="text-[10px] uppercase text-[#64748B]">Saldo netto</div>
           <div className={`font-display text-3xl font-bold tabular mt-1 ${totRicavi - totCosti >= 0 ? "text-[#059669]" : "text-[#DC2626]"}`}>{formatEur(totRicavi - totCosti)}</div>
-          <MiniSparkline value={Math.abs(totRicavi - totCosti) || 1} accent={(totRicavi - totCosti) >= 0 ? 'positive' : 'critical'} seed="saldo" />
+          <MiniSparkline value={Math.abs(totRicavi - totCosti) || 1} accent={(totRicavi - totCosti) >= 0 ? 'positive' : 'critical'} data={trends?.cash_flow} labels={trends?.month_labels_short} seed="saldo" />
         </SectionCard>
       </div>
 

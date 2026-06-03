@@ -8,6 +8,7 @@ import { Link } from "react-router-dom";
 import { Trophy, AlertTriangle, ArrowUpRight, Loader2 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
 import { MiniSparkline } from "../components/MiniSparkline";
+import { useKpiTrends } from "../lib/useKpiTrends";
 
 const tooltipStyle = { backgroundColor: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12, color: "#0F172A", boxShadow: "0 4px 12px rgba(15,23,42,0.08)" };
 
@@ -25,6 +26,7 @@ const RankRow = ({ p, value, suffix = "" }) => (
 );
 
 export default function KPI() {
+  const { trends } = useKpiTrends();
   const [props, setProps] = useState([]);
   const [agg, setAgg] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -114,7 +116,7 @@ export default function KPI() {
         <SectionCard testId="kpi-card-totale">
           <div className="text-[10px] uppercase text-[#64748B]">Valore patrimonio</div>
           <div className="font-display text-2xl font-bold tabular mt-1">{formatEur(kpi.tot_valore)}</div>
-          <MiniSparkline value={kpi.tot_valore} accent="brand" seed="patrimonio" />
+          <MiniSparkline value={kpi.tot_valore} accent="brand" data={trends?.valore_patrimonio} labels={trends?.month_labels_short} seed="patrimonio" />
         </SectionCard>
         <SectionCard testId="kpi-card-medio">
           <div className="text-[10px] uppercase text-[#64748B]">Rendimento medio netto</div>

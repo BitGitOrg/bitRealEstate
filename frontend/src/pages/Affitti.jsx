@@ -11,6 +11,7 @@ import {
   Calendar, ExternalLink, Search, Filter, X, FileText, AlertTriangle, Save,
 } from "lucide-react";
 import { MiniSparkline } from "../components/MiniSparkline";
+import { useKpiTrends } from "../lib/useKpiTrends";
 
 const STATO_INCASSO = {
   pagato: { label: "Pagato", icon: CheckCircle2, color: "#059669", bg: "#D1FAE5" },
@@ -30,6 +31,7 @@ export default function Affitti() {
   const [reconciling, setReconciling] = useState(false);
   const [markPaidModal, setMarkPaidModal] = useState(null);
   const [editContract, setEditContract] = useState(null);
+  const { trends } = useKpiTrends();
 
   const load = async () => {
     setLoading(true);
@@ -106,7 +108,7 @@ export default function Affitti() {
         <SectionCard testId="affitti-kpi-canone">
           <div className="text-[10px] uppercase text-[#64748B] tracking-wider">Canone mensile atteso</div>
           <div className="font-display text-3xl font-bold tabular mt-1">{formatEur(totMensile)}</div>
-          <MiniSparkline value={totMensile} accent="brand" seed="canone" />
+          <MiniSparkline value={totMensile} data={trends?.canone_atteso} labels={trends?.month_labels_short} accent="brand" seed="canone" format={(v) => "€ " + Math.round(v).toLocaleString("it-IT")} />
         </SectionCard>
         <SectionCard testId="affitti-kpi-incassato">
           <div className="text-[10px] uppercase text-[#64748B] tracking-wider">Incassato {stats?.current_month || "mese"}</div>
@@ -114,18 +116,18 @@ export default function Affitti() {
           {stats && (
             <div className="text-[11px] text-[#475569] mt-0.5">{stats.paid_count}/{stats.expected_count} pagamenti · {stats.completion_pct}%</div>
           )}
-          <MiniSparkline value={stats?.paid_eur || 1} accent="positive" seed="incassato" />
+          <MiniSparkline value={stats?.paid_eur || 1} data={trends?.incassato} labels={trends?.month_labels_short} accent="positive" seed="incassato" format={(v) => "€ " + Math.round(v).toLocaleString("it-IT")} />
         </SectionCard>
         <SectionCard testId="affitti-kpi-occupazione">
           <div className="text-[10px] uppercase text-[#64748B] tracking-wider">Tasso occupazione</div>
           <div className="font-display text-3xl font-bold tabular mt-1">{occupazione}%</div>
-          <MiniSparkline value={occupazione || 1} accent={occupazione >= 80 ? "positive" : "warning"} seed="occupazione" />
+          <MiniSparkline value={occupazione || 1} data={trends?.tasso_occupazione} labels={trends?.month_labels_short} accent={occupazione >= 80 ? "positive" : "warning"} seed="occupazione" format={(v) => v.toFixed(1) + "%"} />
         </SectionCard>
         <SectionCard testId="affitti-kpi-morosita">
           <div className="text-[10px] uppercase text-[#64748B] tracking-wider">Morosità</div>
           <div className={`font-display text-3xl font-bold tabular mt-1 ${morosi > 0 ? "text-[#DC2626]" : "text-[#0F172A]"}`}>{morosi}</div>
           <div className="text-xs text-[#475569] mt-0.5">incass{morosi === 1 ? "o" : "i"} non a posto</div>
-          <MiniSparkline value={Math.max(morosi, 1)} accent={morosi > 0 ? "critical" : "default"} seed="morosi" />
+          <MiniSparkline value={Math.max(morosi, 1)} data={trends?.morosi} labels={trends?.month_labels_short} accent={morosi > 0 ? "critical" : "default"} seed="morosi" format={(v) => Math.round(v) + (Math.round(v) === 1 ? " incasso" : " incassi")} />
         </SectionCard>
       </div>
 
