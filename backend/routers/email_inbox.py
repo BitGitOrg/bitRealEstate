@@ -185,10 +185,170 @@ class IMAPConfig(BaseModel):
     password: str  # in chiaro al POST, encrypted in DB
     folder: str = "INBOX"
     enabled: bool = True
+    auto_sync_minutes: int = 0  # 0 = disabilitato, min 15, max 360
 
 
 def make_email_inbox_router(db, current_user, llm_key: Optional[str] = None):
     router = APIRouter(prefix="/api/email-inbox")
+
+    async def _run_sync(user_id: str, limit: int = 20, mark_seen: bool = True) -> dict:
+        """Core sync logic - usabile sia da endpoint che da background scheduler."""
+        cfg = await db.email_inbox_config.find_one({"user_id": user_id})
+        if not cfg:
+            return {"error": "no_config"}
+        if not llm_key:
+            return {"error": "no_llm"}
+
+        def _fetch_emails():
+            imap = _connect_imap(cfg)
+            imap.select(cfg.get("folder", "INBOX"))
+            status, data = imap.search(None, "UNSEEN")
+            if status != "OK" or not data or not data[0]:
+                imap.logout()
+                return []
+            ids = data[0].split()[-limit:]
+            emails = []
+            for uid in ids:
+                status, msg_data = imap.fetch(uid, "(RFC822)")
+                if status != "OK" or not msg_data or not msg_data[0]:
+                    continue
+                raw = msg_data[0][1]
+                msg = email_lib.message_from_bytes(raw)
+                emails.append({
+                    "uid": uid.decode() if isinstance(uid, bytes) else str(uid),
+                    "from": _decode(msg.get("From")),
+                    "subject": _decode(msg.get("Subject")),
+                    "date": msg.get("Date"),
+                    "body_html": _extract_body_html(msg),
+                })
+            if mark_seen:
+                for uid in ids:
+                    try:
+                        imap.store(uid, "+FLAGS", "\\Seen")
+                    except Exception:
+                        pass
+            imap.logout()
+            return emails
+
+        emails = await asyncio.to_thread(_fetch_emails)
+
+        if not emails:
+            await db.email_inbox_config.update_one(
+                {"user_id": user_id},
+                {"$set": {
+                    "last_sync_at": datetime.now(timezone.utc).isoformat(),
+                    "last_sync_result": {"emails": 0, "deals_creati": 0, "skipped": 0},
+                }},
+            )
+            return {
+                "emails_processate": 0, "deals_creati": 0, "annunci_trovati": 0,
+                "skipped_no_listing": 0, "dettagli": [],
+            }
+
+        from routers.pipeline import _compute_ai_score
+
+        dettagli = []
+        total_listings = 0
+        total_created = 0
+        skipped = 0
+
+        for em in emails:
+            portal = _detect_portal(em["from"])
+            body_text = _html_to_text(em["body_html"])
+            if len(body_text) < 100:
+                skipped += 1
+                dettagli.append({
+                    "from": em["from"], "subject": em["subject"], "portal": portal,
+                    "annunci": 0, "creati": 0, "note": "Body vuoto",
+                })
+                continue
+            try:
+                listings = await _ai_extract_listings(llm_key, portal, em["subject"], body_text)
+            except Exception as e:
+                logger.warning(f"AI parse failed for email {em['uid']}: {e}")
+                listings = []
+
+            created_in_email = 0
+            seen_urls = set()
+            for ann in listings:
+                indirizzo = (ann.get("indirizzo") or "").strip()
+                prezzo = ann.get("prezzo_richiesto")
+                if not indirizzo or not prezzo:
+                    continue
+                url = (ann.get("url") or "").strip()
+                if url and url in seen_urls:
+                    continue
+                if url:
+                    seen_urls.add(url)
+                    exists = await db.deals.find_one({"user_id": user_id, "url_annuncio": url})
+                    if exists:
+                        continue
+
+                ai = await _compute_ai_score(db, user_id, float(prezzo), ann.get("canone_atteso"))
+                now = datetime.now(timezone.utc).isoformat()
+                item = {
+                    "id": f"DEAL-{uuid.uuid4().hex[:6].upper()}",
+                    "user_id": user_id,
+                    "is_pipeline": True,
+                    "stage": "visionato",
+                    "convertito": False,
+                    "indirizzo": indirizzo[:160],
+                    "citta": (ann.get("citta") or "")[:80],
+                    "prezzo_richiesto": float(prezzo),
+                    "prezzo_corrente": float(prezzo),
+                    "fonte": portal,
+                    "metratura": ann.get("metratura"),
+                    "tipologia": ann.get("tipologia") or "",
+                    "canone_atteso": ann.get("canone_atteso"),
+                    "note": (ann.get("note") or "")[:300],
+                    "url_annuncio": url or None,
+                    "sorgente_email": {
+                        "from": em["from"], "subject": em["subject"], "date": em["date"],
+                    },
+                    **ai,
+                    "created_at": now,
+                    "stage_updated_at": now,
+                    "timeline": [{
+                        "id": f"EVT-{uuid.uuid4().hex[:6].upper()}",
+                        "tipo": "visione",
+                        "data": date.today().isoformat(),
+                        "descrizione": f"Auto-import email {portal} · AI Score {ai.get('ai_deal_score','-')}/100 ({ai.get('ai_giudizio','-')})",
+                        "stage_dopo": "visionato",
+                    }],
+                }
+                await db.deals.insert_one(item)
+                created_in_email += 1
+                total_created += 1
+            total_listings += len(listings)
+            dettagli.append({
+                "from": em["from"], "subject": em["subject"], "portal": portal,
+                "annunci": len(listings), "creati": created_in_email,
+            })
+
+        result = {
+            "emails_processate": len(emails),
+            "deals_creati": total_created,
+            "annunci_trovati": total_listings,
+            "skipped_no_listing": skipped,
+            "dettagli": dettagli,
+        }
+        await db.email_inbox_config.update_one(
+            {"user_id": user_id},
+            {"$set": {
+                "last_sync_at": datetime.now(timezone.utc).isoformat(),
+                "last_sync_result": {
+                    "emails": result["emails_processate"],
+                    "deals_creati": result["deals_creati"],
+                    "skipped": result["skipped_no_listing"],
+                },
+            }},
+        )
+        return result
+
+    # Esponi la funzione internamente per il background scheduler
+    router._run_sync = _run_sync
+    router._db = db
+    router._llm_key = llm_key
 
     @router.get("/config")
     async def get_config(user: dict = Depends(current_user)):
@@ -207,6 +367,7 @@ def make_email_inbox_router(db, current_user, llm_key: Optional[str] = None):
             "username": cfg.get("username"),
             "folder": cfg.get("folder", "INBOX"),
             "enabled": cfg.get("enabled", True),
+            "auto_sync_minutes": cfg.get("auto_sync_minutes", 0),
             "password_set": bool(cfg.get("password_enc")),
             "last_sync_at": cfg.get("last_sync_at"),
             "last_sync_result": cfg.get("last_sync_result"),
@@ -214,6 +375,10 @@ def make_email_inbox_router(db, current_user, llm_key: Optional[str] = None):
 
     @router.post("/config")
     async def save_config(payload: IMAPConfig, user: dict = Depends(current_user)):
+        # Valida auto_sync_minutes: 0 (off) o 15..360
+        asm = int(payload.auto_sync_minutes or 0)
+        if asm and (asm < 15 or asm > 360):
+            raise HTTPException(400, "auto_sync_minutes deve essere 0 (off) o tra 15 e 360")
         doc = {
             "user_id": user["id"],
             "host": payload.host.strip(),
@@ -223,11 +388,11 @@ def make_email_inbox_router(db, current_user, llm_key: Optional[str] = None):
             "password_enc": _encrypt(payload.password) if payload.password else None,
             "folder": payload.folder.strip() or "INBOX",
             "enabled": bool(payload.enabled),
+            "auto_sync_minutes": asm,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         existing = await db.email_inbox_config.find_one({"user_id": user["id"]})
         if existing:
-            # Se password vuota nel form, mantieni quella esistente
             if not payload.password:
                 doc["password_enc"] = existing.get("password_enc")
             await db.email_inbox_config.update_one(
@@ -280,179 +445,87 @@ def make_email_inbox_router(db, current_user, llm_key: Optional[str] = None):
 
     @router.post("/sync")
     async def sync_inbox(payload: dict = None, user: dict = Depends(current_user)):
-        cfg = await db.email_inbox_config.find_one({"user_id": user["id"]})
-        if not cfg:
-            raise HTTPException(404, "Configurazione IMAP mancante")
-        if not llm_key:
-            raise HTTPException(503, "AI non configurata")
-
         limit = int((payload or {}).get("limit") or 20)
         limit = max(1, min(50, limit))
         mark_seen = (payload or {}).get("mark_seen", True)
-
-        def _fetch_emails():
-            """Sync IMAP fetch in thread separato."""
-            imap = _connect_imap(cfg)
-            imap.select(cfg.get("folder", "INBOX"))
-            status, data = imap.search(None, "UNSEEN")
-            if status != "OK" or not data or not data[0]:
-                imap.logout()
-                return []
-            ids = data[0].split()
-            # Prendi i più recenti
-            ids = ids[-limit:]
-            emails = []
-            for uid in ids:
-                status, msg_data = imap.fetch(uid, "(RFC822)")
-                if status != "OK" or not msg_data or not msg_data[0]:
-                    continue
-                raw = msg_data[0][1]
-                msg = email_lib.message_from_bytes(raw)
-                emails.append({
-                    "uid": uid.decode() if isinstance(uid, bytes) else str(uid),
-                    "from": _decode(msg.get("From")),
-                    "subject": _decode(msg.get("Subject")),
-                    "date": msg.get("Date"),
-                    "body_html": _extract_body_html(msg),
-                })
-            # Mark seen
-            if mark_seen:
-                for uid in ids:
-                    try:
-                        imap.store(uid, "+FLAGS", "\\Seen")
-                    except Exception:
-                        pass
-            imap.logout()
-            return emails
-
         try:
-            emails = await asyncio.to_thread(_fetch_emails)
+            result = await _run_sync(user["id"], limit=limit, mark_seen=mark_seen)
         except imaplib.IMAP4.error as e:
             raise HTTPException(400, f"Login IMAP fallito: {str(e)[:150]}")
         except Exception as e:
             raise HTTPException(400, f"Errore IMAP: {str(e)[:150]}")
-
-        if not emails:
-            await db.email_inbox_config.update_one(
-                {"user_id": user["id"]},
-                {"$set": {
-                    "last_sync_at": datetime.now(timezone.utc).isoformat(),
-                    "last_sync_result": {"emails": 0, "deals_creati": 0, "skipped": 0},
-                }},
-            )
-            return {
-                "emails_processate": 0, "deals_creati": 0, "annunci_trovati": 0,
-                "skipped_no_listing": 0, "dettagli": [],
-            }
-
-        from routers.pipeline import _compute_ai_score
-
-        dettagli = []
-        total_listings = 0
-        total_created = 0
-        skipped = 0
-
-        for em in emails:
-            portal = _detect_portal(em["from"])
-            body_text = _html_to_text(em["body_html"])
-            if len(body_text) < 100:
-                skipped += 1
-                dettagli.append({
-                    "from": em["from"], "subject": em["subject"],
-                    "portal": portal, "annunci": 0, "creati": 0,
-                    "note": "Body email vuoto o non leggibile",
-                })
-                continue
-            try:
-                listings = await _ai_extract_listings(
-                    llm_key, portal, em["subject"], body_text
-                )
-            except Exception as e:
-                logger.warning(f"AI parse failed for email {em['uid']}: {e}")
-                listings = []
-
-            created_in_email = 0
-            seen_urls = set()
-            for ann in listings:
-                indirizzo = (ann.get("indirizzo") or "").strip()
-                prezzo = ann.get("prezzo_richiesto")
-                if not indirizzo or not prezzo:
-                    continue
-                url = (ann.get("url") or "").strip()
-                # Dedup intra-email
-                if url and url in seen_urls:
-                    continue
-                if url:
-                    seen_urls.add(url)
-                # Dedup cross-DB su URL (se già importato non duplicare)
-                if url:
-                    exists = await db.deals.find_one(
-                        {"user_id": user["id"], "url_annuncio": url}
-                    )
-                    if exists:
-                        continue
-
-                ai = await _compute_ai_score(
-                    db, user["id"], float(prezzo), ann.get("canone_atteso")
-                )
-                now = datetime.now(timezone.utc).isoformat()
-                item = {
-                    "id": f"DEAL-{uuid.uuid4().hex[:6].upper()}",
-                    "user_id": user["id"],
-                    "is_pipeline": True,
-                    "stage": "visionato",
-                    "convertito": False,
-                    "indirizzo": indirizzo[:160],
-                    "citta": (ann.get("citta") or "")[:80],
-                    "prezzo_richiesto": float(prezzo),
-                    "prezzo_corrente": float(prezzo),
-                    "fonte": portal,
-                    "metratura": ann.get("metratura"),
-                    "tipologia": ann.get("tipologia") or "",
-                    "canone_atteso": ann.get("canone_atteso"),
-                    "note": (ann.get("note") or "")[:300],
-                    "url_annuncio": url or None,
-                    "sorgente_email": {
-                        "from": em["from"], "subject": em["subject"], "date": em["date"],
-                    },
-                    **ai,
-                    "created_at": now,
-                    "stage_updated_at": now,
-                    "timeline": [{
-                        "id": f"EVT-{uuid.uuid4().hex[:6].upper()}",
-                        "tipo": "visione",
-                        "data": date.today().isoformat(),
-                        "descrizione": f"Importato da email {portal} · AI Score {ai.get('ai_deal_score','-')}/100 ({ai.get('ai_giudizio','-')})",
-                        "stage_dopo": "visionato",
-                    }],
-                }
-                await db.deals.insert_one(item)
-                created_in_email += 1
-                total_created += 1
-            total_listings += len(listings)
-            dettagli.append({
-                "from": em["from"], "subject": em["subject"], "portal": portal,
-                "annunci": len(listings), "creati": created_in_email,
-            })
-
-        result = {
-            "emails_processate": len(emails),
-            "deals_creati": total_created,
-            "annunci_trovati": total_listings,
-            "skipped_no_listing": skipped,
-            "dettagli": dettagli,
-        }
-        await db.email_inbox_config.update_one(
-            {"user_id": user["id"]},
-            {"$set": {
-                "last_sync_at": datetime.now(timezone.utc).isoformat(),
-                "last_sync_result": {
-                    "emails": result["emails_processate"],
-                    "deals_creati": result["deals_creati"],
-                    "skipped": result["skipped_no_listing"],
-                },
-            }},
-        )
+        if isinstance(result, dict) and result.get("error") == "no_config":
+            raise HTTPException(404, "Configurazione IMAP mancante")
+        if isinstance(result, dict) and result.get("error") == "no_llm":
+            raise HTTPException(503, "AI non configurata")
         return result
 
     return router
+
+
+async def background_sync_loop(db, llm_key: Optional[str], check_interval_seconds: int = 60):
+    """
+    Loop infinito che ogni `check_interval_seconds` controlla quali config IMAP
+    sono dovute per il sync automatico e le esegue.
+
+    Filtri:
+    - cfg.enabled = true
+    - cfg.auto_sync_minutes > 0
+    - now - last_sync_at >= auto_sync_minutes
+    """
+    if not llm_key:
+        logger.warning("background_sync_loop: LLM key mancante, scheduler disabilitato")
+        return
+
+    # Importa la helper localmente per riusare la stessa logica del router
+    from routers.email_inbox import _build_run_sync  # noqa  (definita sotto)
+
+    logger.info(f"📬 Email inbox background scheduler avviato (check ogni {check_interval_seconds}s)")
+    run_sync = _build_run_sync(db, llm_key)
+
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            cursor = db.email_inbox_config.find({
+                "enabled": True,
+                "auto_sync_minutes": {"$gt": 0},
+            })
+            async for cfg in cursor:
+                last_iso = cfg.get("last_sync_at")
+                interval_min = int(cfg.get("auto_sync_minutes") or 0)
+                if interval_min < 15:
+                    continue
+                should_run = False
+                if not last_iso:
+                    should_run = True
+                else:
+                    try:
+                        last_dt = datetime.fromisoformat(last_iso.replace("Z", "+00:00"))
+                        if last_dt.tzinfo is None:
+                            last_dt = last_dt.replace(tzinfo=timezone.utc)
+                        delta_min = (now - last_dt).total_seconds() / 60.0
+                        should_run = delta_min >= interval_min
+                    except (ValueError, TypeError):
+                        should_run = True
+                if should_run:
+                    user_id = cfg["user_id"]
+                    try:
+                        logger.info(f"📬 Auto-sync IMAP per user={user_id}")
+                        r = await run_sync(user_id, limit=20, mark_seen=True)
+                        logger.info(f"📬 Auto-sync user={user_id} done: {r.get('deals_creati', 0)} deal creati su {r.get('emails_processate', 0)} email")
+                    except Exception as e:
+                        logger.warning(f"📬 Auto-sync FAIL user={user_id}: {str(e)[:200]}")
+        except Exception as e:
+            logger.exception(f"background_sync_loop iteration error: {e}")
+        await asyncio.sleep(check_interval_seconds)
+
+
+def _build_run_sync(db, llm_key: Optional[str]):
+    """Costruisce una funzione _run_sync standalone (stessa logica del router)."""
+    # Rebuild minimo: crea un router fittizio per ottenere _run_sync
+    from fastapi import APIRouter as _AR  # noqa
+    # Riusa lo stesso codice del router: chiama make_email_inbox_router con un dummy current_user
+    dummy_user = lambda: {"id": "dummy"}  # noqa
+    r = make_email_inbox_router(db, dummy_user, llm_key)
+    return r._run_sync
+

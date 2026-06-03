@@ -21,7 +21,7 @@ export default function EmailInboxConfig() {
   const [loading, setLoading] = useState(true);
   const [cfg, setCfg] = useState({
     host: "", port: 993, use_ssl: true, username: "", password: "",
-    folder: "INBOX", enabled: true,
+    folder: "INBOX", enabled: true, auto_sync_minutes: 0,
   });
   const [showPwd, setShowPwd] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -48,6 +48,7 @@ export default function EmailInboxConfig() {
           host: d.host || "", port: d.port || 993, use_ssl: d.use_ssl ?? true,
           username: d.username || "", password: "",
           folder: d.folder || "INBOX", enabled: d.enabled ?? true,
+          auto_sync_minutes: d.auto_sync_minutes ?? 0,
         });
       }
     } catch (e) {
@@ -220,6 +221,44 @@ export default function EmailInboxConfig() {
             <option value="1">Sì</option>
             <option value="0">No (pausa)</option>
           </select>
+        </label>
+
+        <label className="block md:col-span-2">
+          <span className="text-[10px] uppercase tracking-wider text-[#475569] font-medium flex items-center gap-1.5">
+            Sync automatico in background
+            {cfg.auto_sync_minutes > 0 && cfg.enabled && (
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[#D1FAE5] text-[#065F46] tabular normal-case tracking-normal">
+                ATTIVO · ogni {cfg.auto_sync_minutes}m
+              </span>
+            )}
+          </span>
+          <div className="mt-2 grid grid-cols-2 md:grid-cols-6 gap-1.5">
+            {[
+              { v: 0, l: "Off" },
+              { v: 15, l: "15m" },
+              { v: 30, l: "30m" },
+              { v: 60, l: "1h" },
+              { v: 120, l: "2h" },
+              { v: 360, l: "6h" },
+            ].map((o) => (
+              <button
+                key={o.v}
+                type="button"
+                onClick={() => setCfg({ ...cfg, auto_sync_minutes: o.v })}
+                data-testid={`email-auto-${o.v}`}
+                className={`px-2 py-2 rounded-lg text-xs border transition-colors ${
+                  cfg.auto_sync_minutes === o.v
+                    ? "border-[#0066FF] bg-[rgba(0,102,255,0.1)] text-[#2563EB] font-semibold"
+                    : "border-[#E2E8F0] text-[#475569] hover:border-[#CBD5E1]"
+                }`}
+              >
+                {o.l}
+              </button>
+            ))}
+          </div>
+          <div className="mt-1.5 text-[10px] text-[#64748B] leading-relaxed">
+            Quando attivo, il server controlla automaticamente la casella all'intervallo scelto. Funziona anche con browser chiuso. Min 15 min · Max 6h.
+          </div>
         </label>
       </div>
 

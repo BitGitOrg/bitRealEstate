@@ -490,3 +490,33 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
   - Deal affare (€55k / €550/mese) → 77 "buona"
   - Deal senza canone → 17 "sconsigliata"
 - UI: `Pipeline.jsx` mostra il punteggio come badge colorato sulla card Kanban + pannello dettagliato nel modal del deal con prezzo max consigliato e punti di attenzione.
+
+## 2026-06-03 — Email Inbox IMAP + Auto-Sync Background (verificato)
+
+### Backend: `/api/email-inbox/*`
+- GET /config (con `auto_sync_minutes`, `password_set`, `last_sync_at`)
+- POST /config (validazione 0 o 15-360 minuti)
+- DELETE /config
+- POST /test (verifica login IMAP + conta email)
+- POST /sync (manuale, usa stessa `_run_sync` interna)
+- Background scheduler attivo: controlla ogni 60s, esegue sync per ogni user con `auto_sync_minutes > 0` e `last_sync` scaduto
+- Password salvata cifrata con Fernet (chiave `INBOX_KEY` in .env)
+
+### AI Pipeline
+- Detect portale automatico dal sender (immobiliare/idealista/casa/subito/wikicasa/bakeca)
+- Claude Sonnet 4.6 estrae LISTA annunci da una singola email (può contenere 1-N annunci)
+- Dedup intra-email + dedup cross-DB per `url_annuncio`
+- Per ogni annuncio nuovo: AI Deal Score 0-100 + creazione deal in Pipeline stage "visionato"
+- Email marcate \Seen dopo elaborazione
+
+### Frontend
+- `EmailInboxConfig` component in Impostazioni: 6 preset provider (Gmail, Aruba, Outlook, Libero, Titan, ProtonMail), form completo con show/hide password, selettore intervallo auto-sync (Off/15m/30m/1h/2h/6h)
+- Bottone "Sync email" nella Pipeline accanto a "Importa da URL"
+
+### Test reali eseguiti
+- CRUD config OK
+- Encryption Fernet OK (decryption funziona)
+- Validazione intervallo 10 min → 400 corretto
+- Scheduler log: avviato dopo startup, esegue sync ogni intervallo, gestisce fallimenti login senza bloccare altri user
+
+### Prossimo step (P2): WhatsApp Bot conversazionale per aggiornare pipeline da messaggio voce/testo

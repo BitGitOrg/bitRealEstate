@@ -42,7 +42,7 @@ from routers.notifications import make_notifications_router
 from routers.tax_calendar import make_tax_calendar_router
 from routers.banker_pack import make_banker_pack_router
 from routers.pipeline import make_pipeline_router
-from routers.email_inbox import make_email_inbox_router
+from routers.email_inbox import make_email_inbox_router, background_sync_loop
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -671,6 +671,9 @@ logger = logging.getLogger(__name__)
 async def on_start():
     await seed_users()
     logger.info("Backend started, users seeded.")
+    # Avvia background scheduler per email inbox auto-sync
+    import asyncio as _asyncio
+    _asyncio.create_task(background_sync_loop(db, EMERGENT_LLM_KEY, check_interval_seconds=60))
 
 
 @app.on_event("shutdown")
