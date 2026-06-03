@@ -7,13 +7,28 @@ import { StatusBadge, DisdettaBadge } from "../components/StatusBadge";
 import { ScoreGauge } from "../components/ScoreGauge";
 import { getProperty, formatEur } from "../lib/demoData";
 import { apiClient } from "../lib/auth";
-import { ArrowLeft, MapPin, FileText, Download, Calendar, Save, User, Home, Loader2, AlertTriangle, Bell, Clock, X, LogOut, KeyRound, History, Banknote } from "lucide-react";
+import { ArrowLeft, MapPin, FileText, Download, Calendar, Save, User, Home, Loader2, AlertTriangle, Bell, Clock, X, LogOut, KeyRound, History, Banknote, Edit2, Upload, Trash2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 
 const Row = ({ label, value }) => (
   <div className="flex justify-between py-2 border-b border-[#E2E8F0] last:border-0 text-sm">
     <span className="text-[#475569]">{label}</span>
     <span className="text-[#0F172A] tabular text-right">{value}</span>
+  </div>
+);
+
+const InputRow = ({ label, value, onChange, type = "text", suffix }) => (
+  <div className="flex items-center justify-between gap-2 py-1.5 border-b border-[#E2E8F0] last:border-0 text-sm">
+    <span className="text-[#475569] shrink-0">{label}</span>
+    <div className="flex items-center gap-1 max-w-[60%]">
+      <input
+        type={type}
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-[#F8FAFC] border border-[#E2E8F0] rounded px-2 py-1 text-sm tabular text-right outline-none focus:border-[#0066FF] w-full"
+      />
+      {suffix && <span className="text-[10px] text-[#64748B] shrink-0">{suffix}</span>}
+    </div>
   </div>
 );
 
@@ -157,90 +172,15 @@ export default function SchedaImmobile() {
         </TabsList>
 
         <TabsContent value="anagrafica" className="mt-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <SectionCard title="Anagrafica" testId="card-anagrafica">
-              <Row label="Nome" value={p.nome} />
-              <Row label="Codice interno" value={p.id} />
-              <Row label="Indirizzo" value={p.indirizzo} />
-              <Row label="Comune" value={`${p.citta} (${p.provincia})`} />
-              <Row label="Tipologia" value={p.tipologia} />
-              <Row label="Superficie" value={`${p.metratura} m²`} />
-              <Row label="Piano" value={p.piano} />
-              <Row label="Anno costruzione" value={p.anno_costruzione} />
-              <Row label="Classe energetica" value={p.classe_energetica} />
-            </SectionCard>
-            <SectionCard title="Valore" testId="card-valore">
-              <Row label="Valore di mercato stimato" value={formatEur(p.valore_stimato)} />
-              <Row label="Costo totale investimento" value={formatEur(p.costo_totale)} />
-              <Row label="Rivalutazione stimata" value={<span className="text-[#059669]">{formatEur(p.valore_stimato - p.costo_totale)}</span>} />
-              <Row label="Stato locazione" value={<StatusBadge stato={p.stato} />} />
-              <Row label="Tipologia operazione" value={p.operazione.replace(/_/g, " ")} />
-            </SectionCard>
-          </div>
+          <EditableSections p={p} onSaved={(u) => setRemoteP(u)} section="anagrafica" />
         </TabsContent>
 
         <TabsContent value="acquisto" className="mt-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <SectionCard title="Dati di acquisto" testId="card-acquisto">
-              <Row label="Data rogito" value={p.data_acquisto || "—"} />
-              <Row label="Prezzo di acquisto" value={formatEur(p.prezzo_acquisto)} />
-              <Row label="Notaio" value={formatEur(p.notaio)} />
-              <Row label="Agenzia" value={formatEur(p.agenzia)} />
-              <Row label="Imposte" value={formatEur(p.imposte)} />
-              <Row label="Lavori" value={formatEur(p.lavori)} />
-              <Row label="Totale" value={<strong>{formatEur(p.costo_totale)}</strong>} />
-            </SectionCard>
-            <SectionCard title="Finanziamento" testId="card-mutuo" action={
-              <Link to="/mutui" className="inline-flex items-center gap-1 text-xs text-[#2563EB] hover:underline">
-                <Banknote size={12} /> Gestisci mutui
-              </Link>
-            }>
-              {p.mutuo ? (
-                <>
-                  <Row label="Banca" value={p.mutuo.banca} />
-                  <Row label="Capitale residuo" value={formatEur(p.mutuo.residuo)} />
-                  <Row label="Rata mensile" value={formatEur(p.mutuo.rata)} />
-                  <Row label="Tasso" value={`${p.mutuo.tasso}%`} />
-                </>
-              ) : (
-                <div className="text-sm text-[#475569] py-4">
-                  Nessun finanziamento collegato. <Link to="/mutui" className="text-[#2563EB] hover:underline">Aggiungi mutuo</Link> o importa il PDF della banca.
-                </div>
-              )}
-            </SectionCard>
-          </div>
+          <EditableSections p={p} onSaved={(u) => setRemoteP(u)} section="acquisto" />
         </TabsContent>
 
         <TabsContent value="economico" className="mt-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <SectionCard title="Ricavi" testId="card-ricavi" >
-              <Row label="Canone mensile" value={formatEur(p.canone_mensile)} />
-              <Row label="Canone annuo" value={formatEur(p.canone_mensile * 12)} />
-              {p.inquilino && <>
-                <Row label="Conduttore" value={p.inquilino} />
-                <Row label="Contratto" value={`${p.data_inizio_contratto || "?"} → ${p.scadenza_contratto || "?"}`} />
-              </>}
-            </SectionCard>
-            <SectionCard title="Rendimento" testId="card-rendimento">
-              <Row label="Lordo" value={p.rendimento_lordo > 0 ? `${p.rendimento_lordo}%` : "—"} />
-              <Row label="Netto" value={p.rendimento_netto > 0 ? `${p.rendimento_netto}%` : "—"} />
-              <Row label="ROI" value={p.rendimento_netto > 0 ? `${(p.rendimento_netto * 1.4).toFixed(1)}%` : "—"} />
-              <Row label="Cash flow / mese" value={formatEur(p.cash_flow_mensile)} />
-            </SectionCard>
-            <SectionCard title="Lavori in corso" testId="card-lavori">
-              {lavoroAttivo ? (
-                <>
-                  <Row label="Descrizione" value={lavoroAttivo.descrizione} />
-                  <Row label="Impresa" value={lavoroAttivo.impresa} />
-                  <Row label="Budget" value={formatEur(lavoroAttivo.budget)} />
-                  <Row label="Speso" value={<span className={lavoroAttivo.speso > lavoroAttivo.budget ? "text-[#DC2626]" : ""}>{formatEur(lavoroAttivo.speso)}</span>} />
-                  <Row label="Avanzamento" value={`${lavoroAttivo.avanzamento}%`} />
-                </>
-              ) : (
-                <div className="text-sm text-[#475569] py-4">Nessun cantiere attivo.</div>
-              )}
-            </SectionCard>
-          </div>
+          <EditableSections p={p} onSaved={(u) => setRemoteP(u)} section="economico" lavoroAttivo={lavoroAttivo} />
         </TabsContent>
 
         <TabsContent value="locazione" className="mt-4">
@@ -248,23 +188,12 @@ export default function SchedaImmobile() {
         </TabsContent>
 
         <TabsContent value="documenti" className="mt-4">
-          <SectionCard title="Archivio documenti" subtitle={`${docs.length} documenti collegati`} testId="card-documenti">
-            <div className="space-y-2">
-              {docs.length === 0 && <div className="text-sm text-[#475569] py-4">Nessun documento caricato.</div>}
-              {docs.map(d => (
-                <div key={d.id} className="flex items-center justify-between p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg hover:border-[#CBD5E1] transition-colors" data-testid={`doc-${d.id}`}>
-                  <div className="flex items-center gap-3 min-w-0">
-                    <FileText size={16} className="text-[#2563EB] shrink-0" />
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium truncate">{d.nome}</div>
-                      <div className="text-[11px] text-[#64748B]">{d.tipo} · {d.dimensione} · {d.caricato}</div>
-                    </div>
-                  </div>
-                  <button className="p-2 rounded hover:bg-[#FFFFFF] text-[#475569] hover:text-[#0F172A]"><Download size={14} /></button>
-                </div>
-              ))}
-            </div>
-          </SectionCard>
+          <DocumentiSection propertyId={p.id} docs={docs} onChanged={async () => {
+            try {
+              const r = await apiClient().get(`/documents?immobile_id=${p.id}`);
+              setDocs(r.data || []);
+            } catch {}
+          }} />
         </TabsContent>
 
         <TabsContent value="movimenti" className="mt-4">
@@ -774,3 +703,385 @@ function ChiudiModal({ p, onClose, onSaved }) {
     </div>
   );
 }
+
+// ============================================================================
+// Sezioni editabili: Anagrafica / Acquisto / Economico
+// ============================================================================
+function EditableSections({ p, onSaved, section, lavoroAttivo }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = () => {
+    setForm({
+      // Anagrafica
+      nome: p.nome || "",
+      indirizzo: p.indirizzo || "",
+      citta: p.citta || "",
+      provincia: p.provincia || "",
+      cap: p.cap || "",
+      tipologia: p.tipologia || "",
+      metratura: p.metratura || "",
+      piano: p.piano || "",
+      anno_costruzione: p.anno_costruzione || "",
+      classe_energetica: p.classe_energetica || "",
+      rendita_catastale: p.rendita_catastale || "",
+      valore_catastale: p.valore_catastale || "",
+      stato: p.stato || "",
+      operazione: p.operazione || "",
+      valore_stimato: p.valore_stimato || "",
+      // Acquisto
+      data_acquisto: p.data_acquisto || "",
+      prezzo_acquisto: p.prezzo_acquisto || "",
+      notaio: p.notaio || "",
+      agenzia: p.agenzia || "",
+      imposte: p.imposte || "",
+      spese_tecniche: p.spese_tecniche || "",
+      lavori: p.lavori || "",
+      // Economico
+      canone_mensile: p.canone_mensile || "",
+      spese_condominiali: p.spese_condominiali || "",
+    });
+    setEditing(true);
+  };
+
+  const submit = async () => {
+    setSaving(true);
+    try {
+      const r = await apiClient().patch(`/properties/${p.id}`, form);
+      toast.success("Modifiche salvate");
+      onSaved(r.data);
+      setEditing(false);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Errore salvataggio");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const EditBtn = () => (
+    !editing ? (
+      <button onClick={startEdit} data-testid={`edit-${section}-btn`} className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs text-[#0066FF] hover:bg-[rgba(0,102,255,0.08)] font-medium">
+        <Edit2 size={11} /> Modifica
+      </button>
+    ) : (
+      <div className="flex gap-1">
+        <button onClick={() => setEditing(false)} className="px-2.5 py-1 rounded text-xs text-[#475569] hover:bg-[#F1F5F9]">Annulla</button>
+        <button onClick={submit} disabled={saving} data-testid={`save-${section}-btn`} className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs bg-[#0066FF] hover:bg-[#2563EB] disabled:opacity-50 text-white font-medium">
+          {saving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Salva
+        </button>
+      </div>
+    )
+  );
+
+  if (section === "anagrafica") {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <SectionCard title="Anagrafica" testId="card-anagrafica" action={<EditBtn />}>
+          {!editing ? (
+            <>
+              <Row label="Nome" value={p.nome} />
+              <Row label="Codice interno" value={p.id} />
+              <Row label="Indirizzo" value={p.indirizzo} />
+              <Row label="Comune" value={`${p.citta || "—"} (${p.provincia || "—"})`} />
+              <Row label="CAP" value={p.cap || "—"} />
+              <Row label="Tipologia" value={p.tipologia} />
+              <Row label="Superficie" value={`${p.metratura || 0} m²`} />
+              <Row label="Piano" value={p.piano || "—"} />
+              <Row label="Anno costruzione" value={p.anno_costruzione || "—"} />
+              <Row label="Classe energetica" value={p.classe_energetica || "—"} />
+              <Row label="Rendita catastale" value={p.rendita_catastale ? `€ ${p.rendita_catastale}` : "—"} />
+            </>
+          ) : (
+            <>
+              <InputRow label="Nome" value={form.nome} onChange={(v) => setForm({ ...form, nome: v })} />
+              <InputRow label="Indirizzo" value={form.indirizzo} onChange={(v) => setForm({ ...form, indirizzo: v })} />
+              <InputRow label="Comune" value={form.citta} onChange={(v) => setForm({ ...form, citta: v })} />
+              <InputRow label="Provincia" value={form.provincia} onChange={(v) => setForm({ ...form, provincia: v })} />
+              <InputRow label="CAP" value={form.cap} onChange={(v) => setForm({ ...form, cap: v })} />
+              <InputRow label="Tipologia" value={form.tipologia} onChange={(v) => setForm({ ...form, tipologia: v })} />
+              <InputRow label="Superficie" type="number" value={form.metratura} onChange={(v) => setForm({ ...form, metratura: v })} suffix="m²" />
+              <InputRow label="Piano" value={form.piano} onChange={(v) => setForm({ ...form, piano: v })} />
+              <InputRow label="Anno costruzione" type="number" value={form.anno_costruzione} onChange={(v) => setForm({ ...form, anno_costruzione: v })} />
+              <InputRow label="Classe energetica" value={form.classe_energetica} onChange={(v) => setForm({ ...form, classe_energetica: v })} />
+              <InputRow label="Rendita catastale" type="number" value={form.rendita_catastale} onChange={(v) => setForm({ ...form, rendita_catastale: v })} suffix="€" />
+              <InputRow label="Valore catastale" type="number" value={form.valore_catastale} onChange={(v) => setForm({ ...form, valore_catastale: v })} suffix="€" />
+            </>
+          )}
+        </SectionCard>
+        <SectionCard title="Valore & stato" testId="card-valore" action={!editing && <EditBtn />}>
+          {!editing ? (
+            <>
+              <Row label="Valore di mercato stimato" value={formatEur(p.valore_stimato)} />
+              <Row label="Costo totale investimento" value={formatEur(p.costo_totale)} />
+              <Row label="Rivalutazione stimata" value={<span className={p.valore_stimato - p.costo_totale >= 0 ? "text-[#059669]" : "text-[#DC2626]"}>{formatEur(p.valore_stimato - p.costo_totale)}</span>} />
+              <Row label="Stato locazione" value={<StatusBadge stato={p.stato} />} />
+              <Row label="Tipologia operazione" value={(p.operazione || "—").replace(/_/g, " ")} />
+            </>
+          ) : (
+            <>
+              <InputRow label="Valore stimato attuale" type="number" value={form.valore_stimato} onChange={(v) => setForm({ ...form, valore_stimato: v })} suffix="€" />
+              <div className="py-1.5 border-b border-[#E2E8F0] text-sm flex items-center justify-between gap-2">
+                <span className="text-[#475569] shrink-0">Stato</span>
+                <select value={form.stato} onChange={(e) => setForm({ ...form, stato: e.target.value })} className="bg-[#F8FAFC] border border-[#E2E8F0] rounded px-2 py-1 text-sm outline-none focus:border-[#0066FF]">
+                  <option value="in_valutazione">In valutazione</option>
+                  <option value="in_trattativa">In trattativa</option>
+                  <option value="acquistato">Acquistato</option>
+                  <option value="in_ristrutturazione">In ristrutturazione</option>
+                  <option value="disponibile">Disponibile</option>
+                  <option value="affittato">Affittato</option>
+                  <option value="sfitto">Sfitto</option>
+                  <option value="in_vendita">In vendita</option>
+                  <option value="venduto">Venduto</option>
+                </select>
+              </div>
+              <div className="py-1.5 border-b border-[#E2E8F0] text-sm flex items-center justify-between gap-2">
+                <span className="text-[#475569] shrink-0">Operazione</span>
+                <select value={form.operazione} onChange={(e) => setForm({ ...form, operazione: e.target.value })} className="bg-[#F8FAFC] border border-[#E2E8F0] rounded px-2 py-1 text-sm outline-none focus:border-[#0066FF]">
+                  <option value="reddito">Reddito</option>
+                  <option value="compra_vendi">Compra-vendi</option>
+                  <option value="compra_ristruttura_vendi">Compra-ristruttura-vendi</option>
+                </select>
+              </div>
+            </>
+          )}
+        </SectionCard>
+      </div>
+    );
+  }
+
+  if (section === "acquisto") {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <SectionCard title="Dati di acquisto" testId="card-acquisto" action={<EditBtn />}>
+          {!editing ? (
+            <>
+              <Row label="Data rogito" value={p.data_acquisto || "—"} />
+              <Row label="Prezzo di acquisto" value={formatEur(p.prezzo_acquisto)} />
+              <Row label="Notaio" value={formatEur(p.notaio)} />
+              <Row label="Agenzia" value={formatEur(p.agenzia)} />
+              <Row label="Imposte registro/IVA" value={formatEur(p.imposte)} />
+              <Row label="Spese tecniche/perizie" value={formatEur(p.spese_tecniche)} />
+              <Row label="Lavori sostenuti" value={formatEur(p.lavori)} />
+              <Row label="Totale investimento" value={<strong>{formatEur(p.costo_totale)}</strong>} />
+            </>
+          ) : (
+            <>
+              <InputRow label="Data rogito" type="date" value={form.data_acquisto} onChange={(v) => setForm({ ...form, data_acquisto: v })} />
+              <InputRow label="Prezzo di acquisto" type="number" value={form.prezzo_acquisto} onChange={(v) => setForm({ ...form, prezzo_acquisto: v })} suffix="€" />
+              <InputRow label="Notaio" type="number" value={form.notaio} onChange={(v) => setForm({ ...form, notaio: v })} suffix="€" />
+              <InputRow label="Agenzia" type="number" value={form.agenzia} onChange={(v) => setForm({ ...form, agenzia: v })} suffix="€" />
+              <InputRow label="Imposte" type="number" value={form.imposte} onChange={(v) => setForm({ ...form, imposte: v })} suffix="€" />
+              <InputRow label="Spese tecniche" type="number" value={form.spese_tecniche} onChange={(v) => setForm({ ...form, spese_tecniche: v })} suffix="€" />
+              <InputRow label="Lavori" type="number" value={form.lavori} onChange={(v) => setForm({ ...form, lavori: v })} suffix="€" />
+            </>
+          )}
+        </SectionCard>
+        <SectionCard title="Finanziamento" testId="card-mutuo" action={
+          <Link to="/mutui" className="inline-flex items-center gap-1 text-xs text-[#2563EB] hover:underline">
+            <Banknote size={12} /> Gestisci mutui
+          </Link>
+        }>
+          {p.mutuo ? (
+            <>
+              <Row label="Banca" value={p.mutuo.banca} />
+              <Row label="Capitale residuo" value={formatEur(p.mutuo.residuo || p.mutuo.capitale_residuo)} />
+              <Row label="Rata mensile" value={formatEur(p.mutuo.rata)} />
+              <Row label="Tasso" value={p.mutuo.tasso ? `${p.mutuo.tasso}%` : "—"} />
+            </>
+          ) : (
+            <div className="text-sm text-[#475569] py-4">
+              Nessun finanziamento collegato. <Link to="/mutui" className="text-[#2563EB] hover:underline">Aggiungi mutuo</Link> o importa il PDF della banca.
+            </div>
+          )}
+        </SectionCard>
+      </div>
+    );
+  }
+
+  // economico
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <SectionCard title="Ricavi & costi gestione" testId="card-ricavi" action={<EditBtn />}>
+        {!editing ? (
+          <>
+            <Row label="Canone mensile" value={formatEur(p.canone_mensile)} />
+            <Row label="Canone annuo" value={formatEur((p.canone_mensile || 0) * 12)} />
+            <Row label="Spese condominio (mese)" value={formatEur(p.spese_condominiali)} />
+            {p.inquilino && <>
+              <Row label="Conduttore" value={p.inquilino} />
+              <Row label="Contratto" value={`${p.data_inizio_contratto || "?"} → ${p.scadenza_contratto || "?"}`} />
+            </>}
+          </>
+        ) : (
+          <>
+            <InputRow label="Canone mensile" type="number" value={form.canone_mensile} onChange={(v) => setForm({ ...form, canone_mensile: v })} suffix="€" />
+            <InputRow label="Spese condominio" type="number" value={form.spese_condominiali} onChange={(v) => setForm({ ...form, spese_condominiali: v })} suffix="€" />
+            <div className="mt-2 text-[11px] text-[#64748B]">Per modificare inquilino e date contratto vai alla tab «Locazione».</div>
+          </>
+        )}
+      </SectionCard>
+      <SectionCard title="Rendimento" testId="card-rendimento">
+        <Row label="Lordo" value={p.rendimento_lordo > 0 ? `${p.rendimento_lordo}%` : "—"} />
+        <Row label="Netto" value={p.rendimento_netto > 0 ? `${p.rendimento_netto}%` : "—"} />
+        <Row label="ROI" value={p.rendimento_netto > 0 ? `${(p.rendimento_netto * 1.4).toFixed(1)}%` : "—"} />
+        <Row label="Cash flow / mese" value={formatEur(p.cash_flow_mensile)} />
+      </SectionCard>
+      <SectionCard title="Lavori in corso" testId="card-lavori">
+        {lavoroAttivo ? (
+          <>
+            <Row label="Descrizione" value={lavoroAttivo.descrizione} />
+            <Row label="Impresa" value={lavoroAttivo.impresa} />
+            <Row label="Budget" value={formatEur(lavoroAttivo.budget)} />
+            <Row label="Speso" value={<span className={lavoroAttivo.speso > lavoroAttivo.budget ? "text-[#DC2626]" : ""}>{formatEur(lavoroAttivo.speso)}</span>} />
+            <Row label="Avanzamento" value={`${lavoroAttivo.avanzamento}%`} />
+          </>
+        ) : (
+          <div className="text-sm text-[#475569] py-4">Nessun cantiere attivo. <Link to="/lavori" className="text-[#2563EB] hover:underline">Aggiungi cantiere</Link></div>
+        )}
+      </SectionCard>
+    </div>
+  );
+}
+
+// ============================================================================
+// Documenti: upload + lista + download + delete
+// ============================================================================
+function DocumentiSection({ propertyId, docs, onChanged }) {
+  const [tipo, setTipo] = useState("Altro");
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+
+  const TIPI_DOC = [
+    "Rogito", "Preliminare", "Proposta acquisto", "Visura catastale",
+    "Planimetria", "APE", "Contratto affitto", "Fattura lavori",
+    "Fattura agenzia", "Fattura notaio", "Atto di mutuo", "Fotografie",
+    "Perizia", "Preventivo", "Altro",
+  ];
+
+  const uploadFile = async (file) => {
+    if (!file) return;
+    if (file.size > 15 * 1024 * 1024) {
+      toast.error("File troppo grande (max 15 MB)");
+      return;
+    }
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("tipo", tipo);
+      fd.append("immobile_id", propertyId);
+      await apiClient().post("/documents", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      toast.success(`«${file.name}» caricato`);
+      onChanged();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Errore upload");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const onDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer.files[0];
+    uploadFile(f);
+  };
+
+  const removeDoc = async (docId) => {
+    if (!window.confirm("Eliminare definitivamente questo documento?")) return;
+    try {
+      await apiClient().delete(`/documents/${docId}`);
+      toast.success("Documento eliminato");
+      onChanged();
+    } catch {
+      toast.error("Errore eliminazione");
+    }
+  };
+
+  const apiBase = `${process.env.REACT_APP_BACKEND_URL}/api`;
+  const tok = () => localStorage.getItem("crr_token");
+  const downloadDoc = async (doc) => {
+    try {
+      const res = await fetch(`${apiBase}/documents/${doc.id}/file`, {
+        headers: { Authorization: `Bearer ${tok()}` },
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = doc.nome;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Errore download");
+    }
+  };
+
+  return (
+    <SectionCard title="Archivio documenti" subtitle={`${docs.length} documenti collegati a questo immobile`} testId="card-documenti">
+      {/* Upload area */}
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+        className={`mb-4 rounded-lg border-2 border-dashed p-4 transition-colors ${
+          dragOver ? "border-[#0066FF] bg-[rgba(0,102,255,0.05)]" : "border-[#CBD5E1] bg-[#F8FAFC]"
+        }`}
+        data-testid="upload-zone"
+      >
+        <div className="flex flex-col md:flex-row md:items-center gap-3">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 text-sm text-[#475569]">
+              <Upload size={16} className="text-[#0066FF]" />
+              <span><strong>Trascina qui</strong> un file (PDF, immagine, Excel) oppure clicca «Sfoglia»</span>
+            </div>
+            <div className="text-[11px] text-[#64748B] mt-1">Max 15 MB · Verrà collegato automaticamente a questo immobile.</div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select value={tipo} onChange={(e) => setTipo(e.target.value)} data-testid="doc-tipo" className="bg-white border border-[#E2E8F0] rounded-md px-2 py-1.5 text-xs outline-none focus:border-[#0066FF]">
+              {TIPI_DOC.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0066FF] hover:bg-[#2563EB] text-white text-xs font-semibold cursor-pointer" data-testid="doc-browse">
+              {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+              {uploading ? "Carico…" : "Sfoglia"}
+              <input type="file" className="hidden" disabled={uploading} onChange={(e) => uploadFile(e.target.files?.[0])} />
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* Lista */}
+      <div className="space-y-2">
+        {docs.length === 0 && (
+          <div className="text-sm text-[#475569] py-6 text-center bg-[#F8FAFC] rounded-lg">
+            Nessun documento caricato. Trascina qui o clicca «Sfoglia» per caricare il primo.
+          </div>
+        )}
+        {docs.map(d => (
+          <div key={d.id} className="flex items-center justify-between p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg hover:border-[#CBD5E1] transition-colors" data-testid={`doc-${d.id}`}>
+            <div className="flex items-center gap-3 min-w-0">
+              <FileText size={16} className="text-[#2563EB] shrink-0" />
+              <div className="min-w-0">
+                <div className="text-sm font-medium truncate">{d.nome}</div>
+                <div className="text-[11px] text-[#64748B]">{d.tipo} · {d.dimensione} · {d.caricato}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <button onClick={() => downloadDoc(d)} data-testid={`doc-dl-${d.id}`} className="p-2 rounded hover:bg-white text-[#475569] hover:text-[#0066FF]" title="Scarica">
+                <Download size={14} />
+              </button>
+              <button onClick={() => removeDoc(d.id)} data-testid={`doc-del-${d.id}`} className="p-2 rounded hover:bg-white text-[#475569] hover:text-[#DC2626]" title="Elimina">
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+

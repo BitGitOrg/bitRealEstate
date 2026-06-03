@@ -183,6 +183,74 @@ def make_properties_router(db, current_user):
         await db.properties.delete_one({"id": pid, "user_id": user["id"]})
         return {"ok": True}
 
+    @router.patch("/properties/{pid}")
+    async def update_property(pid: str, payload: dict, user: dict = Depends(current_user)):
+        """Update generico per Anagrafica / Acquisto / Economico / Mutuo / Stato.
+
+        Whitelist dei campi modificabili per evitare update accidentali di
+        user_id, id, created_at o di campi calcolati.
+        """
+        ALLOWED = {
+            # Anagrafica
+            "nome", "indirizzo", "citta", "provincia", "cap", "tipologia",
+            "metratura", "piano", "anno_costruzione", "classe_energetica",
+            "rendita_catastale", "valore_catastale",
+            # Stato
+            "stato", "operazione", "note", "img",
+            # Acquisto
+            "data_acquisto", "prezzo_acquisto", "notaio", "agenzia",
+            "imposte", "spese_tecniche", "lavori",
+            # Valore
+            "valore_stimato",
+            # Economico / Locazione minimi
+            "canone_mensile", "spese_condominiali", "deposito",
+        }
+        data = {}
+        for k, v in (payload or {}).items():
+            if k not in ALLOWED:
+                continue
+            # Cast a numero per campi numerici
+            if k in {"metratura", "anno_costruzione", "rendita_catastale", "valore_catastale",
+                     "prezzo_acquisto", "notaio", "agenzia", "imposte", "spese_tecniche",
+                     "lavori", "valore_stimato", "canone_mensile", "spese_condominiali", "deposito"}:
+                try:
+                    data[k] = float(v) if v not in (None, "") else 0.0
+                except (ValueError, TypeError):
+                    raise HTTPException(status_code=400, detail=f"Valore non valido per {k}")
+            else:
+                data[k] = v if v is not None else ""
+        # Gestione mutuo annidato (sottooggetto separato)
+        if "mutuo" in (payload or {}):
+            m = payload["mutuo"]
+            if m is None:
+                data["mutuo"] = None
+            elif isinstance(m, dict):
+                mutuo_clean = {}
+                for k in ["banca", "tipo_tasso", "data_fine", "data_inizio"]:
+                    if k in m and m[k] is not None:
+                        mutuo_clean[k] = str(m[k])
+                for k in ["importo_originario", "residuo", "rata", "tasso", "durata_anni"]:
+                    if k in m and m[k] not in (None, ""):
+                        try:
+                            mutuo_clean[k] = float(m[k])
+                        except (ValueError, TypeError):
+                            raise HTTPException(status_code=400, detail=f"Mutuo: valore non valido per {k}")
+                data["mutuo"] = mutuo_clean if mutuo_clean else None
+
+        if not data:
+            raise HTTPException(status_code=400, detail="Nessun campo modificabile fornito")
+        data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        res = await db.properties.update_one(
+            {"id": pid, "user_id": user["id"]},
+            {"$set": data},
+        )
+        if res.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Immobile non trovato")
+        p = await db.properties.find_one({"id": pid, "user_id": user["id"]}, {"_id": 0})
+        from routers.settings import get_user_settings
+        settings = await get_user_settings(db, user["id"])
+        return _enrich_property(p, settings)
+
     @router.patch("/properties/{pid}/locazione")
     async def update_locazione(pid: str, payload: LocazioneIn, user: dict = Depends(current_user)):
         data = {k: v for k, v in payload.model_dump().items() if v is not None}
