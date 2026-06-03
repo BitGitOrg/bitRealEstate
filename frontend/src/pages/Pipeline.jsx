@@ -4,7 +4,7 @@ import { SectionCard } from "../components/dashboard/SectionCard";
 import { apiClient } from "../lib/auth";
 import { formatEur } from "../lib/demoData";
 import { toast } from "sonner";
-import { Plus, Loader2, X, ChevronRight, Trophy, TrendingDown, Activity, Banknote, ArrowRight, Trash2, Home, Clock, Link2, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Plus, Loader2, X, ChevronRight, Trophy, TrendingDown, Activity, Banknote, ArrowRight, Trash2, Home, Clock, Link2, AlertTriangle, CheckCircle2, Inbox } from "lucide-react";
 
 const STAGE_INFO = {
   visionato: { label: "Visionato", icon: "🔍", color: "#94A3B8" },
@@ -37,6 +37,7 @@ export default function Pipeline() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [syncingEmail, setSyncingEmail] = useState(false);
   const [selected, setSelected] = useState(null);
 
   const load = async () => {
@@ -59,6 +60,36 @@ export default function Pipeline() {
       subtitle={loading ? "Caricamento…" : `${metrics?.n_attivi ?? 0} deal attivi · ${metrics?.n_chiusi ?? 0} acquistati`}
       actions={
         <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              setSyncingEmail(true);
+              try {
+                const r = await apiClient().post("/email-inbox/sync", { limit: 20 }, { timeout: 180000 });
+                if (r.data.deals_creati > 0) {
+                  toast.success(`${r.data.deals_creati} nuovi deal dalle email`);
+                  load();
+                } else if (r.data.emails_processate > 0) {
+                  toast(`${r.data.emails_processate} email lette, nessun annuncio nuovo`);
+                } else {
+                  toast("Nessuna email non letta. Configura IMAP in Impostazioni se non l'hai fatto.");
+                }
+              } catch (e) {
+                const msg = e?.response?.data?.detail || "";
+                if (msg.includes("Configurazione")) {
+                  toast.error("Casella email non configurata. Vai in Impostazioni → Casella email annunci.");
+                } else {
+                  toast.error(msg || "Errore sync");
+                }
+              } finally {
+                setSyncingEmail(false);
+              }
+            }}
+            disabled={syncingEmail}
+            data-testid="pipe-sync-email-btn"
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-[#E2E8F0] hover:border-[#0066FF] hover:bg-[rgba(0,102,255,0.05)] text-[#0F172A] text-sm font-medium disabled:opacity-50"
+          >
+            {syncingEmail ? <Loader2 size={14} className="animate-spin"/> : <Inbox size={14}/>} Sync email
+          </button>
           <button onClick={() => setImporting(true)} data-testid="pipe-import-btn" className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-[#E2E8F0] hover:border-[#0066FF] hover:bg-[rgba(0,102,255,0.05)] text-[#0F172A] text-sm font-medium">
             <Link2 size={14}/> Importa da URL
           </button>

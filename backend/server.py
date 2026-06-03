@@ -42,6 +42,7 @@ from routers.notifications import make_notifications_router
 from routers.tax_calendar import make_tax_calendar_router
 from routers.banker_pack import make_banker_pack_router
 from routers.pipeline import make_pipeline_router
+from routers.email_inbox import make_email_inbox_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -652,6 +653,7 @@ app.include_router(make_notifications_router(db, current_user, EMERGENT_LLM_KEY)
 app.include_router(make_tax_calendar_router(db, current_user))
 app.include_router(make_banker_pack_router(db, current_user))
 app.include_router(make_pipeline_router(db, current_user, EMERGENT_LLM_KEY))
+app.include_router(make_email_inbox_router(db, current_user, EMERGENT_LLM_KEY))
 
 app.add_middleware(
     CORSMiddleware,

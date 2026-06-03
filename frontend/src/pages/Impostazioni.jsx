@@ -3,8 +3,9 @@ import { Link } from "react-router-dom";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import { useAuth } from "../lib/auth";
-import { Save, Building2, Target, Sparkles, Shield, Image as ImageIcon, Upload, Trash2, Receipt, Wrench, MessageCircle } from "lucide-react";
+import { Save, Building2, Target, Sparkles, Shield, Image as ImageIcon, Upload, Trash2, Receipt, Wrench, MessageCircle, Mail } from "lucide-react";
 import { toast } from "sonner";
+import EmailInboxConfig from "../components/EmailInboxConfig";
 
 const API_BASE = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -459,6 +460,16 @@ export default function Impostazioni() {
             </div>
           </div>
         </div>
+      </SectionCard>
+
+      <SectionCard
+        testId="settings-email-inbox"
+        title="Casella email annunci immobiliari"
+        subtitle="Configura una casella IMAP per ricevere gli alert dei portali (Immobiliare, Idealista, Casa.it…) e farli importare in Pipeline con AI Deal Score"
+        action={<Mail size={16} className="text-[#0066FF]" />}
+        className="mb-4"
+      >
+        <EmailInboxConfig />
       </SectionCard>
 
       <SectionCard testId="settings-user" title="Account & ruoli" action={<Shield size={16} className="text-[#B45309]" />}>
