@@ -17,21 +17,59 @@ import pandas as pd
 from routers._shared import enrich_property as _enrich_property, coerce_float, coerce_int, coerce_str
 
 IMMOBILI_COLUMNS = [
-    "Nome immobile", "Indirizzo", "Città", "Provincia", "Tipologia", "Metratura (m²)",
-    "Piano", "Anno costruzione", "Classe energetica", "Stato", "Operazione",
-    "Data acquisto (YYYY-MM-DD)", "Prezzo acquisto (€)", "Notaio (€)", "Agenzia (€)",
-    "Imposte (€)", "Lavori (€)", "Valore stimato (€)", "Canone mensile (€)",
-    "Banca mutuo", "Capitale residuo (€)", "Rata mutuo (€)", "Tasso mutuo (%)",
+    # ANAGRAFICA (8)
+    "Nome immobile", "Indirizzo", "Città", "Provincia", "CAP", "Tipologia", "Metratura (m²)", "Piano",
+    # DATI TECNICI (4)
+    "Anno costruzione", "Classe energetica", "Rendita catastale (€)", "Valore catastale (€)",
+    # STATO (2)
+    "Stato", "Operazione",
+    # ACQUISTO (7)
+    "Data rogito (YYYY-MM-DD)", "Prezzo acquisto (€)", "Notaio (€)", "Agenzia acquisto (€)",
+    "Imposte registro/IVA (€)", "Spese tecniche/perizie (€)", "Lavori sostenuti (€)",
+    # VALORE ATTUALE (1)
+    "Valore stimato attuale (€)",
+    # LOCAZIONE (8)
+    "Canone mensile (€)", "Inquilino — Nome", "Inquilino — Email", "Inquilino — Telefono",
+    "Contratto — Data inizio (YYYY-MM-DD)", "Contratto — Data fine (YYYY-MM-DD)",
+    "Deposito cauzionale (€)", "Spese condominiali mensili (€)",
+    # MUTUO (7)
+    "Mutuo — Banca", "Mutuo — Importo originario (€)", "Mutuo — Capitale residuo (€)",
+    "Mutuo — Rata mensile (€)", "Mutuo — Tasso (%)", "Mutuo — Tipo tasso",
+    "Mutuo — Data fine (YYYY-MM-DD)",
+    # NOTE (1)
     "Note",
 ]
 
 IMMOBILI_EXAMPLE_ROW = [
-    "Bilocale Navigli", "Via Vigevano 12", "Milano", "MI", "Bilocale", 58,
-    "2", 1972, "D", "affittato", "reddito",
-    "2022-03-15", 215000, 4200, 6500,
-    8900, 18000, 285000, 1450,
-    "Intesa Sanpaolo", 95000, 540, 2.8,
-    "Esempio — sostituisci con i tuoi dati",
+    # ANAGRAFICA
+    "Bilocale Navigli", "Via Vigevano 12", "Milano", "MI", "20144", "Bilocale", 58, "2",
+    # TECNICI
+    1972, "D", 580.50, 75000,
+    # STATO
+    "affittato", "reddito",
+    # ACQUISTO
+    "2022-03-15", 215000, 4200, 6500, 18500, 1200, 18000,
+    # VALORE
+    285000,
+    # LOCAZIONE
+    1450, "Mario Bianchi", "mario.bianchi@example.com", "+393331234567",
+    "2023-09-01", "2027-08-31", 4350, 95,
+    # MUTUO
+    "Intesa Sanpaolo", 130000, 95000, 540, 2.8, "fisso", "2042-03-15",
+    # NOTE
+    "Esempio — cancella questa riga e inserisci i tuoi dati",
+]
+
+# Gruppi colore per header (indice di partenza, n. colonne, colore HEX)
+IMMOBILI_HEADER_GROUPS = [
+    (1, 8, "1E40AF", "ANAGRAFICA"),          # blu scuro
+    (9, 4, "0E7490", "DATI TECNICI"),        # ciano
+    (13, 2, "7C3AED", "STATO"),              # viola
+    (15, 7, "059669", "ACQUISTO"),           # verde
+    (22, 1, "0D9488", "VALORE ATTUALE"),     # teal
+    (23, 8, "DC2626", "LOCAZIONE"),          # rosso
+    (31, 7, "B45309", "MUTUO"),              # arancio
+    (38, 1, "475569", "NOTE"),               # grigio
 ]
 
 BILANCIO_EXTRACT_PROMPT = (
@@ -265,32 +303,185 @@ def make_imports_router(db, current_user, llm_key: str):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Immobili"
-        for i, col in enumerate(IMMOBILI_COLUMNS, 1):
-            c = ws.cell(row=1, column=i, value=col)
+
+        # Riga 1: super-header colorato per gruppo logico
+        for start_col, n_cols, color, label in IMMOBILI_HEADER_GROUPS:
+            ws.merge_cells(
+                start_row=1, start_column=start_col,
+                end_row=1, end_column=start_col + n_cols - 1,
+            )
+            c = ws.cell(row=1, column=start_col, value=label)
+            c.font = openpyxl.styles.Font(bold=True, color="FFFFFF", size=11)
+            c.fill = openpyxl.styles.PatternFill("solid", fgColor=color)
+            c.alignment = openpyxl.styles.Alignment(horizontal="center", vertical="center")
+            ws.row_dimensions[1].height = 24
+
+        # Riga 2: header colonne con colore di sezione (più chiaro)
+        col_to_group_color = {}
+        for start_col, n_cols, color, _ in IMMOBILI_HEADER_GROUPS:
+            for col in range(start_col, start_col + n_cols):
+                col_to_group_color[col] = color
+
+        for i, col_name in enumerate(IMMOBILI_COLUMNS, 1):
+            c = ws.cell(row=2, column=i, value=col_name)
+            c.font = openpyxl.styles.Font(bold=True, color="FFFFFF", size=10)
+            c.fill = openpyxl.styles.PatternFill("solid", fgColor=col_to_group_color[i])
+            c.alignment = openpyxl.styles.Alignment(
+                horizontal="center", vertical="center", wrap_text=True
+            )
+            ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = max(
+                18, min(28, len(col_name) + 2)
+            )
+        ws.row_dimensions[2].height = 42
+
+        # Riga 3: esempio in italico grigio
+        for i, v in enumerate(IMMOBILI_EXAMPLE_ROW, 1):
+            cell = ws.cell(row=3, column=i, value=v)
+            cell.font = openpyxl.styles.Font(italic=True, color="64748B", size=10)
+            cell.alignment = openpyxl.styles.Alignment(horizontal="left", vertical="center")
+
+        ws.freeze_panes = "A3"
+
+        # Validazione dropdown su colonne enum
+        # Stato (colonna 13)
+        stati = "in_valutazione,in_trattativa,acquistato,in_ristrutturazione,disponibile,affittato,sfitto,in_vendita,venduto"
+        dv_stato = openpyxl.worksheet.datavalidation.DataValidation(
+            type="list", formula1=f'"{stati}"', allow_blank=True
+        )
+        dv_stato.add("M3:M1000")
+        ws.add_data_validation(dv_stato)
+
+        # Operazione (colonna 14)
+        operazioni = "reddito,compra_vendi,compra_ristruttura_vendi"
+        dv_op = openpyxl.worksheet.datavalidation.DataValidation(
+            type="list", formula1=f'"{operazioni}"', allow_blank=True
+        )
+        dv_op.add("N3:N1000")
+        ws.add_data_validation(dv_op)
+
+        # Tipologia (colonna 6)
+        tipologie = "Bilocale,Trilocale,Quadrilocale,Monolocale,Villa,Loft,Attico,Negozio,Ufficio,Box,Altro"
+        dv_tip = openpyxl.worksheet.datavalidation.DataValidation(
+            type="list", formula1=f'"{tipologie}"', allow_blank=True
+        )
+        dv_tip.add("F3:F1000")
+        ws.add_data_validation(dv_tip)
+
+        # Classe energetica (colonna 10)
+        classi = "A4,A3,A2,A1,A,B,C,D,E,F,G"
+        dv_cl = openpyxl.worksheet.datavalidation.DataValidation(
+            type="list", formula1=f'"{classi}"', allow_blank=True
+        )
+        dv_cl.add("J3:J1000")
+        ws.add_data_validation(dv_cl)
+
+        # Tipo tasso mutuo (colonna 36)
+        tipi_tasso = "fisso,variabile,misto"
+        dv_tt = openpyxl.worksheet.datavalidation.DataValidation(
+            type="list", formula1=f'"{tipi_tasso}"', allow_blank=True
+        )
+        dv_tt.add("AJ3:AJ1000")
+        ws.add_data_validation(dv_tt)
+
+        # === Sheet 2: Istruzioni ===
+        ws2 = wb.create_sheet("Istruzioni")
+        ws2["A1"] = "📘 Istruzioni compilazione template immobili"
+        ws2["A1"].font = openpyxl.styles.Font(bold=True, size=15, color="0F172A")
+        ws2.row_dimensions[1].height = 28
+
+        sections = [
+            ("⚙️ Regole generali", [
+                "Le righe 1 e 2 sono intestazioni: NON modificarle.",
+                "La riga 3 è un esempio: cancellala o sovrascrivila con i tuoi dati.",
+                "Inserisci un immobile per riga, a partire dalla riga 3.",
+                "Massimo 500 immobili per file. Per volumi maggiori, divide il file.",
+                "Salva sempre in formato .xlsx (Excel 2007+).",
+            ]),
+            ("✅ Campi obbligatori", [
+                "Nome immobile — identificatore univoco usato in tutta la piattaforma.",
+                "Prezzo acquisto — il sistema rifiuta righe senza prezzo o con prezzo ≤ 0.",
+                "Tutti gli altri campi sono opzionali ma compilarne di più rende le analisi più precise.",
+            ]),
+            ("📅 Formato date", [
+                "Sempre nel formato YYYY-MM-DD (es. 2024-03-15).",
+                "Se la data è ignota lascia vuota la cella.",
+                "Per i contratti di affitto, indicare sia inizio che fine: serve per la timeline e gli alert.",
+            ]),
+            ("💶 Formato importi", [
+                "Senza simbolo € e senza separatore migliaia.",
+                "Usa il punto come separatore decimale (es. 1450.00 o 1450).",
+                "Lascia vuoto se l'importo è 0 o sconosciuto.",
+            ]),
+            ("🏠 Stato immobile (colonna M)", [
+                "Valori ammessi (dropdown): in_valutazione · in_trattativa · acquistato · in_ristrutturazione · disponibile · affittato · sfitto · in_vendita · venduto.",
+            ]),
+            ("📊 Operazione (colonna N)", [
+                "reddito → immobile a reddito (affitto).",
+                "compra_vendi → acquisto per rivendita rapida.",
+                "compra_ristruttura_vendi → acquisto + ristrutturazione + rivendita.",
+            ]),
+            ("👤 Inquilino e contratto (colonne X-AC)", [
+                "Email e telefono sono FONDAMENTALI per i solleciti automatici WhatsApp/Email a T+5/15/30 giorni dalla scadenza canone.",
+                "Telefono in formato internazionale: +393331234567 (no spazi, no trattini).",
+                "Email valida (deve contenere @): viene usata anche per generare contratti via PEC futura.",
+                "Se l'immobile è sfitto/disponibile lascia vuoti tutti i campi inquilino.",
+            ]),
+            ("🏦 Mutuo (colonne AE-AK)", [
+                "Compila SOLO se l'immobile è gravato da mutuo.",
+                "Importo originario = quanto la banca ti ha erogato all'inizio.",
+                "Capitale residuo = quanto manca da restituire OGGI (aggiornalo periodicamente).",
+                "Tipo tasso (dropdown): fisso · variabile · misto.",
+                "Tutti gli immobili importati con mutuo finiscono automaticamente anche in /mutui per il tracking centralizzato del debito.",
+            ]),
+            ("📐 Dati catastali (colonne K-L)", [
+                "Rendita catastale = valore presente sulla visura catastale (es. 580.50).",
+                "Valore catastale = rendita × 168 (immobili residenziali) o × 126 (prima casa). Usato per IMU/scadenzario.",
+            ]),
+            ("🎨 Colori dell'header", [
+                "Blu scuro = anagrafica · Ciano = dati tecnici · Viola = stato · Verde = acquisto",
+                "Teal = valore attuale · Rosso = locazione · Arancio = mutuo · Grigio = note",
+            ]),
+            ("🚀 Dopo l'import", [
+                "Vai in Centro Import → Immobili → Trascina il file → Anteprima.",
+                "Verifica gli avvisi (warnings) sulle righe segnalate prima di confermare.",
+                "Click su «Conferma import» per creare tutti gli immobili in una volta sola.",
+                "Gli immobili con dati locazione completi generano automaticamente: contratti, incassi previsti, alert solleciti.",
+                "Gli immobili con dati mutuo completi generano automaticamente record in /mutui con piano di ammortamento.",
+            ]),
+        ]
+        r = 3
+        for title, items in sections:
+            ws2.cell(row=r, column=1, value=title).font = openpyxl.styles.Font(
+                bold=True, size=12, color="0066FF"
+            )
+            r += 1
+            for it in items:
+                ws2.cell(row=r, column=1, value=f"• {it}")
+                r += 1
+            r += 1  # spacing tra sezioni
+        ws2.column_dimensions["A"].width = 110
+
+        # === Sheet 3: Valori ammessi ===
+        ws3 = wb.create_sheet("Valori ammessi")
+        ws3["A1"] = "📋 Valori ammessi per campi a dropdown"
+        ws3["A1"].font = openpyxl.styles.Font(bold=True, size=14, color="0F172A")
+        enums = [
+            ("Tipologia", ["Bilocale", "Trilocale", "Quadrilocale", "Monolocale", "Villa", "Loft", "Attico", "Negozio", "Ufficio", "Box", "Altro"]),
+            ("Classe energetica", ["A4", "A3", "A2", "A1", "A", "B", "C", "D", "E", "F", "G"]),
+            ("Stato", ["in_valutazione", "in_trattativa", "acquistato", "in_ristrutturazione", "disponibile", "affittato", "sfitto", "in_vendita", "venduto"]),
+            ("Operazione", ["reddito", "compra_vendi", "compra_ristruttura_vendi"]),
+            ("Mutuo — Tipo tasso", ["fisso", "variabile", "misto"]),
+        ]
+        col = 1
+        for label, values in enums:
+            c = ws3.cell(row=3, column=col, value=label)
             c.font = openpyxl.styles.Font(bold=True, color="FFFFFF")
             c.fill = openpyxl.styles.PatternFill("solid", fgColor="0066FF")
-            c.alignment = openpyxl.styles.Alignment(horizontal="center", vertical="center", wrap_text=True)
-            ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = max(16, len(col) + 2)
-        ws.row_dimensions[1].height = 32
-        for i, v in enumerate(IMMOBILI_EXAMPLE_ROW, 1):
-            ws.cell(row=2, column=i, value=v).font = openpyxl.styles.Font(italic=True, color="64748B")
-        ws.freeze_panes = "A2"
-        ws2 = wb.create_sheet("Istruzioni")
-        ws2["A1"] = "Istruzioni compilazione template immobili"
-        ws2["A1"].font = openpyxl.styles.Font(bold=True, size=14)
-        notes = [
-            "1. La prima riga è la riga di intestazione: NON modificarla.",
-            "2. La seconda riga è un esempio: cancellala o sovrascrivila.",
-            "3. Campi obbligatori: Nome immobile, Prezzo acquisto.",
-            "4. Tipologia: Bilocale, Trilocale, Quadrilocale, Monolocale, Villa, Loft, Attico, Altro.",
-            "5. Stato: in_valutazione, in_trattativa, acquistato, in_ristrutturazione, disponibile, affittato, sfitto, in_vendita, venduto.",
-            "6. Date in formato YYYY-MM-DD (es. 2024-03-15).",
-            "7. Importi senza simbolo €, usa il punto come separatore decimale (es. 1450.00).",
-            "8. Se l'immobile non ha mutuo lascia vuoti i 4 campi mutuo.",
-        ]
-        for i, n in enumerate(notes, 3):
-            ws2.cell(row=i, column=1, value=n)
-        ws2.column_dimensions["A"].width = 90
+            c.alignment = openpyxl.styles.Alignment(horizontal="center")
+            for i, v in enumerate(values, 4):
+                ws3.cell(row=i, column=col, value=v).font = openpyxl.styles.Font(color="0F172A")
+            ws3.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 26
+            col += 1
 
         buf = io.BytesIO()
         wb.save(buf)
@@ -312,32 +503,104 @@ def make_imports_router(db, current_user, llm_key: str):
 
         rows = []
         errors_total = 0
-        for row_idx in range(2, ws.max_row + 1):
-            cells = [ws.cell(row=row_idx, column=i).value for i in range(1, len(IMMOBILI_COLUMNS) + 1)]
+        n_cols = len(IMMOBILI_COLUMNS)
+
+        # Detect formato template:
+        # - Nuovo (3 righe header): riga 1 = super-header "ANAGRAFICA" ecc., riga 2 = colonne, dati da riga 3
+        # - Vecchio (24 colonne, header riga 1, dati da riga 2): non più supportato
+        row1_first = ws.cell(row=1, column=1).value or ""
+        row1_first_str = str(row1_first).strip().upper()
+        is_new_format = row1_first_str == "ANAGRAFICA"
+
+        if not is_new_format:
+            # Verifica se è un vecchio template (riga 1 = "Nome immobile")
+            if row1_first_str.startswith("NOME"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Template obsoleto rilevato (24 colonne). "
+                        "Scarica il nuovo template da Centro Import → Scarica template, "
+                        "ricompila i dati e ricarica. Il nuovo formato include inquilino email/telefono per i solleciti automatici, "
+                        "dati catastali e mutuo completo."
+                    ),
+                )
+            raise HTTPException(
+                status_code=400,
+                detail="Formato file non riconosciuto. Usa il template scaricabile da Centro Import.",
+            )
+
+        start_row = 3
+
+        for row_idx in range(start_row, ws.max_row + 1):
+            cells = [ws.cell(row=row_idx, column=i).value for i in range(1, n_cols + 1)]
             if not any(cells):
                 continue
             nome = coerce_str(cells[0])
             if not nome:
                 continue
-            prezzo = coerce_float(cells[12])
+            prezzo = coerce_float(cells[15])  # Prezzo acquisto è ora colonna 16 (idx 15)
             warnings = []
             if prezzo <= 0:
                 warnings.append("Prezzo acquisto mancante o non valido")
+
+            # Validazione email/telefono inquilino se presenti
+            inq_email = coerce_str(cells[24])
+            if inq_email and "@" not in inq_email:
+                warnings.append("Email inquilino non valida")
+            inq_tel = coerce_str(cells[25])
+            if inq_tel and not (inq_tel.startswith("+") or inq_tel.isdigit()):
+                warnings.append("Telefono inquilino senza prefisso internazionale (es. +39…)")
+
             item = {
-                "_row": row_idx, "nome": nome, "indirizzo": coerce_str(cells[1]), "citta": coerce_str(cells[2]),
-                "provincia": coerce_str(cells[3]), "tipologia": coerce_str(cells[4]) or "Altro",
-                "metratura": coerce_float(cells[5]), "piano": coerce_str(cells[6]),
-                "anno_costruzione": coerce_int(cells[7]), "classe_energetica": coerce_str(cells[8]),
-                "stato": coerce_str(cells[9]) or "acquistato",
-                "operazione": coerce_str(cells[10]) or "reddito",
-                "data_acquisto": coerce_str(cells[11]),
-                "prezzo_acquisto": prezzo, "notaio": coerce_float(cells[13]),
-                "agenzia": coerce_float(cells[14]), "imposte": coerce_float(cells[15]),
-                "lavori": coerce_float(cells[16]), "valore_stimato": coerce_float(cells[17]) or prezzo,
-                "canone_mensile": coerce_float(cells[18]), "mutuo_banca": coerce_str(cells[19]),
-                "mutuo_residuo": coerce_float(cells[20]), "mutuo_rata": coerce_float(cells[21]),
-                "mutuo_tasso": coerce_float(cells[22]), "note": coerce_str(cells[23]),
-                "warnings": warnings, "valid": len(warnings) == 0,
+                "_row": row_idx,
+                # Anagrafica
+                "nome": nome,
+                "indirizzo": coerce_str(cells[1]),
+                "citta": coerce_str(cells[2]),
+                "provincia": coerce_str(cells[3]),
+                "cap": coerce_str(cells[4]),
+                "tipologia": coerce_str(cells[5]) or "Altro",
+                "metratura": coerce_float(cells[6]),
+                "piano": coerce_str(cells[7]),
+                # Dati tecnici
+                "anno_costruzione": coerce_int(cells[8]),
+                "classe_energetica": coerce_str(cells[9]),
+                "rendita_catastale": coerce_float(cells[10]),
+                "valore_catastale": coerce_float(cells[11]),
+                # Stato
+                "stato": coerce_str(cells[12]) or "acquistato",
+                "operazione": coerce_str(cells[13]) or "reddito",
+                # Acquisto
+                "data_acquisto": coerce_str(cells[14]),
+                "prezzo_acquisto": prezzo,
+                "notaio": coerce_float(cells[16]),
+                "agenzia": coerce_float(cells[17]),
+                "imposte": coerce_float(cells[18]),
+                "spese_tecniche": coerce_float(cells[19]),
+                "lavori": coerce_float(cells[20]),
+                # Valore
+                "valore_stimato": coerce_float(cells[21]) or prezzo,
+                # Locazione
+                "canone_mensile": coerce_float(cells[22]),
+                "inquilino": coerce_str(cells[23]),
+                "inquilino_email": inq_email,
+                "inquilino_telefono": inq_tel,
+                "contratto_data_inizio": coerce_str(cells[26]),
+                "contratto_data_fine": coerce_str(cells[27]),
+                "deposito": coerce_float(cells[28]),
+                "spese_condominiali": coerce_float(cells[29]),
+                # Mutuo
+                "mutuo_banca": coerce_str(cells[30]),
+                "mutuo_importo_originario": coerce_float(cells[31]),
+                "mutuo_residuo": coerce_float(cells[32]),
+                "mutuo_rata": coerce_float(cells[33]),
+                "mutuo_tasso": coerce_float(cells[34]),
+                "mutuo_tipo_tasso": coerce_str(cells[35]),
+                "mutuo_data_fine": coerce_str(cells[36]),
+                # Note
+                "note": coerce_str(cells[37]),
+                "warnings": warnings,
+                "valid": len(warnings) == 0,
             }
             if warnings:
                 errors_total += 1
@@ -355,31 +618,72 @@ def make_imports_router(db, current_user, llm_key: str):
             if not r.get("valid", True):
                 continue
             mutuo = None
-            if r.get("mutuo_banca") and r.get("mutuo_residuo"):
+            if r.get("mutuo_banca") and (r.get("mutuo_residuo") or r.get("mutuo_importo_originario")):
                 mutuo = {
-                    "banca": r["mutuo_banca"], "residuo": float(r.get("mutuo_residuo", 0) or 0),
-                    "rata": float(r.get("mutuo_rata", 0) or 0), "tasso": float(r.get("mutuo_tasso", 0) or 0),
+                    "banca": r["mutuo_banca"],
+                    "importo_originario": float(r.get("mutuo_importo_originario", 0) or 0),
+                    "residuo": float(r.get("mutuo_residuo", 0) or 0),
+                    "rata": float(r.get("mutuo_rata", 0) or 0),
+                    "tasso": float(r.get("mutuo_tasso", 0) or 0),
+                    "tipo_tasso": r.get("mutuo_tipo_tasso") or "fisso",
+                    "data_fine": r.get("mutuo_data_fine") or "",
                 }
+            prop_id = f"IMM-{uuid.uuid4().hex[:6].upper()}"
             item = {
-                "id": f"IMM-{uuid.uuid4().hex[:6].upper()}", "user_id": user["id"],
+                "id": prop_id, "user_id": user["id"],
                 "nome": r["nome"], "indirizzo": r.get("indirizzo", ""), "citta": r.get("citta", ""),
-                "provincia": r.get("provincia", ""), "tipologia": r.get("tipologia", "Altro"),
+                "provincia": r.get("provincia", ""), "cap": r.get("cap", ""),
+                "tipologia": r.get("tipologia", "Altro"),
                 "metratura": float(r.get("metratura", 0) or 0), "piano": r.get("piano", ""),
                 "anno_costruzione": int(r.get("anno_costruzione", 0) or 0),
-                "classe_energetica": r.get("classe_energetica", ""), "stato": r.get("stato", "acquistato"),
+                "classe_energetica": r.get("classe_energetica", ""),
+                "rendita_catastale": float(r.get("rendita_catastale", 0) or 0),
+                "valore_catastale": float(r.get("valore_catastale", 0) or 0),
+                "stato": r.get("stato", "acquistato"),
                 "operazione": r.get("operazione") or ("reddito" if r.get("canone_mensile", 0) > 0 else "compra_vendi"),
+                "data_acquisto": r.get("data_acquisto", ""),
                 "prezzo_acquisto": float(r.get("prezzo_acquisto", 0) or 0),
-                "notaio": float(r.get("notaio", 0) or 0), "agenzia": float(r.get("agenzia", 0) or 0),
-                "imposte": float(r.get("imposte", 0) or 0), "lavori": float(r.get("lavori", 0) or 0),
+                "notaio": float(r.get("notaio", 0) or 0),
+                "agenzia": float(r.get("agenzia", 0) or 0),
+                "imposte": float(r.get("imposte", 0) or 0),
+                "spese_tecniche": float(r.get("spese_tecniche", 0) or 0),
+                "lavori": float(r.get("lavori", 0) or 0),
                 "valore_stimato": float(r.get("valore_stimato", 0) or 0) or float(r.get("prezzo_acquisto", 0) or 0),
                 "canone_mensile": float(r.get("canone_mensile", 0) or 0),
-                "data_acquisto": r.get("data_acquisto", ""), "mutuo": mutuo, "note": r.get("note", ""),
+                # Locazione: inquilino + contatti (per solleciti automatici)
+                "inquilino": r.get("inquilino", ""),
+                "inquilino_email": r.get("inquilino_email", ""),
+                "inquilino_telefono": r.get("inquilino_telefono", ""),
+                "contratto_data_inizio": r.get("contratto_data_inizio", ""),
+                "contratto_data_fine": r.get("contratto_data_fine", ""),
+                "deposito": float(r.get("deposito", 0) or 0),
+                "spese_condominiali": float(r.get("spese_condominiali", 0) or 0),
+                "mutuo": mutuo,
+                "note": r.get("note", ""),
                 "img": "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?crop=entropy&cs=srgb&fm=jpg&w=800",
                 "fromDeal": False, "deal_id": None, "source": "import_excel",
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
             await db.properties.insert_one(item.copy())
             item.pop("_id", None)
+
+            # Se il mutuo è ben definito, crea anche record in /mutui per il tracking centralizzato
+            if mutuo and mutuo.get("residuo", 0) > 0 and mutuo.get("rata", 0) > 0:
+                await db.mutui.insert_one({
+                    "id": f"MUT-{uuid.uuid4().hex[:6].upper()}",
+                    "user_id": user["id"],
+                    "immobile_id": prop_id,
+                    "banca": mutuo["banca"],
+                    "importo_originario": mutuo.get("importo_originario", 0) or mutuo.get("residuo", 0),
+                    "capitale_residuo": mutuo["residuo"],
+                    "rata": mutuo["rata"],
+                    "tasso": mutuo.get("tasso", 0),
+                    "tipo_tasso": mutuo.get("tipo_tasso", "fisso"),
+                    "data_fine": mutuo.get("data_fine", ""),
+                    "source": "import_excel",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                })
+
             created.append(_enrich_property(item))
         return {"created": len(created), "items": created}
 
