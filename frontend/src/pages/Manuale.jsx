@@ -29,6 +29,7 @@ const SECTIONS = [
         "Visualizzare KPI: rendimento medio reale (tasse SRL/privato calcolate), cash flow, debito, LTV, Portfolio Score.",
       ]},
       { type: "tip", text: "Account demo per provare: ceo@controlroom.it / demo1234 (ruolo CEO). Vedi anche admin/amministrazione/commercialista nel file test_credentials.md." },
+      { type: "tip", text: "Vuoi sapere da dove arriva ogni numero esatto che vedi nell'app? Vai in Sidebar → Data Lineage: troverai formule, endpoint API e collection MongoDB di ogni KPI e grafico, pagina per pagina." },
       { type: "tour" },
     ],
   },

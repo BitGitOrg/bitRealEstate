@@ -28,6 +28,7 @@ import Watchlists from "@/pages/Watchlists";
 import ImportCenter from "@/pages/ImportCenter";
 import ForecastSimple from "@/pages/ForecastSimple";
 import Manuale from "@/pages/Manuale";
+import DataLineage from "@/pages/DataLineage";
 import Notifiche from "@/pages/Notifiche";
 import Scadenzario from "@/pages/Scadenzario";
 import Pipeline from "@/pages/Pipeline";
@@ -69,6 +70,7 @@ function App() {
             <Route path="/import" element={<Protected><ImportCenter /></Protected>} />
             <Route path="/forecast" element={<Protected><ForecastSimple /></Protected>} />
             <Route path="/manuale" element={<Protected><Manuale /></Protected>} />
+            <Route path="/data-lineage" element={<Protected><DataLineage /></Protected>} />
             <Route path="/notifiche" element={<Protected><Notifiche /></Protected>} />
             <Route path="/scadenzario" element={<Protected><Scadenzario /></Protected>} />
             <Route path="/pipeline" element={<Protected><Pipeline /></Protected>} />

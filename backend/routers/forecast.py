@@ -351,7 +351,21 @@ def simulate(baseline: dict, scenario: dict, props: list, settings: dict = None,
     modifiers = modifiers or {}
     rival = float(scenario.get("rivalutazione_immobili") or 0) + float(modifiers.get("delta_rivalutazione_pct") or 0)
     istat = float(scenario.get("istat_canoni") or 0)
-    tax_pct = float(scenario.get("tassazione_pct") or 26)
+    # Tassazione: priorità a (1) modifier esplicito (2) scenario.tassazione_pct se override="custom"
+    # (3) altrimenti usa il regime fiscale REALE dalle Impostazioni utente.
+    if modifiers.get("tassazione_pct") is not None:
+        tax_pct = float(modifiers["tassazione_pct"])
+        tax_source = "modifier"
+    elif scenario.get("tax_override_custom") and scenario.get("tassazione_pct") is not None:
+        tax_pct = float(scenario.get("tassazione_pct"))
+        tax_source = "scenario_custom"
+    elif settings:
+        from routers._shared import tax_rate_from_settings
+        tax_pct = round(tax_rate_from_settings(settings) * 100, 2)
+        tax_source = f"settings_{settings.get('tipo_societa','srl')}"
+    else:
+        tax_pct = float(scenario.get("tassazione_pct") or 26)
+        tax_source = "default"
     delta_canone_pct = float(modifiers.get("delta_canone_pct") or 0)
     vacancy_mesi = max(0, int(modifiers.get("vacancy_mesi_anno") or 0))
     costi_pct = (float(modifiers["costi_gestione_pct"]) if modifiers.get("costi_gestione_pct") is not None else 15.0) / 100.0
@@ -477,6 +491,17 @@ def simulate(baseline: dict, scenario: dict, props: list, settings: dict = None,
             "verdict": verdict,
             "verdict_severity": verdict_severity,
             "blocked_ops": state.get("_blocked_ops", []),
+            # Trasparenza assunzioni di calcolo
+            "assumptions": {
+                "tassazione_pct": tax_pct,
+                "tax_source": tax_source,
+                "tasso_interessi_pct": interest_rate_implied,
+                "tasso_source": "modifier" if modifiers.get("tasso_medio_pct") is not None else ("real_mortgages" if baseline.get("_tasso_medio_reale") else "default_3pct"),
+                "costi_gestione_pct": round(costi_pct * 100, 1),
+                "rivalutazione_pct": rival,
+                "istat_pct": istat,
+                "vacancy_mesi_anno": vacancy_mesi,
+            },
         },
     }
 
