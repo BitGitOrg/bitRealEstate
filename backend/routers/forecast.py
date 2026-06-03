@@ -155,18 +155,24 @@ def pmt(principal: float, rate_annual_pct: float, years: int) -> float:
 async def build_baseline(db, user_id: str, scenario: dict) -> dict:
     """Year 0 state from real data or custom initial inputs."""
     if not scenario.get("use_real_baseline"):
+        canone_init = float(scenario.get("initial_canone_mensile") or 0)
+        rata_init = float(scenario.get("initial_rata_mutui") or 0)
+        ricavi_init = canone_init * 12
+        costi_init = ricavi_init * 0.15  # stima costi gestione 15% sui ricavi
+        rata_annua_init = rata_init * 12
+        utile_init = max(0, ricavi_init - costi_init - rata_annua_init)
         return {
             "anno": 0, "label": "Oggi (input)",
             "numero_immobili": int(scenario.get("initial_numero_immobili") or 0),
             "valore_immobili": float(scenario.get("initial_patrimonio") or 0),
             "debito_residuo": float(scenario.get("initial_debito") or 0),
             "liquidita": float(scenario.get("initial_liquidita") or 0),
-            "canone_mensile": float(scenario.get("initial_canone_mensile") or 0),
-            "rata_mutui_mensile": float(scenario.get("initial_rata_mutui") or 0),
-            "ricavi_annui": float(scenario.get("initial_canone_mensile") or 0) * 12,
-            "costi_annui": 0.0,
-            "utile_netto": 0.0,
-            "cash_flow_annuo": 0.0,
+            "canone_mensile": canone_init,
+            "rata_mutui_mensile": rata_init,
+            "ricavi_annui": ricavi_init,
+            "costi_annui": round(costi_init, 0),
+            "utile_netto": round(utile_init, 0),
+            "cash_flow_annuo": round(ricavi_init - costi_init - rata_annua_init, 0),
         }
     props = await db.properties.find({"user_id": user_id}, {"_id": 0}).to_list(500)
     props = [enrich_property(p) for p in props]
@@ -182,6 +188,25 @@ async def build_baseline(db, user_id: str, scenario: dict) -> dict:
     from routers.incassi import _compute_liquidity
     liq_data = await _compute_liquidity(db, user_id)
     liquidita = liq_data.get("liquidita", 0)
+
+    # Tasso medio reale dei mutui in essere (per calcolo interessi corretto nel simulate)
+    mutui_validi = [(p.get("mutuo") or {}) for p in props if (p.get("mutuo") or {}).get("residuo")]
+    if mutui_validi:
+        tot_debito = sum(float(m.get("residuo", 0) or 0) for m in mutui_validi)
+        tassi_pesati = sum(float(m.get("residuo", 0) or 0) * float(m.get("tasso", 3.0) or 3.0) for m in mutui_validi)
+        tasso_medio = tassi_pesati / tot_debito if tot_debito > 0 else 3.0
+    else:
+        tasso_medio = 3.0
+
+    # Cash flow annuo baseline reale = canone netto - rata - costi stima
+    ricavi_annui = float(ce.get("totale_ricavi") or canone_mens * 12)
+    costi_annui = float(ce.get("totale_costi") or ricavi_annui * 0.15)
+    utile_netto = float(ce.get("utile_netto") or 0)
+    rata_annua = float(rata) * 12
+    if not utile_netto:
+        utile_netto = max(0, ricavi_annui - costi_annui - rata_annua * 0.5)  # rough: rata mezza interessi/capitale
+    cash_flow_baseline = ricavi_annui - costi_annui - rata_annua
+
     return {
         "anno": 0, "label": "Oggi (reale)",
         "numero_immobili": len(props),
@@ -190,10 +215,11 @@ async def build_baseline(db, user_id: str, scenario: dict) -> dict:
         "liquidita": float(liquidita),
         "canone_mensile": float(canone_mens),
         "rata_mutui_mensile": float(rata),
-        "ricavi_annui": float(ce.get("totale_ricavi") or canone_mens * 12),
-        "costi_annui": float(ce.get("totale_costi") or 0),
-        "utile_netto": float(ce.get("utile_netto") or 0),
-        "cash_flow_annuo": 0.0,
+        "ricavi_annui": round(ricavi_annui, 0),
+        "costi_annui": round(costi_annui, 0),
+        "utile_netto": round(utile_netto, 0),
+        "cash_flow_annuo": round(cash_flow_baseline, 0),
+        "_tasso_medio_reale": round(tasso_medio, 2),  # consumato da simulate()
     }
 
 
@@ -329,7 +355,12 @@ def simulate(baseline: dict, scenario: dict, props: list, settings: dict = None,
     delta_canone_pct = float(modifiers.get("delta_canone_pct") or 0)
     vacancy_mesi = max(0, int(modifiers.get("vacancy_mesi_anno") or 0))
     costi_pct = (float(modifiers["costi_gestione_pct"]) if modifiers.get("costi_gestione_pct") is not None else 15.0) / 100.0
-    interest_rate_implied = 3.0 + float(modifiers.get("delta_tasso_pct") or 0)
+    # Tasso medio: prima i modifiers (override esplicito), poi il tasso reale dei mutui, poi 3% default
+    if modifiers.get("tasso_medio_pct") is not None:
+        base_rate = float(modifiers["tasso_medio_pct"])
+    else:
+        base_rate = float(baseline.get("_tasso_medio_reale") or 3.0)
+    interest_rate_implied = base_rate + float(modifiers.get("delta_tasso_pct") or 0)
     vincoli = scenario.get("vincoli") or {}
     operations = scenario.get("operations") or []
     props_by_id = {p["id"]: p for p in props}
@@ -355,7 +386,12 @@ def simulate(baseline: dict, scenario: dict, props: list, settings: dict = None,
         costi_gestione = ricavi * costi_pct
         interessi_annui = state["debito_residuo"] * interest_rate_implied / 100
         rata_annua = state["rata_mutui_mensile"] * 12
-        ammortamento_capitale = max(0, rata_annua - interessi_annui)
+        # Ammortamento capitale: max tra (rata - interessi) e quota minima per non bloccare il piano
+        # Se la rata copre solo interessi (raro ma possibile), forza almeno il 2% di ammortamento del debito
+        ammortamento_capitale = rata_annua - interessi_annui
+        if ammortamento_capitale < 0:
+            # rata insufficiente: c'è un buco mensile che pesa sulla cassa
+            ammortamento_capitale = max(0, state["debito_residuo"] * 0.02)  # min 2% / anno
         utile_lordo = ricavi - costi_gestione - interessi_annui
         tasse = max(0, utile_lordo) * tax_pct / 100
         utile_netto = utile_lordo - tasse
@@ -394,6 +430,8 @@ def simulate(baseline: dict, scenario: dict, props: list, settings: dict = None,
     # add patrimonio_netto + alerts to baseline too
     snapshots[0]["patrimonio_netto"] = round(snapshots[0]["valore_immobili"] - snapshots[0]["debito_residuo"], 0)
     snapshots[0]["alerts"] = compute_snapshot_alerts(snapshots[0], None, settings)
+    # rimuovi campi interni
+    snapshots[0].pop("_tasso_medio_reale", None)
 
     # global risk roll-up
     all_alerts = [(s["anno"], a) for s in snapshots for a in (s.get("alerts") or [])]

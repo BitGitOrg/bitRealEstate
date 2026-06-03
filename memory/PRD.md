@@ -520,3 +520,14 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 - Scheduler log: avviato dopo startup, esegue sync ogni intervallo, gestisce fallimenti login senza bloccare altri user
 
 ### Prossimo step (P2): WhatsApp Bot conversazionale per aggiornare pipeline da messaggio voce/testo
+
+## 2026-06-03 — Forecast Engine: 5 bug critici sistemati
+- BUG1: `interest_rate_implied` era hardcoded 3.0% → ora usa il **tasso medio pesato reale** dei mutui esistenti (calcolato in build_baseline come `_tasso_medio_reale`). Modifier `tasso_medio_pct` permette override esplicito.
+- BUG2: baseline aveva `cash_flow_annuo: 0.0` SEMPRE → ora calcolato da `ricavi - costi - rata_annua` reale.
+- BUG3: baseline aveva `costi_annui: 0` e `utile_netto: 0` quando senza bilancio → ora stima 15% di costi gestione sui ricavi se mancano dati bilancio.
+- BUG4: `ammortamento_capitale = max(0, rata_annua - interessi_annui)` → se rata < interessi (mutuo lungo) debito non diminuiva MAI. Ora forza minimo 2%/anno di ammortamento.
+- BUG5: scenario "custom" (use_real_baseline=false) aveva tutti zeri → ora calcola correttamente ricavi/costi/utile/CF anche con baseline custom.
+
+### Test reale (account CEO)
+PRIMA: Anno 0 cash_flow=0, utile=0 (sempre)
+DOPO: Anno 0 cash_flow=€23.358, utile=€23.358 (corretto)
