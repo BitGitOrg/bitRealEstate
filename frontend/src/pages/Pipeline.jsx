@@ -4,7 +4,7 @@ import { SectionCard } from "../components/dashboard/SectionCard";
 import { apiClient } from "../lib/auth";
 import { formatEur } from "../lib/demoData";
 import { toast } from "sonner";
-import { Plus, Loader2, X, ChevronRight, Trophy, TrendingDown, Activity, Banknote, ArrowRight, Trash2, Home, Clock } from "lucide-react";
+import { Plus, Loader2, X, ChevronRight, Trophy, TrendingDown, Activity, Banknote, ArrowRight, Trash2, Home, Clock, Link2, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 const STAGE_INFO = {
   visionato: { label: "Visionato", icon: "🔍", color: "#94A3B8" },
@@ -36,6 +36,7 @@ export default function Pipeline() {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [selected, setSelected] = useState(null);
 
   const load = async () => {
@@ -57,9 +58,14 @@ export default function Pipeline() {
       title="Pipeline Acquisizioni"
       subtitle={loading ? "Caricamento…" : `${metrics?.n_attivi ?? 0} deal attivi · ${metrics?.n_chiusi ?? 0} acquistati`}
       actions={
-        <button onClick={() => setCreating(true)} data-testid="pipe-add-btn" className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#0066FF] hover:bg-[#2563EB] text-white text-sm font-medium">
-          <Plus size={14}/> Nuovo deal
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setImporting(true)} data-testid="pipe-import-btn" className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-[#E2E8F0] hover:border-[#0066FF] hover:bg-[rgba(0,102,255,0.05)] text-[#0F172A] text-sm font-medium">
+            <Link2 size={14}/> Importa da URL
+          </button>
+          <button onClick={() => setCreating(true)} data-testid="pipe-add-btn" className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#0066FF] hover:bg-[#2563EB] text-white text-sm font-medium">
+            <Plus size={14}/> Nuovo deal
+          </button>
+        </div>
       }
     >
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -141,6 +147,7 @@ export default function Pipeline() {
       )}
 
       {creating && <NewDealModal onClose={() => setCreating(false)} onCreated={(d) => { setCreating(false); setSelected(d.id); load(); }} />}
+      {importing && <BatchImportModal onClose={() => setImporting(false)} onDone={() => { setImporting(false); load(); }} />}
       {selected && <DealDetail id={selected} onClose={() => setSelected(null)} onUpdated={load} />}
     </Layout>
   );
@@ -380,6 +387,169 @@ function DealDetail({ id, onClose, onUpdated }) {
         <div className="px-5 py-3 border-t border-[#E2E8F0] flex justify-between">
           <button onClick={elimina} className="inline-flex items-center gap-1 text-xs text-[#DC2626] hover:underline"><Trash2 size={12}/> Elimina deal</button>
           <button onClick={onClose} className="px-3 py-1.5 rounded-lg bg-[#0F172A] text-white text-sm">Chiudi</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BatchImportModal({ onClose, onDone }) {
+  const [text, setText] = useState("");
+  const [running, setRunning] = useState(false);
+  const [results, setResults] = useState(null);
+
+  const parseUrls = () => {
+    const lines = text.split(/\s+/).map(s => s.trim()).filter(Boolean);
+    return [...new Set(lines.filter(l => l.startsWith("http") || /^[a-z0-9.-]+\.[a-z]{2,}/i.test(l)))];
+  };
+
+  const submit = async () => {
+    const urls = parseUrls();
+    if (urls.length === 0) { toast.error("Incolla almeno un URL valido"); return; }
+    if (urls.length > 20) { toast.error("Massimo 20 URL per volta"); return; }
+    setRunning(true);
+    setResults(null);
+    try {
+      const r = await apiClient().post("/pipeline/import-urls", { urls });
+      setResults(r.data);
+      const ok = r.data.successi;
+      if (ok > 0) toast.success(`${ok}/${r.data.totali} annunci importati nella pipeline`);
+      else toast.error("Nessun annuncio importato — vedi dettagli");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Errore batch import");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const urls = parseUrls();
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8" onClick={(e) => e.stopPropagation()} data-testid="pipe-import-modal">
+        <div className="px-5 py-4 border-b border-[#E2E8F0] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Link2 size={18} className="text-[#0066FF]" />
+            <div className="text-base font-semibold">Importa annunci da URL</div>
+          </div>
+          <button onClick={onClose}><X size={16}/></button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {!results && (
+            <>
+              <div className="text-xs text-[#475569] leading-relaxed">
+                Incolla uno o più URL di annunci immobiliari (uno per riga). L'AI scaricherà ogni pagina, estrarrà <strong>prezzo, indirizzo, mq, tipologia</strong> e calcolerà il <strong>Deal Score 0–100</strong>. Massimo 20 URL per batch.
+              </div>
+
+              <div className="bg-[#FFFBEB] border border-[#FCD34D]/40 rounded-lg p-3 text-[11px] text-[#92400E] leading-relaxed flex gap-2">
+                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                <div>
+                  <strong>Limitazione tecnica:</strong> Immobiliare.it, Idealista.it e Subito.it bloccano il download diretto delle pagine (anti-bot). 
+                  Funziona invece con: <strong>Casa.it, agenzie indipendenti, RSS feed, aste giudiziarie (PVP), siti di provincia</strong>. 
+                  Per Immobiliare/Idealista useremo presto il forwarding email degli alert.
+                </div>
+              </div>
+
+              <label className="block">
+                <span className="text-[10px] uppercase tracking-wider text-[#475569] font-medium">URL annunci (uno per riga)</span>
+                <textarea
+                  rows={10}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder={"https://www.casa.it/immobili/...\nhttps://www.example-agenzia.it/annuncio/123\nhttps://pvp.giustizia.it/..."}
+                  data-testid="pipe-import-textarea"
+                  className="mt-1 w-full bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-[#0066FF] resize-y"
+                />
+                <div className="mt-1 text-[10px] text-[#64748B] tabular">
+                  {urls.length} URL rilevati {urls.length > 20 && <span className="text-[#DC2626]">· max 20 per batch</span>}
+                </div>
+              </label>
+            </>
+          )}
+
+          {running && (
+            <div className="py-8 flex flex-col items-center justify-center gap-3 text-center">
+              <Loader2 size={32} className="animate-spin text-[#0066FF]" />
+              <div className="text-sm text-[#0F172A] font-medium">Analisi in corso…</div>
+              <div className="text-xs text-[#64748B]">L'AI sta leggendo {urls.length} annunci. Circa 4–8 sec per URL.</div>
+            </div>
+          )}
+
+          {results && (
+            <div className="space-y-3" data-testid="pipe-import-results">
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="bg-[#F8FAFC] rounded-lg p-2">
+                  <div className="text-[10px] uppercase text-[#64748B]">Totali</div>
+                  <div className="font-display text-lg font-bold tabular">{results.totali}</div>
+                </div>
+                <div className="bg-[#F0FDF4] rounded-lg p-2">
+                  <div className="text-[10px] uppercase text-[#065F46]">Importati</div>
+                  <div className="font-display text-lg font-bold tabular text-[#059669]">{results.successi}</div>
+                </div>
+                <div className="bg-[#FEF2F2] rounded-lg p-2">
+                  <div className="text-[10px] uppercase text-[#991B1B]">Errori</div>
+                  <div className="font-display text-lg font-bold tabular text-[#DC2626]">{results.errori}</div>
+                </div>
+              </div>
+
+              <div className="max-h-[360px] overflow-y-auto space-y-2">
+                {(results.risultati || []).map((r, i) => (
+                  <div key={i} className={`rounded-lg p-3 border ${r.ok ? "bg-[#F0FDF4] border-[#86EFAC]" : r.anti_bot ? "bg-[#FFFBEB] border-[#FCD34D]" : "bg-[#FEF2F2] border-[#FCA5A5]"}`}>
+                    <div className="flex items-start gap-2">
+                      {r.ok ? <CheckCircle2 size={14} className="text-[#059669] mt-0.5 shrink-0" /> : <AlertTriangle size={14} className={`mt-0.5 shrink-0 ${r.anti_bot ? "text-[#B45309]" : "text-[#DC2626]"}`} />}
+                      <div className="flex-1 min-w-0">
+                        {r.ok ? (
+                          <>
+                            <div className="text-sm font-semibold text-[#0F172A] truncate">{r.indirizzo}</div>
+                            <div className="text-[11px] text-[#475569] flex items-center gap-2 flex-wrap mt-0.5">
+                              <span className="tabular">{r.prezzo ? `${(r.prezzo / 1000).toFixed(0)}k€` : "—"}</span>
+                              {r.metratura && <span>· {r.metratura}m²</span>}
+                              {r.canone_atteso && <span>· {r.canone_atteso}€/mese</span>}
+                              {r.ai_deal_score != null && (
+                                <span className={`px-1.5 py-0.5 rounded font-bold tabular ${r.ai_deal_score >= 72 ? "bg-[#D1FAE5] text-[#065F46]" : r.ai_deal_score >= 55 ? "bg-[#FEF3C7] text-[#92400E]" : "bg-[#FEE2E2] text-[#991B1B]"}`}>
+                                  Score {r.ai_deal_score}/100
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-xs text-[#0F172A] truncate font-mono" title={r.url}>{r.url}</div>
+                            <div className={`text-[11px] mt-0.5 ${r.anti_bot ? "text-[#B45309]" : "text-[#DC2626]"}`}>
+                              {r.error}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-[#E2E8F0] flex justify-between items-center">
+          <div className="text-[10px] text-[#64748B]">
+            {!results && !running && "AI: Claude Sonnet 4.6 · Reader: Jina"}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-3 py-1.5 rounded-lg border border-[#E2E8F0] text-sm text-[#475569]">
+              {results ? "Chiudi" : "Annulla"}
+            </button>
+            {!results && (
+              <button onClick={submit} disabled={running || urls.length === 0 || urls.length > 20} data-testid="pipe-import-submit" className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[#0066FF] hover:bg-[#2563EB] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold">
+                {running ? <Loader2 size={12} className="animate-spin"/> : <Link2 size={12}/>}
+                Analizza {urls.length > 0 ? `${urls.length} URL` : ""}
+              </button>
+            )}
+            {results && results.successi > 0 && (
+              <button onClick={onDone} data-testid="pipe-import-done" className="px-4 py-1.5 rounded-lg bg-[#059669] hover:bg-[#047857] text-white text-sm font-semibold">
+                Vedi pipeline
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

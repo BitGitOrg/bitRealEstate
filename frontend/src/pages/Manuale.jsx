@@ -62,6 +62,9 @@ const SECTIONS = [
       { type: "subtitle", text: "Conversione in patrimonio" },
       { type: "text", text: "Quando un deal raggiunge lo stage «Rogito», compare il bottone verde «Converti in patrimonio». Click → crea automaticamente: 1) immobile in Patrimonio con prezzo + notaio + agenzia + date; 2) mutuo collegato (se hai registrato la banca in pipeline); 3) timeline storica del deal salvata; 4) il deal sparisce dal Kanban (resta archiviato come storico)." },
       { type: "tip", text: "Registra ogni evento (visita, offerta, controproposta, mutuo) cliccando «Avanza pipeline» nel modal del deal: ogni evento aggiorna il prezzo corrente e fa avanzare automaticamente lo stage." },
+      { type: "subtitle", text: "Import batch da URL annunci" },
+      { type: "text", text: "Click su «Importa da URL» → si apre una modal con textarea. Incolli fino a 20 URL di annunci (uno per riga) e premi «Analizza». Il sistema scarica ogni pagina via Jina Reader, l'AI Claude Sonnet estrae prezzo/indirizzo/mq/tipologia, calcola il Deal Score 0–100 e crea i deal in Pipeline. Tutto in parallelo (4 URL contemporanei)." },
+      { type: "tip", text: "Limitazione tecnica importante: Immobiliare.it, Idealista.it e Subito.it bloccano il download diretto (anti-bot Cloudflare/DataDome). Il sistema te lo segnala chiaramente nei risultati. Funziona invece con: Casa.it, agenzie indipendenti, RSS feed, aste giudiziarie (PVP), siti immobiliari di provincia. Per Immobiliare/Idealista è in arrivo l'import via email forwarding degli alert." },
     ],
   },
   {

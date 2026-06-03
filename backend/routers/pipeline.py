@@ -17,16 +17,107 @@ Stage:
 Metriche: time-to-close, sconto negoziato, conversion funnel, banche più veloci.
 """
 import uuid
+import re
+import json
+import asyncio
+import logging
+import httpx
 from datetime import date, datetime, timezone
 from typing import Optional, List, Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 STAGES = [
     "visionato", "visitato", "offerta_inviata", "trattativa",
     "accettato", "verifica_doc", "mutuo_richiesto", "preliminare", "rogito"
 ]
+
+
+async def _compute_ai_score(db, user_id: str, prezzo: float, canone_mensile: Optional[float]) -> dict:
+    """Calcola AI Deal Score deterministico in base a impostazioni fiscali utente."""
+    out = {"ai_deal_score": None, "ai_giudizio": None, "ai_prezzo_max": None, "ai_punti": []}
+    try:
+        from routers._shared import tax_rate_from_settings
+        settings = await db.settings.find_one({"user_id": user_id}, {"_id": 0}) or {}
+        costo_tot = (prezzo or 0) + 8000
+        canone_a = float(canone_mensile or 0) * 12
+        rend_lordo = (canone_a / costo_tot * 100) if costo_tot > 0 else 0
+        tax = tax_rate_from_settings(settings)
+        rend_netto = rend_lordo * (1 - tax - 0.08)
+        score = 55 + min(35, max(-35, (rend_netto - 4) * 7))
+        if canone_a == 0:
+            score -= 10
+        if rend_lordo >= 8:
+            score += 6
+        elif rend_lordo >= 6.5:
+            score += 3
+        score = max(0, min(100, int(score)))
+        target_n = float(settings.get("target_netto", 4.5) or 4.5)
+        if canone_a > 0:
+            prezzo_max = (canone_a / (target_n / 100)) / (1 - tax - 0.08) - 8000
+            out["ai_prezzo_max"] = max(0, round(prezzo_max, 0))
+        out["ai_deal_score"] = score
+        out["ai_giudizio"] = ("eccellente" if score >= 88 else "buona" if score >= 72
+                              else "interessante" if score >= 55 else "rischiosa" if score >= 38
+                              else "sconsigliata")
+        punti = []
+        if canone_a == 0:
+            punti.append("Canone atteso mancante: stima difficile")
+        if rend_netto < 3.5 and canone_a > 0:
+            punti.append(f"Rendimento netto stimato {rend_netto:.1f}% sotto soglia")
+        if rend_lordo >= 7:
+            punti.append(f"Rendimento lordo {rend_lordo:.1f}% sopra media")
+        out["ai_punti"] = punti or ["Parametri equilibrati"]
+    except Exception as e:
+        logger.warning(f"AI score compute failed: {e}")
+    return out
+
+
+async def _fetch_url_text(url: str) -> str:
+    """Scarica il contenuto leggibile di una pagina via Jina Reader (gestisce JS+anti-bot)."""
+    jina_url = f"https://r.jina.ai/{url}"
+    async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
+        r = await client.get(jina_url, headers={"Accept": "text/plain", "User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        text = r.text
+        # Detect portali con anti-bot aggressivo (Immobiliare.it / Idealista.it / Subito.it)
+        low = text.lower()
+        if "403: forbidden" in low or "access denied" in low or "captcha" in low or "requiring captcha" in low:
+            raise PermissionError(
+                "Portale protetto da anti-bot (Immobiliare/Idealista/Subito bloccano lo scraping). "
+                "Soluzione: usa l'email forwarding degli alert del portale (sezione coming soon)."
+            )
+        return text[:18000]
+
+
+async def _ai_parse_annuncio(llm_key: str, url: str, page_text: str) -> dict:
+    """Chiede a Claude di estrarre dati strutturati dall'annuncio."""
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    sys_msg = (
+        "Sei un esperto di annunci immobiliari italiani (Immobiliare.it, Idealista, Subito, Casa.it). "
+        "Estrai i dati dall'annuncio e restituisci SOLO un JSON valido (no markdown, no testo) nel formato esatto: "
+        '{"indirizzo":"str|null","citta":"str|null","cap":"str|null","prezzo_richiesto":num|null,'
+        '"metratura":num|null,"tipologia":"bilocale|trilocale|quadrilocale|monolocale|negozio|ufficio|villa|altro",'
+        '"canone_atteso":num|null,"note":"str con riassunto in italiano max 200 char","fonte":"immobiliare|idealista|subito|casa|altro"}\n'
+        "Regole: prezzo_richiesto e metratura SOLO numeri (no €/mq). Se canone non indicato, stima realistica = metratura × 12 €/mese (in Italia centro città bilocale). "
+        "Nelle note metti SOLO: stato (nuovo/ristrutturato/da ristrutturare), piano, spese condominio, classe energetica.\n\n"
+        f"URL: {url}\n\nCONTENUTO PAGINA:\n{page_text}"
+    )
+    chat = LlmChat(api_key=llm_key, session_id=f"deal-parse-{uuid.uuid4().hex[:8]}", system_message=sys_msg).with_model("anthropic", "claude-sonnet-4-6")
+    reply = await chat.send_message(UserMessage(text="Estrai i dati dell'annuncio."))
+    text = reply.strip()
+    if "```" in text:
+        m = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+        if m:
+            text = m.group(1).strip()
+    s = text.find("{")
+    e = text.rfind("}")
+    if s == -1 or e <= s:
+        raise ValueError("AI non ha restituito JSON valido")
+    return json.loads(text[s:e+1])
 
 
 class DealIn(BaseModel):
@@ -65,7 +156,7 @@ class EventoIn(BaseModel):
     dati: Optional[dict] = None
 
 
-def make_pipeline_router(db, current_user):
+def make_pipeline_router(db, current_user, llm_key: Optional[str] = None):
     router = APIRouter(prefix="/api/pipeline")
 
     @router.get("")
@@ -109,44 +200,7 @@ def make_pipeline_router(db, current_user):
     @router.post("")
     async def create_deal(payload: DealIn, user: dict = Depends(current_user)):
         now = datetime.now(timezone.utc).isoformat()
-        # AI Deal Score immediato (riusa logica esistente /api/ai/deal-analyze)
-        ai_score = None
-        ai_giudizio = None
-        ai_prezzo_max = None
-        ai_punti = []
-        try:
-            from routers._shared import tax_rate_from_settings
-            settings = await db.settings.find_one({"user_id": user["id"]}, {"_id": 0}) or {}
-            costo_tot = payload.prezzo_richiesto + 8000  # stima costi accessori
-            canone_a = float(payload.canone_atteso or 0) * 12
-            rend_lordo = (canone_a / costo_tot * 100) if costo_tot > 0 else 0
-            rend_netto = rend_lordo * (1 - tax_rate_from_settings(settings) - 0.08)  # tasse + ~8% costi gestione
-            score = 55
-            score += min(35, max(-35, (rend_netto - 4) * 7))
-            if canone_a == 0:
-                score -= 10
-            if rend_lordo >= 8:
-                score += 6
-            elif rend_lordo >= 6.5:
-                score += 3
-            score = max(0, min(100, int(score)))
-            target_n = float(settings.get("target_netto", 4.5) or 4.5)
-            if canone_a > 0:
-                prezzo_max = (canone_a / (target_n / 100)) / (1 - tax_rate_from_settings(settings) - 0.08) - 8000
-                ai_prezzo_max = max(0, round(prezzo_max, 0))
-            ai_score = score
-            ai_giudizio = "eccellente" if score >= 88 else "buona" if score >= 72 else "interessante" if score >= 55 else "rischiosa" if score >= 38 else "sconsigliata"
-            if payload.canone_atteso == 0 or payload.canone_atteso is None:
-                ai_punti.append("Canone atteso mancante: stima difficile")
-            if rend_netto < 3.5 and canone_a > 0:
-                ai_punti.append(f"Rendimento netto stimato {rend_netto:.1f}% sotto soglia")
-            if rend_lordo >= 7:
-                ai_punti.append(f"Rendimento lordo {rend_lordo:.1f}% sopra media")
-            if not ai_punti:
-                ai_punti.append("Parametri equilibrati")
-        except Exception:
-            pass
-
+        ai = await _compute_ai_score(db, user["id"], payload.prezzo_richiesto, payload.canone_atteso)
         item = {
             "id": f"DEAL-{uuid.uuid4().hex[:6].upper()}",
             "user_id": user["id"],
@@ -155,23 +209,117 @@ def make_pipeline_router(db, current_user):
             "convertito": False,
             "prezzo_corrente": payload.prezzo_richiesto,
             **payload.model_dump(),
-            "ai_deal_score": ai_score,
-            "ai_giudizio": ai_giudizio,
-            "ai_prezzo_max": ai_prezzo_max,
-            "ai_punti": ai_punti,
+            **ai,
             "created_at": now,
             "stage_updated_at": now,
             "timeline": [{
                 "id": f"EVT-{uuid.uuid4().hex[:6].upper()}",
                 "tipo": "visione",
                 "data": date.today().isoformat(),
-                "descrizione": f"Annuncio visto su {payload.fonte} a {payload.prezzo_richiesto:.0f}€" + (f" · AI Score {ai_score}/100 ({ai_giudizio})" if ai_score else ""),
+                "descrizione": f"Annuncio visto su {payload.fonte} a {payload.prezzo_richiesto:.0f}€" + (f" · AI Score {ai['ai_deal_score']}/100 ({ai['ai_giudizio']})" if ai.get("ai_deal_score") is not None else ""),
                 "stage_dopo": "visionato",
             }],
         }
         await db.deals.insert_one(item.copy())
         item.pop("_id", None)
         return item
+
+    @router.post("/import-urls")
+    async def import_urls(payload: dict, user: dict = Depends(current_user)):
+        """Importa più annunci da URL in batch. Per ognuno: scarica via Jina, parsa con Claude, crea deal con AI score."""
+        urls = payload.get("urls") or []
+        if not isinstance(urls, list) or not urls:
+            raise HTTPException(400, "Fornire lista 'urls'")
+        if len(urls) > 20:
+            raise HTTPException(400, "Massimo 20 URL per batch")
+        if not llm_key:
+            raise HTTPException(503, "AI non configurata (EMERGENT_LLM_KEY mancante)")
+        # Dedup + clean
+        clean_urls = []
+        seen = set()
+        for u in urls:
+            u = (u or "").strip()
+            if not u or u in seen:
+                continue
+            if not (u.startswith("http://") or u.startswith("https://")):
+                u = "https://" + u
+            seen.add(u)
+            clean_urls.append(u)
+
+        async def process_one(url: str):
+            try:
+                # 1. Fetch text via Jina Reader
+                page_text = await _fetch_url_text(url)
+                if len(page_text) < 200:
+                    return {"url": url, "ok": False, "error": "Pagina vuota o bloccata"}
+                # 2. Parse con Claude
+                data = await _ai_parse_annuncio(llm_key, url, page_text)
+                indirizzo = (data.get("indirizzo") or "").strip()
+                prezzo = data.get("prezzo_richiesto")
+                if not indirizzo or not prezzo:
+                    return {"url": url, "ok": False, "error": "Indirizzo o prezzo non trovati"}
+                # 3. AI score
+                ai = await _compute_ai_score(db, user["id"], float(prezzo), data.get("canone_atteso"))
+                # 4. Crea deal
+                now = datetime.now(timezone.utc).isoformat()
+                item = {
+                    "id": f"DEAL-{uuid.uuid4().hex[:6].upper()}",
+                    "user_id": user["id"],
+                    "is_pipeline": True,
+                    "stage": "visionato",
+                    "convertito": False,
+                    "indirizzo": indirizzo[:160],
+                    "citta": (data.get("citta") or "")[:80],
+                    "cap": (data.get("cap") or "")[:10],
+                    "prezzo_richiesto": float(prezzo),
+                    "prezzo_corrente": float(prezzo),
+                    "fonte": data.get("fonte") or "altro",
+                    "metratura": data.get("metratura"),
+                    "tipologia": data.get("tipologia") or "",
+                    "canone_atteso": data.get("canone_atteso"),
+                    "note": (data.get("note") or "")[:300],
+                    "url_annuncio": url,
+                    **ai,
+                    "created_at": now,
+                    "stage_updated_at": now,
+                    "timeline": [{
+                        "id": f"EVT-{uuid.uuid4().hex[:6].upper()}",
+                        "tipo": "visione",
+                        "data": date.today().isoformat(),
+                        "descrizione": f"Importato da {data.get('fonte','annuncio')} · AI Score {ai.get('ai_deal_score','-')}/100 ({ai.get('ai_giudizio','-')})",
+                        "stage_dopo": "visionato",
+                    }],
+                }
+                await db.deals.insert_one(item.copy())
+                item.pop("_id", None)
+                return {
+                    "url": url, "ok": True, "deal_id": item["id"],
+                    "indirizzo": indirizzo, "prezzo": prezzo,
+                    "ai_deal_score": ai.get("ai_deal_score"), "ai_giudizio": ai.get("ai_giudizio"),
+                    "canone_atteso": data.get("canone_atteso"), "metratura": data.get("metratura"),
+                }
+            except PermissionError as e:
+                logger.info(f"Anti-bot block on {url}: {e}")
+                return {"url": url, "ok": False, "error": str(e), "anti_bot": True}
+            except httpx.HTTPError as e:
+                logger.warning(f"Fetch failed {url}: {e}")
+                return {"url": url, "ok": False, "error": "Errore download (URL non valido o portale offline)"}
+            except Exception as e:
+                logger.exception(f"Parse failed {url}")
+                return {"url": url, "ok": False, "error": str(e)[:120]}
+
+        # Esegui in parallelo (max 4 contemporanei per non saturare LLM)
+        sem = asyncio.Semaphore(4)
+        async def bounded(u):
+            async with sem:
+                return await process_one(u)
+        results = await asyncio.gather(*[bounded(u) for u in clean_urls])
+        return {
+            "totali": len(results),
+            "successi": sum(1 for r in results if r.get("ok")),
+            "errori": sum(1 for r in results if not r.get("ok")),
+            "risultati": results,
+        }
 
     @router.patch("/{did}")
     async def update_deal(did: str, payload: DealPatch, user: dict = Depends(current_user)):

@@ -651,7 +651,7 @@ app.include_router(make_geo_router(db, current_user))
 app.include_router(make_notifications_router(db, current_user, EMERGENT_LLM_KEY))
 app.include_router(make_tax_calendar_router(db, current_user))
 app.include_router(make_banker_pack_router(db, current_user))
-app.include_router(make_pipeline_router(db, current_user))
+app.include_router(make_pipeline_router(db, current_user, EMERGENT_LLM_KEY))
 
 app.add_middleware(
     CORSMiddleware,
