@@ -299,7 +299,7 @@ const SECTIONS = [
     intro: "Centro per l'import in massa di dati: bilanci, estratti conto e — fondamentale — il template Excel per caricare in un colpo solo l'intero patrimonio immobiliare esistente.",
     blocks: [
       { type: "subtitle", text: "Template immobili in massa (Excel)" },
-      { type: "text", text: "Scarica il template strutturato in 8 gruppi colore (Anagrafica · Dati tecnici · Stato · Acquisto · Valore · Locazione · Mutuo · Note) per un totale di 38 campi. Comprende dropdown automatici per Tipologia, Classe energetica, Stato, Operazione, Tipo tasso mutuo. Riga di esempio inclusa. Sheet «Istruzioni» con regole dettagliate. Sheet «Valori ammessi» con tutti gli enum." },
+      { type: "text", text: "Scarica il template strutturato in 8 gruppi colore (Anagrafica · Dati tecnici · Stato · Acquisto · Valore · Locazione · Mutuo · Note) per un totale di 38 campi. Comprende dropdown automatici per Tipologia, Classe energetica, Stato, Operazione, Tipo tasso mutuo. Riga di esempio inclusa. Sheet «Guida compilazione» con guida completa di 130+ righe: come iniziare in 4 step, regole generali, formato date/importi, dettaglio di ogni singolo campo con esempi, 3 scenari pratici, FAQ con 9 domande frequenti, effetti automatici post-import. Sheet «Valori ammessi» con tutti gli enum." },
       { type: "list", items: [
         "Centro Import → tab Immobili → click «Scarica template» (oppure URL diretto /downloads/template_immobili_control_room.xlsx).",
         "Compila una riga per immobile a partire dalla riga 3 (lascia righe 1 e 2: super-header e intestazioni).",

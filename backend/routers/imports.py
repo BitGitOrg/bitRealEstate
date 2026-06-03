@@ -383,83 +383,292 @@ def make_imports_router(db, current_user, llm_key: str):
         dv_tt.add("AJ3:AJ1000")
         ws.add_data_validation(dv_tt)
 
-        # === Sheet 2: Istruzioni ===
-        ws2 = wb.create_sheet("Istruzioni")
-        ws2["A1"] = "📘 Istruzioni compilazione template immobili"
-        ws2["A1"].font = openpyxl.styles.Font(bold=True, size=15, color="0F172A")
-        ws2.row_dimensions[1].height = 28
+        # === Sheet 2: Guida compilazione ===
+        ws2 = wb.create_sheet("Guida compilazione")
+        ws2.column_dimensions["A"].width = 4
+        ws2.column_dimensions["B"].width = 38
+        ws2.column_dimensions["C"].width = 80
 
-        sections = [
-            ("⚙️ Regole generali", [
-                "Le righe 1 e 2 sono intestazioni: NON modificarle.",
-                "La riga 3 è un esempio: cancellala o sovrascrivila con i tuoi dati.",
-                "Inserisci un immobile per riga, a partire dalla riga 3.",
-                "Massimo 500 immobili per file. Per volumi maggiori, divide il file.",
-                "Salva sempre in formato .xlsx (Excel 2007+).",
-            ]),
-            ("✅ Campi obbligatori", [
-                "Nome immobile — identificatore univoco usato in tutta la piattaforma.",
-                "Prezzo acquisto — il sistema rifiuta righe senza prezzo o con prezzo ≤ 0.",
-                "Tutti gli altri campi sono opzionali ma compilarne di più rende le analisi più precise.",
-            ]),
-            ("📅 Formato date", [
-                "Sempre nel formato YYYY-MM-DD (es. 2024-03-15).",
-                "Se la data è ignota lascia vuota la cella.",
-                "Per i contratti di affitto, indicare sia inizio che fine: serve per la timeline e gli alert.",
-            ]),
-            ("💶 Formato importi", [
-                "Senza simbolo € e senza separatore migliaia.",
-                "Usa il punto come separatore decimale (es. 1450.00 o 1450).",
-                "Lascia vuoto se l'importo è 0 o sconosciuto.",
-            ]),
-            ("🏠 Stato immobile (colonna M)", [
-                "Valori ammessi (dropdown): in_valutazione · in_trattativa · acquistato · in_ristrutturazione · disponibile · affittato · sfitto · in_vendita · venduto.",
-            ]),
-            ("📊 Operazione (colonna N)", [
-                "reddito → immobile a reddito (affitto).",
-                "compra_vendi → acquisto per rivendita rapida.",
-                "compra_ristruttura_vendi → acquisto + ristrutturazione + rivendita.",
-            ]),
-            ("👤 Inquilino e contratto (colonne X-AC)", [
-                "Email e telefono sono FONDAMENTALI per i solleciti automatici WhatsApp/Email a T+5/15/30 giorni dalla scadenza canone.",
-                "Telefono in formato internazionale: +393331234567 (no spazi, no trattini).",
-                "Email valida (deve contenere @): viene usata anche per generare contratti via PEC futura.",
-                "Se l'immobile è sfitto/disponibile lascia vuoti tutti i campi inquilino.",
-            ]),
-            ("🏦 Mutuo (colonne AE-AK)", [
-                "Compila SOLO se l'immobile è gravato da mutuo.",
-                "Importo originario = quanto la banca ti ha erogato all'inizio.",
-                "Capitale residuo = quanto manca da restituire OGGI (aggiornalo periodicamente).",
-                "Tipo tasso (dropdown): fisso · variabile · misto.",
-                "Tutti gli immobili importati con mutuo finiscono automaticamente anche in /mutui per il tracking centralizzato del debito.",
-            ]),
-            ("📐 Dati catastali (colonne K-L)", [
-                "Rendita catastale = valore presente sulla visura catastale (es. 580.50).",
-                "Valore catastale = rendita × 168 (immobili residenziali) o × 126 (prima casa). Usato per IMU/scadenzario.",
-            ]),
-            ("🎨 Colori dell'header", [
-                "Blu scuro = anagrafica · Ciano = dati tecnici · Viola = stato · Verde = acquisto",
-                "Teal = valore attuale · Rosso = locazione · Arancio = mutuo · Grigio = note",
-            ]),
-            ("🚀 Dopo l'import", [
-                "Vai in Centro Import → Immobili → Trascina il file → Anteprima.",
-                "Verifica gli avvisi (warnings) sulle righe segnalate prima di confermare.",
-                "Click su «Conferma import» per creare tutti gli immobili in una volta sola.",
-                "Gli immobili con dati locazione completi generano automaticamente: contratti, incassi previsti, alert solleciti.",
-                "Gli immobili con dati mutuo completi generano automaticamente record in /mutui con piano di ammortamento.",
-            ]),
-        ]
-        r = 3
-        for title, items in sections:
-            ws2.cell(row=r, column=1, value=title).font = openpyxl.styles.Font(
-                bold=True, size=12, color="0066FF"
-            )
-            r += 1
-            for it in items:
-                ws2.cell(row=r, column=1, value=f"• {it}")
-                r += 1
-            r += 1  # spacing tra sezioni
-        ws2.column_dimensions["A"].width = 110
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        thin = Side(border_style="thin", color="E2E8F0")
+        box_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+        # ===== HERO HEADER =====
+        ws2.merge_cells("B1:C1")
+        c = ws2["B1"]
+        c.value = "📘 Guida alla compilazione del template immobili"
+        c.font = Font(bold=True, size=18, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="0066FF")
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        ws2.row_dimensions[1].height = 38
+
+        ws2.merge_cells("B2:C2")
+        c = ws2["B2"]
+        c.value = "Control Room — Real Estate Portfolio · 38 campi · 8 sezioni · import in massa via Excel"
+        c.font = Font(italic=True, size=10, color="475569")
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        ws2.row_dimensions[2].height = 22
+
+        row = 4
+
+        def section_header(text, color="0066FF"):
+            nonlocal row
+            ws2.merge_cells(start_row=row, start_column=2, end_row=row, end_column=3)
+            c = ws2.cell(row=row, column=2, value=text)
+            c.font = Font(bold=True, size=13, color="FFFFFF")
+            c.fill = PatternFill("solid", fgColor=color)
+            c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+            ws2.row_dimensions[row].height = 26
+            row += 1
+
+        def subhead(text):
+            nonlocal row
+            ws2.merge_cells(start_row=row, start_column=2, end_row=row, end_column=3)
+            c = ws2.cell(row=row, column=2, value=text)
+            c.font = Font(bold=True, size=11, color="0F172A")
+            c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+            ws2.row_dimensions[row].height = 22
+            row += 1
+
+        def kv(key, val, bold=False):
+            nonlocal row
+            c1 = ws2.cell(row=row, column=2, value=key)
+            c1.font = Font(bold=True, size=10, color="0F172A")
+            c1.alignment = Alignment(vertical="top", wrap_text=True, indent=1)
+            c1.border = box_border
+            c1.fill = PatternFill("solid", fgColor="F8FAFC")
+            c2 = ws2.cell(row=row, column=3, value=val)
+            c2.font = Font(size=10, bold=bold, color="0F172A")
+            c2.alignment = Alignment(vertical="top", wrap_text=True, indent=1)
+            c2.border = box_border
+            row += 1
+
+        def bullet(text, indent_lvl=1):
+            nonlocal row
+            ws2.merge_cells(start_row=row, start_column=2, end_row=row, end_column=3)
+            c = ws2.cell(row=row, column=2, value=f"  • {text}")
+            c.font = Font(size=10, color="0F172A")
+            c.alignment = Alignment(vertical="top", wrap_text=True, indent=indent_lvl)
+            ws2.row_dimensions[row].height = max(18, (len(text) // 95 + 1) * 15)
+            row += 1
+
+        def callout(label, text, fg="92400E", bg="FFFBEB"):
+            nonlocal row
+            ws2.merge_cells(start_row=row, start_column=2, end_row=row, end_column=3)
+            c = ws2.cell(row=row, column=2, value=f"  {label}  {text}")
+            c.font = Font(size=10, color=fg, italic=True)
+            c.fill = PatternFill("solid", fgColor=bg)
+            c.alignment = Alignment(vertical="center", wrap_text=True, indent=1)
+            ws2.row_dimensions[row].height = max(22, (len(text) // 90 + 1) * 18)
+            row += 1
+
+        def spacer():
+            nonlocal row
+            row += 1
+
+        def field_row(col_letter, name, desc, example, mandatory=False):
+            """Riga descrizione campo: colonna | nome | descrizione + esempio"""
+            nonlocal row
+            ws2.cell(row=row, column=2, value=f"{col_letter} — {name}{'  ⚠️' if mandatory else ''}").font = Font(bold=True, size=10, color="0066FF" if mandatory else "0F172A")
+            ws2.cell(row=row, column=2).alignment = Alignment(vertical="top", wrap_text=True, indent=1)
+            ws2.cell(row=row, column=2).border = box_border
+            full_text = desc
+            if example:
+                full_text += f"\n  📝 Esempio: {example}"
+            c = ws2.cell(row=row, column=3, value=full_text)
+            c.font = Font(size=9, color="475569")
+            c.alignment = Alignment(vertical="top", wrap_text=True, indent=1)
+            c.border = box_border
+            ws2.row_dimensions[row].height = max(34, (len(full_text) // 80 + 1) * 14)
+            row += 1
+
+        # ============= INTRO =============
+        section_header("🚀 Come iniziare in 4 step", "059669")
+        bullet("STEP 1 — Cancella la riga di esempio (riga 3) o sovrascrivila con il tuo primo immobile.")
+        bullet("STEP 2 — Compila una riga per ogni immobile del tuo portafoglio. Puoi inserire fino a 500 immobili.")
+        bullet("STEP 3 — Salva il file in formato .xlsx (Excel 2007+). Non usare .xls o .csv.")
+        bullet("STEP 4 — In Control Room: vai in Centro Import → tab Immobili → trascina il file → controlla l'anteprima → conferma.")
+        spacer()
+        callout("💡", "Suggerimento: importa prima 1-2 immobili come test, verifica che tutto sia ok, poi carica il resto.", fg="065F46", bg="D1FAE5")
+        spacer()
+
+        # ============= REGOLE GENERALI =============
+        section_header("⚙️ Regole generali", "1E40AF")
+        subhead("Struttura del foglio Immobili")
+        bullet("Riga 1: super-header colorato a gruppi (ANAGRAFICA, ACQUISTO, MUTUO…). NON modificare.")
+        bullet("Riga 2: intestazione colonne. NON modificare né cancellare.")
+        bullet("Riga 3 in poi: i tuoi dati. Una riga = un immobile.")
+        bullet("Non lasciare righe vuote in mezzo: se serve, ordina per indirizzo o per data acquisto.")
+        spacer()
+
+        subhead("Formato date")
+        kv("Formato richiesto", "YYYY-MM-DD (anno-mese-giorno con trattini)")
+        kv("Esempio corretto", "2024-03-15  oppure  2022-11-08")
+        kv("❌ Da evitare", "15/03/2024 · 15-mar-24 · 03-15-2024 · 2024.03.15")
+        kv("Data sconosciuta?", "Lascia la cella vuota. Non scrivere 'NA', 'sconosciuta', '?'.")
+        spacer()
+
+        subhead("Formato importi (€)")
+        kv("Formato richiesto", "Numero puro, senza € e senza separatore migliaia")
+        kv("Esempi corretti", "1450 · 215000 · 1450.50 · 95000")
+        kv("Decimali", "Usa il PUNTO come separatore (non la virgola): 1450.50, NON 1450,50")
+        kv("❌ Da evitare", "€ 1.450,00 · 1.450€ · 1450,00 · 1450 EUR")
+        kv("Importo zero?", "Lascia vuoto, non scrivere 0. Esempio: notaio non sostenuto → vuoto.")
+        spacer()
+
+        subhead("Campi obbligatori (segnati con ⚠️ nel resto della guida)")
+        bullet("Nome immobile (colonna A) — identificatore univoco usato in tutta la piattaforma.")
+        bullet("Prezzo acquisto (colonna P) — il sistema rifiuta righe senza prezzo o con prezzo ≤ 0.")
+        callout("ℹ️", "Tutti gli altri 36 campi sono opzionali. Più ne compili, più accurate saranno le analisi (rendimento netto, AI Deal Score, alert automatici).", fg="1E40AF", bg="EEF4FF")
+        spacer()
+
+        # ============= DETTAGLIO CAMPI =============
+        section_header("📋 Dettaglio dei 38 campi (sezione per sezione)", "7C3AED")
+
+        # --- ANAGRAFICA ---
+        subhead("🔵 ANAGRAFICA (colonne A-H)")
+        field_row("A", "Nome immobile ⚠️", "Etichetta identificativa univoca. Lo userai in tutta l'app.", "Bilocale Navigli · Trilo Crocetta · Villetta Asti", mandatory=True)
+        field_row("B", "Indirizzo", "Indirizzo completo con numero civico. Usato per geocoding e mappa.", "Via Vigevano 12 · Corso Vercelli 45/A")
+        field_row("C", "Città", "Comune dell'immobile.", "Milano · Torino · Roma")
+        field_row("D", "Provincia", "Sigla provincia (2 lettere maiuscole).", "MI · TO · RM · NA")
+        field_row("E", "CAP", "5 cifre. Lascialo come testo per preservare gli zeri iniziali.", "20144 · 10121 · 00184")
+        field_row("F", "Tipologia", "DROPDOWN: Bilocale, Trilocale, Quadrilocale, Monolocale, Villa, Loft, Attico, Negozio, Ufficio, Box, Altro.", "Bilocale")
+        field_row("G", "Metratura (m²)", "Superficie commerciale in metri quadrati. Numero intero o decimale.", "58 · 92.5")
+        field_row("H", "Piano", "Piano dell'immobile come stringa.", "T (terra) · 1 · 2 · S (seminterrato) · ATT (attico)")
+        spacer()
+
+        # --- DATI TECNICI ---
+        subhead("🩵 DATI TECNICI (colonne I-L)")
+        field_row("I", "Anno costruzione", "Anno di costruzione del fabbricato (4 cifre).", "1972 · 2018")
+        field_row("J", "Classe energetica", "DROPDOWN: A4, A3, A2, A1, A, B, C, D, E, F, G.", "D · B · A2")
+        field_row("K", "Rendita catastale (€)", "Valore presente sulla visura catastale.", "580.50 · 1240")
+        field_row("L", "Valore catastale (€)", "Rendita × 168 (residenziale) o × 126 (prima casa). Usato per IMU e scadenzario fiscale.", "75000")
+        spacer()
+
+        # --- STATO ---
+        subhead("🟣 STATO (colonne M-N)")
+        field_row("M", "Stato", "DROPDOWN: in_valutazione, in_trattativa, acquistato, in_ristrutturazione, disponibile, affittato, sfitto, in_vendita, venduto.", "affittato (se locato) · in_vendita (se in vendita)")
+        field_row("N", "Operazione", "DROPDOWN: reddito · compra_vendi · compra_ristruttura_vendi.", "reddito (immobile da affittare) · compra_vendi (rivendita)")
+        spacer()
+
+        # --- ACQUISTO ---
+        subhead("🟢 ACQUISTO (colonne O-U)")
+        field_row("O", "Data rogito", "Data del rogito notarile.", "2022-03-15")
+        field_row("P", "Prezzo acquisto (€) ⚠️", "Prezzo finale al rogito (esclusi notaio/agenzia/imposte). OBBLIGATORIO.", "215000", mandatory=True)
+        field_row("Q", "Notaio (€)", "Costo totale del notaio.", "4200")
+        field_row("R", "Agenzia acquisto (€)", "Provvigione agenzia (lato acquirente).", "6500")
+        field_row("S", "Imposte registro/IVA (€)", "Imposta di registro (2% o 9%) o IVA (10% o 22%) a seconda del regime.", "18500")
+        field_row("T", "Spese tecniche/perizie (€)", "Perizie, visure, geometra, APE alla compravendita.", "1200")
+        field_row("U", "Lavori sostenuti (€)", "Costi totali di ristrutturazione/manutenzione sostenuti.", "18000")
+        spacer()
+
+        # --- VALORE ---
+        subhead("🩵 VALORE ATTUALE (colonna V)")
+        field_row("V", "Valore stimato attuale (€)", "Tuo valore di mercato stimato OGGI. Aggiornalo periodicamente. Se vuoto, il sistema usa il prezzo di acquisto.", "285000")
+        spacer()
+
+        # --- LOCAZIONE ---
+        subhead("🔴 LOCAZIONE (colonne W-AD)")
+        callout("⚠️ IMPORTANTE", "Se l'immobile è SFITTO o NON locato, lascia vuote tutte le colonne W-AD. Se è AFFITTATO, compila almeno: canone, inquilino, email/telefono e date contratto.")
+        field_row("W", "Canone mensile (€)", "Canone netto incassato ogni mese.", "1450 · 850.50")
+        field_row("X", "Inquilino — Nome", "Nome completo dell'inquilino.", "Mario Bianchi · Studio Legale Rossi SRL")
+        field_row("Y", "Inquilino — Email", "🔥 FONDAMENTALE per i solleciti automatici Email a T+5/15/30 giorni dalla scadenza canone.", "mario.bianchi@example.com")
+        field_row("Z", "Inquilino — Telefono", "🔥 FONDAMENTALE per i solleciti automatici WhatsApp. Formato internazionale con prefisso.", "+393331234567 (NO spazi, NO trattini, sì il +)")
+        field_row("AA", "Contratto — Data inizio", "Data inizio contratto di locazione.", "2023-09-01")
+        field_row("AB", "Contratto — Data fine", "Data fine contratto.", "2027-08-31")
+        field_row("AC", "Deposito cauzionale (€)", "Importo del deposito versato (di solito 3 mensilità).", "4350")
+        field_row("AD", "Spese condominiali mensili (€)", "Quota mensile spese condominiali a carico tuo (proprietario).", "95")
+        spacer()
+
+        # --- MUTUO ---
+        subhead("🟠 MUTUO (colonne AE-AK)")
+        callout("ℹ️", "Compila SOLO se l'immobile è gravato da mutuo. Lascia tutto vuoto altrimenti. Il sistema crea automaticamente un record in /mutui con piano di ammortamento.", fg="1E40AF", bg="EEF4FF")
+        field_row("AE", "Mutuo — Banca", "Banca erogatrice.", "Intesa Sanpaolo · UniCredit · BPER · Crédit Agricole")
+        field_row("AF", "Mutuo — Importo originario (€)", "Capitale inizialmente erogato dalla banca.", "130000")
+        field_row("AG", "Mutuo — Capitale residuo (€)", "Quanto manca da restituire OGGI. AGGIORNALO periodicamente per LTV accurato.", "95000")
+        field_row("AH", "Mutuo — Rata mensile (€)", "Rata totale (quota capitale + quota interessi).", "540")
+        field_row("AI", "Mutuo — Tasso (%)", "Tasso di interesse attuale, come numero (no simbolo %).", "2.8 · 4.15")
+        field_row("AJ", "Mutuo — Tipo tasso", "DROPDOWN: fisso · variabile · misto.", "fisso")
+        field_row("AK", "Mutuo — Data fine", "Data prevista di estinzione del mutuo.", "2042-03-15")
+        spacer()
+
+        # --- NOTE ---
+        subhead("⚪ NOTE (colonna AL)")
+        field_row("AL", "Note", "Annotazioni libere: caratteristiche peculiari, vincoli, problematiche, opportunità.", "Vista parco · Da rifare bagno · Inquilino in scadenza · Box auto incluso")
+        spacer()
+
+        # ============= ESEMPI =============
+        section_header("📚 Esempi pratici di compilazione", "B45309")
+
+        subhead("Esempio 1 — Bilocale a reddito con mutuo")
+        kv("Scenario", "Immobile acquistato per metterlo a reddito. Affittato a un privato. Mutuo in essere.")
+        kv("Campi chiave da compilare", "Tutti i campi di ANAGRAFICA, ACQUISTO, LOCAZIONE (W-AD), MUTUO (AE-AK)")
+        kv("Stato", "affittato")
+        kv("Operazione", "reddito")
+        spacer()
+
+        subhead("Esempio 2 — Immobile compra-ristruttura-vendi")
+        kv("Scenario", "Immobile appena acquistato, in ristrutturazione, da rivendere a fine lavori.")
+        kv("Campi chiave da compilare", "ANAGRAFICA, ACQUISTO (data, prezzo, costi accessori, lavori), VALORE atteso")
+        kv("Campi da lasciare vuoti", "Tutta LOCAZIONE (non sarà affittato), MUTUO (se non finanziato).")
+        kv("Stato", "in_ristrutturazione")
+        kv("Operazione", "compra_ristruttura_vendi")
+        spacer()
+
+        subhead("Esempio 3 — Immobile a uso personale (no reddito)")
+        kv("Scenario", "Immobile della società ma non messo a reddito (es. ufficio uso interno).")
+        kv("Stato", "disponibile")
+        kv("Operazione", "reddito (lascia, anche se canone=0)")
+        kv("Locazione", "Lascia tutto vuoto (W-AD)")
+        spacer()
+
+        # ============= FAQ =============
+        section_header("❓ FAQ — Domande frequenti", "DC2626")
+        kv("Q: Posso aggiungere altre colonne al template?",
+           "No. Il parser legge SOLO le 38 colonne previste nell'ordine esatto. Colonne aggiuntive vengono ignorate e righe spostate causano errori.")
+        kv("Q: Posso riordinare le colonne?",
+           "No. L'ordine è fisso. Modifica solo i VALORI dalla riga 3 in poi.")
+        kv("Q: Cosa succede se sbaglio una data?",
+           "Il parser mostra un warning sulla riga e il sistema importa con data vuota. Puoi correggere dopo l'import nella scheda immobile.")
+        kv("Q: Cosa succede se carico un immobile già esistente?",
+           "Il sistema crea sempre un NUOVO record (nessun update automatico). Verifica prima di confermare l'import.")
+        kv("Q: I dropdown sono obbligatori?",
+           "No, ma usando i valori del dropdown eviti errori di battitura. Se scrivi un valore custom, viene accettato ma il filtraggio per Stato/Operazione potrebbe non funzionare.")
+        kv("Q: Posso lasciare vuoti i campi mutuo se ho il mutuo?",
+           "Sì ma è SCONSIGLIATO. Senza dati mutuo: il cash flow non considera la rata, il debito totale è sottostimato, i KPI di sostenibilità sono sbagliati.")
+        kv("Q: Excel mi sta cambiando il CAP 00184 in 184?",
+           "Imposta il formato cella della colonna E (CAP) come 'Testo' prima di scrivere. Oppure prefissa con un apostrofo: '00184.")
+        kv("Q: Errore «Template obsoleto rilevato»?",
+           "Hai un vecchio file da 24 colonne. Scarica il nuovo template, ricompila i dati e ricarica.")
+        kv("Q: L'AI estrae automaticamente i dati dal rogito PDF?",
+           "Sì, ma solo dopo l'import: vai in Documenti → carica rogito.pdf → click su «AI» → estrazione automatica e aggiornamento della scheda.")
+        spacer()
+
+        # ============= EFFETTI POST IMPORT =============
+        section_header("✨ Cosa succede automaticamente dopo l'import", "059669")
+        bullet("📅 SCADENZARIO: se hai compilato la rendita catastale, vengono generate automaticamente le scadenze IMU (16 giugno acconto, 16 dicembre saldo).")
+        bullet("📨 SOLLECITI: se hai compilato email e telefono dell'inquilino, partono i solleciti automatici T+5/15/30 giorni dalla scadenza canone (WhatsApp + Email pre-compilati).")
+        bullet("🏦 MUTUI: se hai compilato banca/residuo/rata, viene creato un record in /mutui con piano di ammortamento e tutti gli alert finanziari (LTV, sostenibilità).")
+        bullet("📊 KPI: tutti i KPI di portafoglio (rendimento medio netto, debito totale, cash flow) si aggiornano in tempo reale considerando le tue impostazioni fiscali (SRL/Privato).")
+        bullet("🗺️ MAPPA: l'indirizzo viene geocodificato via Nominatim e l'immobile compare sulla mappa colorato in base al rendimento.")
+        bullet("🎯 SCORE: ogni immobile riceve un Portfolio Score 0-100 basato su rendimento, cash flow, rischio, debito.")
+        bullet("📑 BANKER PACK: gli immobili nuovi entrano automaticamente nel Banker Pack PDF, pronto da presentare in banca.")
+        spacer()
+
+        # ============= SUPPORTO =============
+        section_header("🆘 Hai bisogno di aiuto?", "475569")
+        bullet("Consulta il manuale completo nell'app: Sidebar → Manuale → sezione «13. Centro Import».")
+        bullet("Per inserimenti complessi (multi-mutuo per immobile, contratti storici, lavori dettagliati) usa l'interfaccia diretta: Patrimonio → Nuovo immobile.")
+        bullet("Per assistenza all'import in massa di portafogli con 50+ immobili, contatta il supporto.")
+        spacer()
+
+        # Footer
+        ws2.merge_cells(start_row=row, start_column=2, end_row=row, end_column=3)
+        c = ws2.cell(row=row, column=2, value="Real Estate Control Room · Documento generato automaticamente · v2.0 — Template a 38 campi")
+        c.font = Font(italic=True, size=9, color="94A3B8")
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        ws2.row_dimensions[row].height = 20
+
 
         # === Sheet 3: Valori ammessi ===
         ws3 = wb.create_sheet("Valori ammessi")
