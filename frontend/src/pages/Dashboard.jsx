@@ -133,8 +133,9 @@ export default function Dashboard() {
     immobili_sfitti: realProps.length > 0 ? widgetCount.sfitti : EMPTY_KPI.immobili_sfitti,
   };
 
-  const top = [...properties].sort((a, b) => b.portfolio_score - a.portfolio_score)[0];
-  const worst = [...properties].sort((a, b) => a.portfolio_score - b.portfolio_score)[0];
+  const sortedByScore = [...realProps].filter(p => p.portfolio_score != null).sort((a, b) => b.portfolio_score - a.portfolio_score);
+  const top = sortedByScore[0] || null;
+  const worst = sortedByScore[sortedByScore.length - 1] || null;
 
   return (
     <Layout
@@ -292,25 +293,33 @@ export default function Dashboard() {
       {/* Widgets row */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         <SectionCard testId="widget-best" title="Miglior immobile" action={<Trophy size={16} className="text-[#B45309]" />}>
+          {top ? (
           <Link to={`/immobile/${top.id}`} className="block group">
-            <img src={top.img} alt={top.nome} className="w-full h-28 object-cover rounded-lg mb-3" />
+            {top.img && <img src={top.img} alt={top.nome} className="w-full h-28 object-cover rounded-lg mb-3" />}
             <div className="font-display font-semibold text-sm text-[#0F172A] group-hover:text-[#2563EB] transition-colors">{top.nome}</div>
             <div className="flex items-center justify-between text-xs mt-1.5">
               <span className="text-[#475569] flex items-center gap-1"><MapPin size={10}/> {top.citta}</span>
               <span className="text-[#059669] tabular font-medium">{top.rendimento_netto}% netto</span>
             </div>
           </Link>
+          ) : (
+            <div className="text-xs text-[#64748B] py-6 text-center">Nessun dato disponibile</div>
+          )}
         </SectionCard>
 
         <SectionCard testId="widget-worst" title="Da monitorare" action={<AlertTriangle size={16} className="text-[#DC2626]" />}>
+          {worst && worst.id !== top?.id ? (
           <Link to={`/immobile/${worst.id}`} className="block group">
-            <img src={worst.img} alt={worst.nome} className="w-full h-28 object-cover rounded-lg mb-3 grayscale-[40%]" />
+            {worst.img && <img src={worst.img} alt={worst.nome} className="w-full h-28 object-cover rounded-lg mb-3 grayscale-[40%]" />}
             <div className="font-display font-semibold text-sm text-[#0F172A] group-hover:text-[#2563EB] transition-colors">{worst.nome}</div>
             <div className="flex items-center justify-between text-xs mt-1.5">
               <span className="text-[#475569] flex items-center gap-1"><MapPin size={10}/> {worst.citta}</span>
               <StatusBadge stato={worst.stato} />
             </div>
           </Link>
+          ) : (
+            <div className="text-xs text-[#64748B] py-6 text-center">Nessun dato disponibile</div>
+          )}
         </SectionCard>
 
         <SectionCard testId="widget-alerts" title="Alert recenti" action={<Link to="/alert-center" className="text-xs text-[#2563EB] hover:underline">Vedi tutti</Link>}>
@@ -388,11 +397,11 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {properties.slice(0, 6).map((p) => (
+              {realProps.slice(0, 6).map((p) => (
                 <tr key={p.id} className="border-b border-[#E2E8F0] last:border-0 hover:bg-[#F8FAFC]/50 transition-colors">
                   <td className="px-2 py-3">
                     <Link to={`/immobile/${p.id}`} className="flex items-center gap-3 hover:text-[#2563EB]" data-testid={`row-property-${p.id}`}>
-                      <img src={p.img} alt="" className="w-10 h-10 rounded object-cover" />
+                      {p.img && <img src={p.img} alt="" className="w-10 h-10 rounded object-cover" />}
                       <div>
                         <div className="font-medium text-[#0F172A]">{p.nome}</div>
                         <div className="text-[11px] text-[#64748B]">{p.id} · {p.metratura} m²</div>
