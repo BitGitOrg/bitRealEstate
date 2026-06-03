@@ -21,11 +21,11 @@ import AIAutopilot from "@/pages/AIAutopilot";
 import AlertCenter from "@/pages/AlertCenter";
 import Documenti from "@/pages/Documenti";
 import Report from "@/pages/Report";
-import Impostazioni from "@/pages/Impostazioni";
-import Mappa from "@/pages/Mappa";
+import Impostazioni from "@/pages/Impostazioni";import Mappa from "@/pages/Mappa";
 import DealInbox from "@/pages/DealInbox";
 import Watchlists from "@/pages/Watchlists";
 import ImportCenter from "@/pages/ImportCenter";
+import ImpostazioniWrapper from "@/pages/ImpostazioniWrapper";
 import ForecastSimple from "@/pages/ForecastSimple";
 import Manuale from "@/pages/Manuale";
 import DataLineage from "@/pages/DataLineage";
@@ -63,11 +63,11 @@ function App() {
             <Route path="/alert-center" element={<Protected><AlertCenter /></Protected>} />
             <Route path="/documenti" element={<Protected><Documenti /></Protected>} />
             <Route path="/report" element={<Protected><Report /></Protected>} />
-            <Route path="/impostazioni" element={<Protected><Impostazioni /></Protected>} />
+            <Route path="/impostazioni" element={<Protected><ImpostazioniWrapper /></Protected>} />
             <Route path="/mappa" element={<Protected><Mappa /></Protected>} />
             <Route path="/deal-inbox" element={<Protected><DealInbox /></Protected>} />
             <Route path="/watchlists" element={<Protected><Watchlists /></Protected>} />
-            <Route path="/import" element={<Protected><ImportCenter /></Protected>} />
+            <Route path="/import" element={<Navigate to="/impostazioni?tab=import" replace />} />
             <Route path="/forecast" element={<Protected><ForecastSimple /></Protected>} />
             <Route path="/manuale" element={<Protected><Manuale /></Protected>} />
             <Route path="/data-lineage" element={<Protected><DataLineage /></Protected>} />

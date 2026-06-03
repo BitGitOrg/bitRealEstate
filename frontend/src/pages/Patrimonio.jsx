@@ -3,7 +3,7 @@ import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import { StatusBadge, DisdettaBadge } from "../components/StatusBadge";
 import { ScoreBadge } from "../components/ScoreBadge";
-import { properties, STATI, formatEur } from "../lib/demoData";
+import { STATI, formatEur } from "../lib/demoData";
 import { Search, Plus, LayoutGrid, List, MapPin, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../lib/auth";

@@ -16,10 +16,16 @@ import {
   ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis,
   CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell,
 } from "recharts";
-import {
-  portfolioKPI, properties, cashFlowMensile, ricaviCostiAnnuali,
-  distribuzioneTipologia, alerts, formatEur,
-} from "../lib/demoData";
+import { distribuzioneTipologia, formatEur } from "../lib/demoData";
+
+// KPI vuoti — usati solo se DB completamente vuoto (utente appena registrato)
+const EMPTY_KPI = {
+  valore_stimato_totale: 0, capitale_investito: 0, patrimonio_netto: 0,
+  ricavi_mensili: 0, cash_flow_mensile: 0, debito_residuo: 0,
+  liquidita_disponibile: 0, utile_anno: 0, rendimento_medio_netto: 0,
+  totale_immobili: 0, immobili_profittevoli: 0, immobili_sotto_target: 0,
+  immobili_sfitti: 0, leva_finanziaria: 0,
+};
 
 const tooltipStyle = {
   backgroundColor: "#FFFFFF",
@@ -95,36 +101,36 @@ export default function Dashboard() {
   const ce = latestBilancio?.conto_economico || {};
   const sp = latestBilancio?.stato_patrimoniale || {};
   // Rendimento medio netto: priorità a (1) bilancio, (2) media ponderata properties reali, (3) demo
-  let rend_medio_netto = portfolioKPI.rendimento_medio_netto;
+  let rend_medio_netto = EMPTY_KPI.rendimento_medio_netto;
   if (hasReal && sp.valore_immobili && ce.utile_netto) {
     rend_medio_netto = +((ce.utile_netto / sp.valore_immobili) * 100).toFixed(2);
   } else if (realKpiFromProps?.rendimento_medio_netto) {
     rend_medio_netto = realKpiFromProps.rendimento_medio_netto;
   }
   const kpi = hasReal ? {
-    valore_stimato_totale: sp.valore_immobili || portfolioKPI.valore_stimato_totale,
-    capitale_investito: (sp.valore_immobili || 0) - (sp.debito_mutui || 0) || portfolioKPI.capitale_investito,
-    ricavi_mensili: realKpiFromProps?.ricavi_mensili || Math.round((ce.ricavi_affitti || 0) / 12) || portfolioKPI.ricavi_mensili,
-    cash_flow_mensile: realKpiFromProps?.cash_flow_mensile || Math.round((ce.utile_netto || 0) / 12) || portfolioKPI.cash_flow_mensile,
-    debito_residuo: sp.debito_mutui || portfolioKPI.debito_residuo,
-    liquidita_disponibile: liquidity?.liquidita ?? (sp.liquidita || portfolioKPI.liquidita_disponibile),
-    utile_anno: ce.utile_netto || portfolioKPI.utile_anno,
+    valore_stimato_totale: sp.valore_immobili || EMPTY_KPI.valore_stimato_totale,
+    capitale_investito: (sp.valore_immobili || 0) - (sp.debito_mutui || 0) || EMPTY_KPI.capitale_investito,
+    ricavi_mensili: realKpiFromProps?.ricavi_mensili || Math.round((ce.ricavi_affitti || 0) / 12) || EMPTY_KPI.ricavi_mensili,
+    cash_flow_mensile: realKpiFromProps?.cash_flow_mensile || Math.round((ce.utile_netto || 0) / 12) || EMPTY_KPI.cash_flow_mensile,
+    debito_residuo: sp.debito_mutui || EMPTY_KPI.debito_residuo,
+    liquidita_disponibile: liquidity?.liquidita ?? (sp.liquidita || EMPTY_KPI.liquidita_disponibile),
+    utile_anno: ce.utile_netto || EMPTY_KPI.utile_anno,
     patrimonio_netto: sp.patrimonio_netto || 0,
     rendimento_medio_netto: rend_medio_netto,
-    totale_immobili: realKpiFromProps?.n_props || portfolioKPI.totale_immobili,
+    totale_immobili: realKpiFromProps?.n_props || EMPTY_KPI.totale_immobili,
     immobili_profittevoli: widgetCount.profit,
     immobili_sotto_target: widgetCount.sottoTarget,
     immobili_sfitti: widgetCount.sfitti,
   } : {
-    ...portfolioKPI,
-    liquidita_disponibile: liquidity?.liquidita ?? portfolioKPI.liquidita_disponibile,
+    ...EMPTY_KPI,
+    liquidita_disponibile: liquidity?.liquidita ?? EMPTY_KPI.liquidita_disponibile,
     rendimento_medio_netto: rend_medio_netto,
-    ricavi_mensili: realKpiFromProps?.ricavi_mensili || portfolioKPI.ricavi_mensili,
-    cash_flow_mensile: realKpiFromProps?.cash_flow_mensile || portfolioKPI.cash_flow_mensile,
-    totale_immobili: realKpiFromProps?.n_props || portfolioKPI.totale_immobili,
-    immobili_profittevoli: realProps.length > 0 ? widgetCount.profit : portfolioKPI.immobili_profittevoli,
-    immobili_sotto_target: realProps.length > 0 ? widgetCount.sottoTarget : portfolioKPI.immobili_sotto_target,
-    immobili_sfitti: realProps.length > 0 ? widgetCount.sfitti : portfolioKPI.immobili_sfitti,
+    ricavi_mensili: realKpiFromProps?.ricavi_mensili || EMPTY_KPI.ricavi_mensili,
+    cash_flow_mensile: realKpiFromProps?.cash_flow_mensile || EMPTY_KPI.cash_flow_mensile,
+    totale_immobili: realKpiFromProps?.n_props || EMPTY_KPI.totale_immobili,
+    immobili_profittevoli: realProps.length > 0 ? widgetCount.profit : EMPTY_KPI.immobili_profittevoli,
+    immobili_sotto_target: realProps.length > 0 ? widgetCount.sottoTarget : EMPTY_KPI.immobili_sotto_target,
+    immobili_sfitti: realProps.length > 0 ? widgetCount.sfitti : EMPTY_KPI.immobili_sfitti,
   };
 
   const top = [...properties].sort((a, b) => b.portfolio_score - a.portfolio_score)[0];
@@ -216,7 +222,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
         <SectionCard testId="chart-cashflow" title="Andamento Cash Flow" subtitle={bankCashflow ? `${bankCashflow.length} mesi · da movimenti bancari reali` : "Ultimi 12 mesi · dati demo"} className="xl:col-span-2">
           <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={bankCashflow || cashFlowMensile} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+            <AreaChart data={bankCashflow || []} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#0066FF" stopOpacity={0.4} />
@@ -255,7 +261,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
         <SectionCard testId="chart-ricavi-costi" title="Ricavi vs Costi" subtitle={bankCashflow ? `${bankCashflow.length} mesi · da movimenti bancari reali` : "Confronto mensile · dati demo"} className="xl:col-span-2">
           <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={bankCashflow ? bankCashflow.map(b => ({mese: b.mese, ricavi: b.incassi, costi: b.uscite})) : ricaviCostiAnnuali} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+            <BarChart data={bankCashflow ? bankCashflow.map(b => ({mese: b.mese, ricavi: b.incassi, costi: b.uscite})) : []} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
               <XAxis dataKey="mese" stroke="#64748B" fontSize={11} axisLine={false} tickLine={false} />
               <YAxis stroke="#64748B" fontSize={11} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
@@ -309,7 +315,7 @@ export default function Dashboard() {
 
         <SectionCard testId="widget-alerts" title="Alert recenti" action={<Link to="/alert-center" className="text-xs text-[#2563EB] hover:underline">Vedi tutti</Link>}>
           <div className="space-y-2.5">
-            {alerts.slice(0, 3).map((a) => (
+            {[].slice(0, 3).map((a) => (
               <div key={a.id} className="flex items-start gap-2.5 pb-2.5 border-b border-[#E2E8F0] last:border-0 last:pb-0">
                 <SeverityBadge severity={a.severity} />
                 <div className="flex-1 min-w-0">

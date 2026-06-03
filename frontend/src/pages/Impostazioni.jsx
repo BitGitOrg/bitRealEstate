@@ -24,7 +24,7 @@ const Field = ({ label, value, onChange, type = "text", suffix }) => (
   </label>
 );
 
-export default function Impostazioni() {
+export default function Impostazioni({ embedded = false }) {
   const { user } = useAuth();
   const fileRef = useRef(null);
   const [loading, setLoading] = useState(true);
@@ -199,21 +199,20 @@ export default function Impostazioni() {
 
   const logoSrc = logoBase64 && logoMime ? `data:${logoMime};base64,${logoBase64}` : null;
 
-  return (
-    <Layout
-      title="Impostazioni"
-      subtitle="Parametri società, AI e branding dei report"
-      actions={
-        <button
-          data-testid="settings-save"
-          onClick={save}
-          disabled={saving || loading}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0066FF] hover:bg-[#2563EB] disabled:opacity-50 text-white text-sm font-medium transition-colors"
-        >
-          <Save size={14} /> {saving ? "Salvataggio…" : "Salva modifiche"}
-        </button>
-      }
+  const saveBtn = (
+    <button
+      data-testid="settings-save"
+      onClick={save}
+      disabled={saving || loading}
+      className="inline-flex items-center gap-2 px-4 py-2 bg-[#0066FF] hover:bg-[#2563EB] disabled:opacity-50 text-white text-sm font-medium transition-colors"
     >
+      <Save size={14} /> {saving ? "Salvataggio…" : "Salva modifiche"}
+    </button>
+  );
+
+  const content = (
+    <>
+      {embedded && <div className="flex justify-end mb-3">{saveBtn}</div>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <SectionCard testId="settings-azienda" title="Anagrafica società" action={<Building2 size={16} className="text-[#2563EB]" />}>
           <div className="space-y-3">
@@ -484,6 +483,18 @@ export default function Impostazioni() {
           </div>
         </div>
       </SectionCard>
+    </>
+  );
+
+  if (embedded) return content;
+
+  return (
+    <Layout
+      title="Impostazioni"
+      subtitle="Parametri società, AI e branding dei report"
+      actions={saveBtn}
+    >
+      {content}
     </Layout>
   );
 }

@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
-import { documenti as demoDocs, properties as demoProps } from "../lib/demoData";
 import { apiClient } from "../lib/auth";
 import { toast } from "sonner";
 import { FileText, Upload, Download, Search, Sparkles, X, Trash2, Loader2, FileUp, AlertTriangle, CheckCircle2 } from "lucide-react";
@@ -26,8 +25,8 @@ export default function Documenti() {
     apiClient().get("/properties").then(r => setRealProps(r.data || [])).catch(() => {});
   }, []);
 
-  const allDocs = realDocs.length > 0 ? realDocs : demoDocs;
-  const allProps = realProps.length > 0 ? realProps : demoProps;
+  const allDocs = realDocs;
+  const allProps = realProps;
   const filtered = allDocs.filter(d =>
     (tipo === "Tutti" || d.tipo === tipo) &&
     (q === "" || (d.nome || "").toLowerCase().includes(q.toLowerCase()))

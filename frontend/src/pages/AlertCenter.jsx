@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import { SeverityBadge } from "../components/StatusBadge";
-import { alerts as demoAlerts, properties as demoProps } from "../lib/demoData";
 import { apiClient } from "../lib/auth";
 import { toast } from "sonner";
 import { AlertTriangle, FileWarning, Lightbulb, Bell, ChevronRight, RefreshCw, X, Loader2, Clock } from "lucide-react";
@@ -55,8 +54,8 @@ export default function AlertCenter() {
   };
 
   // Merge: alert reali (priorità) + alert demo (fallback). Mai entrambi.
-  const items = realAlerts.length > 0 ? realAlerts : demoAlerts;
-  const allProps = realProps.length > 0 ? realProps : demoProps;
+  const items = realAlerts;
+  const allProps = realProps;
 
   const filtered = items.filter(a => tipo === "tutti" || a.tipo === tipo);
   const counts = Object.keys(TIPI).reduce((acc, k) => ({ ...acc, [k]: items.filter(a => a.tipo === k).length }), {});

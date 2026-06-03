@@ -531,3 +531,9 @@ Mockup di webapp "Real Estate Portfolio Control Room + AI Autopilot" in italiano
 ### Test reale (account CEO)
 PRIMA: Anno 0 cash_flow=0, utile=0 (sempre)
 DOPO: Anno 0 cash_flow=€23.358, utile=€23.358 (corretto)
+
+## 2026-06-03 — Cleanup demo + Impostazioni unificate + DataLineage interattivo + Tassazione Forecast da Settings
+- Forecast ora legge **tassazione_pct** da `settings.tipo_societa + regime_affitti` (priorità modifier > scenario override > settings > 26% default). Espone `summary.assumptions` con `tax_source` e `tasso_source` per trasparenza.
+- Eliminati fallback demo da: Dashboard (portfolioKPI/cashFlowMensile/ricaviCostiAnnuali/alerts), AlertCenter, Documenti, Operazioni, Patrimonio, SchedaImmobile (getProperty). Ora se DB vuoto → mostrato 0/array vuoti, nessun seed visibile.
+- `ImpostazioniWrapper` con 2 tab: Configurazione + Centro Import. Route `/impostazioni?tab=import` apre direttamente import. Voce sidebar "Centro Import" rimossa (rimane solo Impostazioni).
+- `DataLineage` interattivo: ogni pagina ha campo `route`, bottone "Apri pagina" nell'header e righe tabella cliccabili → naviga direttamente alla pagina target.

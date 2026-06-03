@@ -639,21 +639,25 @@ function StoricoTab() {
   );
 }
 
-export default function ImportCenter() {
+export default function ImportCenter({ embedded = false }) {
+  const tabs = (
+    <Tabs defaultValue="immobili" className="w-full">
+      <TabsList data-testid="import-tabs">
+        <TabsTrigger value="immobili" data-testid="tab-import-immobili"><FileSpreadsheet size={14} className="mr-2"/> Immobili</TabsTrigger>
+        <TabsTrigger value="bilanci" data-testid="tab-import-bilanci"><Sparkles size={14} className="mr-2"/> Bilanci AI</TabsTrigger>
+        <TabsTrigger value="storico" data-testid="tab-import-storico"><FileText size={14} className="mr-2"/> Storico (MoM)</TabsTrigger>
+        <TabsTrigger value="banca" data-testid="tab-import-banca"><Banknote size={14} className="mr-2"/> Estratto conto</TabsTrigger>
+      </TabsList>
+      <TabsContent value="immobili" className="mt-4"><ImmobiliTab /></TabsContent>
+      <TabsContent value="bilanci" className="mt-4"><BilanciTab /></TabsContent>
+      <TabsContent value="storico" className="mt-4"><StoricoTab /></TabsContent>
+      <TabsContent value="banca" className="mt-4"><BancaTab /></TabsContent>
+    </Tabs>
+  );
+  if (embedded) return tabs;
   return (
     <Layout title="Centro Import" subtitle="Carica anagrafica immobili, bilanci dal commercialista, estratti conto bancari">
-      <Tabs defaultValue="immobili" className="w-full">
-        <TabsList data-testid="import-tabs">
-          <TabsTrigger value="immobili" data-testid="tab-import-immobili"><FileSpreadsheet size={14} className="mr-2"/> Immobili</TabsTrigger>
-          <TabsTrigger value="bilanci" data-testid="tab-import-bilanci"><Sparkles size={14} className="mr-2"/> Bilanci AI</TabsTrigger>
-          <TabsTrigger value="storico" data-testid="tab-import-storico"><FileText size={14} className="mr-2"/> Storico (MoM)</TabsTrigger>
-          <TabsTrigger value="banca" data-testid="tab-import-banca"><Banknote size={14} className="mr-2"/> Estratto conto</TabsTrigger>
-        </TabsList>
-        <TabsContent value="immobili" className="mt-4"><ImmobiliTab /></TabsContent>
-        <TabsContent value="bilanci" className="mt-4"><BilanciTab /></TabsContent>
-        <TabsContent value="storico" className="mt-4"><StoricoTab /></TabsContent>
-        <TabsContent value="banca" className="mt-4"><BancaTab /></TabsContent>
-      </Tabs>
+      {tabs}
     </Layout>
   );
 }

@@ -5,7 +5,7 @@ import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import { StatusBadge, DisdettaBadge } from "../components/StatusBadge";
 import { ScoreGauge } from "../components/ScoreGauge";
-import { getProperty, formatEur } from "../lib/demoData";
+import { formatEur } from "../lib/demoData";
 import { apiClient } from "../lib/auth";
 import { ArrowLeft, MapPin, FileText, Download, Calendar, Save, User, Home, Loader2, AlertTriangle, Bell, Clock, X, LogOut, KeyRound, History, Banknote, Edit2, Upload, Trash2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
@@ -92,7 +92,7 @@ export default function SchedaImmobile() {
     }
   };
 
-  const demoP = getProperty(id);
+  const demoP = null;
   const p = remoteP || demoP;
   if (loading) return <Layout title="Caricamento…"><div className="text-[#64748B]">Sto cercando l'immobile…</div></Layout>;
   if (!p) return <Layout title="Immobile non trovato"><Link to="/patrimonio" className="text-[#2563EB]">← Torna al patrimonio</Link></Layout>;

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import { StatusBadge } from "../components/StatusBadge";
-import { properties as demoProperties, formatEur } from "../lib/demoData";
+import { formatEur } from "../lib/demoData";
 import { apiClient } from "../lib/auth";
 import { Home, ShoppingBag, Hammer, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -23,7 +23,7 @@ export default function Operazioni() {
   useEffect(() => { load(); }, []);
 
   // Se ho properties reali nel DB → uso solo quelle. Altrimenti fallback demo.
-  const allProperties = realProps.length > 0 ? realProps : demoProperties;
+  const allProperties = realProps.length > 0 ? realProps : [];
   const grouped = Object.keys(OPERAZIONI).map(k => ({
     key: k, meta: OPERAZIONI[k], items: allProperties.filter(p => p.operazione === k),
   }));

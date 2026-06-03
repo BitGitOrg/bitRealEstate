@@ -39,7 +39,6 @@ const GROUPS = [
     { to: "/report", label: "Report Direzionali", icon: FileBarChart },
   ]},
   { name: "Sistema", items: [
-    { to: "/import", label: "Centro Import", icon: Database, accent: true },
     { to: "/documenti", label: "Documenti", icon: FolderArchive },
     { to: "/manuale", label: "Manuale d'uso", icon: BookOpen },
     { to: "/data-lineage", label: "Data Lineage", icon: GitBranch },

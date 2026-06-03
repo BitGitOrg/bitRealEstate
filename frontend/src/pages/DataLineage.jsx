@@ -2,9 +2,10 @@ import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import {
   Database, Calculator, FileText, Settings as SettingsIcon, Building2,
-  Receipt, Wallet, TrendingUp, Banknote, Activity, ChevronRight, AlertCircle, Info,
+  Receipt, Wallet, TrendingUp, Banknote, Activity, ChevronRight, AlertCircle, Info, ExternalLink,
 } from "lucide-react";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 /**
  * Data Lineage: per ogni pagina/KPI mostriamo
@@ -17,6 +18,7 @@ import { useState } from "react";
 const PAGES = [
   {
     id: "dashboard",
+    route: "/dashboard",
     title: "Dashboard",
     icon: Activity,
     kpis: [
@@ -100,6 +102,7 @@ const PAGES = [
   },
   {
     id: "patrimonio",
+    route: "/patrimonio",
     title: "Patrimonio",
     icon: Building2,
     kpis: [
@@ -143,6 +146,7 @@ const PAGES = [
   },
   {
     id: "scheda",
+    route: "/patrimonio",
     title: "Scheda Immobile",
     icon: FileText,
     kpis: [
@@ -192,6 +196,7 @@ const PAGES = [
   },
   {
     id: "affitti",
+    route: "/affitti",
     title: "Affitti & Locazioni",
     icon: Wallet,
     kpis: [
@@ -235,6 +240,7 @@ const PAGES = [
   },
   {
     id: "vendite",
+    route: "/vendite",
     title: "Vendite & Rivendite",
     icon: TrendingUp,
     kpis: [
@@ -266,6 +272,7 @@ const PAGES = [
   },
   {
     id: "lavori",
+    route: "/lavori",
     title: "Lavori & Ristrutturazioni",
     icon: Activity,
     kpis: [
@@ -297,6 +304,7 @@ const PAGES = [
   },
   {
     id: "costi-ricavi",
+    route: "/costi-ricavi",
     title: "Costi & Ricavi",
     icon: Receipt,
     kpis: [
@@ -322,6 +330,7 @@ const PAGES = [
   },
   {
     id: "cashflow",
+    route: "/cash-flow",
     title: "Cash Flow",
     icon: Wallet,
     kpis: [
@@ -353,6 +362,7 @@ const PAGES = [
   },
   {
     id: "kpi",
+    route: "/kpi",
     title: "KPI & Rendimenti",
     icon: TrendingUp,
     kpis: [
@@ -384,6 +394,7 @@ const PAGES = [
   },
   {
     id: "mutui",
+    route: "/mutui",
     title: "Mutui & Finanziamenti",
     icon: Banknote,
     kpis: [
@@ -409,6 +420,7 @@ const PAGES = [
   },
   {
     id: "forecast",
+    route: "/forecast",
     title: "Forecast (Simulatore Scenari)",
     icon: Calculator,
     kpis: [
@@ -464,6 +476,7 @@ const PAGES = [
   },
   {
     id: "pipeline",
+    route: "/pipeline",
     title: "Pipeline Acquisizioni",
     icon: Building2,
     kpis: [
@@ -507,7 +520,12 @@ const SETTINGS_USED = [
 
 export default function DataLineage() {
   const [active, setActive] = useState("dashboard");
+  const navigate = useNavigate();
   const page = PAGES.find(p => p.id === active);
+
+  const goTo = (route) => {
+    if (route) navigate(route);
+  };
 
   return (
     <Layout title="Data Lineage" subtitle="Da dove arriva ogni numero che vedi nell'app">
@@ -545,11 +563,24 @@ export default function DataLineage() {
             testId={`lineage-detail-${page.id}`}
             title={page.title}
             subtitle={`${page.kpis.length} elementi tracciati`}
-            action={<page.icon size={18} className="text-[#0066FF]" />}
+            action={
+              <div className="flex items-center gap-2">
+                {page.route && (
+                  <button
+                    onClick={() => goTo(page.route)}
+                    data-testid={`lineage-open-${page.id}`}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-[#0066FF] hover:bg-[rgba(0,102,255,0.08)] border border-[#0066FF]"
+                  >
+                    <ExternalLink size={11}/> Apri pagina
+                  </button>
+                )}
+                <page.icon size={18} className="text-[#0066FF]" />
+              </div>
+            }
           >
             <div className="bg-[#EEF4FF] border border-[#C7D7FE] p-3 text-[11px] text-[#1E3A8A] flex gap-2 mb-4">
               <Info size={14} className="shrink-0 mt-0.5" />
-              <div>Ogni numero che vedi nelle pagine dell'app è tracciabile. Qui sotto la formula esatta, l'endpoint API che lo restituisce e la collection MongoDB di origine.</div>
+              <div>Ogni numero che vedi nelle pagine dell'app è tracciabile. Clicca una riga per <strong>aprire la pagina</strong> ed essere portato direttamente al KPI corrispondente.</div>
             </div>
 
             <div className="overflow-x-auto">
@@ -559,11 +590,17 @@ export default function DataLineage() {
                     <th className="py-2 pr-3 w-[180px]">KPI / Grafico</th>
                     <th className="py-2 pr-3">Formula</th>
                     <th className="py-2 pr-3 w-[240px]">Endpoint / Collection</th>
+                    <th className="py-2 w-[60px]"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {page.kpis.map((k, i) => (
-                    <tr key={i} className="border-b border-[#E2E8F0] last:border-0 hover:bg-[#F8FAFC]" data-testid={`lineage-kpi-${i}`}>
+                    <tr
+                      key={i}
+                      onClick={() => goTo(page.route)}
+                      className={`border-b border-[#E2E8F0] last:border-0 hover:bg-[#F0F7FF] transition-colors group ${page.route ? "cursor-pointer" : ""}`}
+                      data-testid={`lineage-kpi-${i}`}
+                    >
                       <td className="py-3 pr-3 font-medium text-[#0F172A] align-top">{k.nome}</td>
                       <td className="py-3 pr-3 text-[#475569] align-top">
                         <div className="font-mono text-[11px] bg-[#F8FAFC] p-1.5 border border-[#E2E8F0] leading-relaxed">{k.formula}</div>
@@ -577,6 +614,11 @@ export default function DataLineage() {
                       <td className="py-3 pr-3 align-top">
                         <div className="text-[10px] font-mono text-[#0066FF] mb-0.5">{k.endpoint}</div>
                         <div className="text-[10px] text-[#64748B]">📂 {k.collection}</div>
+                      </td>
+                      <td className="py-3 text-right align-top">
+                        {page.route && (
+                          <ExternalLink size={14} className="text-[#94A3B8] group-hover:text-[#0066FF] inline-block" />
+                        )}
                       </td>
                     </tr>
                   ))}
