@@ -28,6 +28,7 @@ import ForecastSimple from "@/pages/ForecastSimple";
 import Notifiche from "@/pages/Notifiche";
 import Scadenzario from "@/pages/Scadenzario";
 import Pipeline from "@/pages/Pipeline";
+import DealShortLink from "@/pages/DealShortLink";
 
 const Protected = ({ children }) => {
   const { user, loading } = useAuth();
@@ -70,6 +71,7 @@ function App() {
             <Route path="/notifiche" element={<Protected><Notifiche /></Protected>} />
             <Route path="/scadenzario" element={<Protected><Scadenzario /></Protected>} />
             <Route path="/pipeline" element={<Protected><Pipeline /></Protected>} />
+            <Route path="/d/:short" element={<Protected><DealShortLink /></Protected>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
           <Toaster position="top-right" theme="dark" />

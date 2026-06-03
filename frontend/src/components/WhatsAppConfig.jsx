@@ -291,6 +291,12 @@ export default function WhatsAppConfig() {
               <div className="text-[11px] text-[#64748B] mt-0.5">Copia il template e condividilo con i collaboratori sul campo. Funzionano anche scrivendo al bot.</div>
             </div>
           </div>
+          <div className="text-[10.5px] bg-[#EEF4FF] border border-[#C7D7FE] text-[#1E3A8A] p-2 leading-relaxed flex gap-1.5">
+            <ExternalLink size={11} className="shrink-0 mt-0.5" />
+            <span>
+              Ogni risposta del bot per <strong>nuovi deal</strong> e <strong>aggiornamenti</strong> include un <strong>short-link</strong> <code className="bg-white border border-[#C7D7FE] px-1 py-0.5 text-[10px] font-mono">/d/&lt;codice&gt;</code> che apre direttamente la scheda deal sull'app — comodissimo su mobile.
+            </span>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {[
               {

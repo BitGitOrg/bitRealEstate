@@ -132,6 +132,19 @@ def _twiml_reply(message: str) -> Response:
     return Response(content=body, media_type="application/xml")
 
 
+def _deal_short(deal_id: str) -> str:
+    """DEAL-AB1234 → AB1234 (per short URL)."""
+    if not deal_id:
+        return ""
+    return deal_id.split("-", 1)[-1].upper()
+
+
+def _deep_link(base_url: str, deal_id: str) -> str:
+    """Costruisce short URL es: https://app.tld/d/AB1234"""
+    s = _deal_short(deal_id)
+    return f"{base_url.rstrip('/')}/d/{s}" if s and base_url else ""
+
+
 def _help_text() -> str:
     return (
         "🤖 *Control Room — comandi WhatsApp*\n"
@@ -156,14 +169,14 @@ def _help_text() -> str:
     )
 
 
-async def _stats_text(db, user_id: str) -> str:
+async def _stats_text(db, user_id: str, base_url: str = "") -> str:
     try:
         from datetime import timedelta
         now = datetime.now(timezone.utc)
         week_ago = (now - timedelta(days=7)).isoformat()
         all_open = await db.deals.find(
             {"user_id": user_id, "is_pipeline": True, "convertito": {"$ne": True}},
-            {"_id": 0, "stage": 1, "ai_deal_score": 1, "created_at": 1, "prezzo_corrente": 1}
+            {"_id": 0, "id": 1, "stage": 1, "ai_deal_score": 1, "created_at": 1, "prezzo_corrente": 1}
         ).to_list(500)
         n_total = len(all_open)
         n_new = sum(1 for d in all_open if (d.get("created_at") or "") >= week_ago)
@@ -181,8 +194,10 @@ async def _stats_text(db, user_id: str) -> str:
             f"Valore complessivo: *{tot_eur:,.0f}€*".replace(",", "."),
         ]
         if max_score_d and max_score_d.get("ai_deal_score"):
+            link = _deep_link(base_url, max_score_d.get("id"))
+            link_s = f"\n   {link}" if link else ""
             lines.append(
-                f"⭐ Top: {max_score_d['id']} · score {max_score_d.get('ai_deal_score')}/100"
+                f"⭐ Top: {max_score_d['id']} · score {max_score_d.get('ai_deal_score')}/100{link_s}"
             )
         return "\n".join(lines)
     except Exception as e:
@@ -190,7 +205,7 @@ async def _stats_text(db, user_id: str) -> str:
         return "Impossibile generare le statistiche al momento."
 
 
-async def _list_text(db, user_id: str) -> str:
+async def _list_text(db, user_id: str, base_url: str = "") -> str:
     try:
         items = await db.deals.find(
             {"user_id": user_id, "is_pipeline": True, "convertito": {"$ne": True}},
@@ -203,9 +218,11 @@ async def _list_text(db, user_id: str) -> str:
             score = d.get("ai_deal_score")
             score_s = f" · score {score}/100" if score is not None else ""
             prezzo = float(d.get("prezzo_corrente") or d.get("prezzo_richiesto") or 0)
+            link = _deep_link(base_url, d.get("id"))
+            link_s = f"\n   🔗 {link}" if link else ""
             out.append(
                 f"• *{d.get('id')}* {d.get('indirizzo','')[:30]} ({d.get('citta','')[:20]}) · "
-                f"{prezzo:,.0f}€".replace(",", ".") + f" · {d.get('stage','')}{score_s}"
+                f"{prezzo:,.0f}€".replace(",", ".") + f" · {d.get('stage','')}{score_s}{link_s}"
             )
         return "\n".join(out)
     except Exception as e:
@@ -376,6 +393,7 @@ def make_whatsapp_router(db, current_user, llm_key: Optional[str] = None):
 
         user_id = cfg["user_id"]
         low = body.lower().strip()
+        base_url = _public_base(request)
 
         # ── Comandi rapidi (no LLM, risposta immediata) ──────────────────
         if low in ("help", "aiuto", "menu", "comandi", "?"):
@@ -383,12 +401,12 @@ def make_whatsapp_router(db, current_user, llm_key: Optional[str] = None):
             return _twiml_reply(_help_text())
 
         if low in ("stats", "statistiche", "stats oggi", "statistiche oggi"):
-            txt = await _stats_text(db, user_id)
+            txt = await _stats_text(db, user_id, base_url)
             await _touch_inbound(db, webhook_token, from_phone, body, "stats")
             return _twiml_reply(txt)
 
         if low in ("lista", "list", "deal aperti", "deals", "pipeline"):
-            txt = await _list_text(db, user_id)
+            txt = await _list_text(db, user_id, base_url)
             await _touch_inbound(db, webhook_token, from_phone, body, "lista")
             return _twiml_reply(txt)
 
@@ -461,11 +479,13 @@ def make_whatsapp_router(db, current_user, llm_key: Optional[str] = None):
                     giud = ai.get("ai_giudizio", "")
                     pmax = ai.get("ai_prezzo_max")
                     pmax_s = f"\n💰 Prezzo max consigliato: {pmax:,.0f}€".replace(",", ".") if pmax else ""
+                    link = _deep_link(base_url, deal["id"])
+                    link_s = f"\n🔗 Apri scheda: {link}" if link else ""
                     result_text = (
                         f"✅ Deal creato *{deal['id']}*\n"
                         f"{indirizzo}{' · ' + (parsed.get('citta') or '') if parsed.get('citta') else ''}\n"
                         f"Prezzo: {float(prezzo):,.0f}€".replace(",", ".") + "\n"
-                        f"🎯 AI Score: {score}/100 ({giud}){pmax_s}"
+                        f"🎯 AI Score: {score}/100 ({giud}){pmax_s}{link_s}"
                     )
 
             elif azione == "update_deal":
@@ -512,6 +532,9 @@ def make_whatsapp_router(db, current_user, llm_key: Optional[str] = None):
                     if updates.get("prezzo_corrente"):
                         parts.append(f"Prezzo corrente: {updates['prezzo_corrente']:,.0f}€".replace(",", "."))
                     parts.append("Nota aggiunta alla timeline.")
+                    link = _deep_link(base_url, deal["id"])
+                    if link:
+                        parts.append(f"🔗 {link}")
                     result_text = "\n".join(parts)
 
             elif azione == "note":
@@ -535,7 +558,9 @@ def make_whatsapp_router(db, current_user, llm_key: Optional[str] = None):
                         {"id": deal["id"], "user_id": user_id},
                         {"$push": {"timeline": evento}}
                     )
-                    result_text = f"📝 Nota aggiunta a *{deal['id']}*."
+                    link = _deep_link(base_url, deal["id"])
+                    link_s = f"\n🔗 {link}" if link else ""
+                    result_text = f"📝 Nota aggiunta a *{deal['id']}*.{link_s}"
 
             else:
                 result_text = (

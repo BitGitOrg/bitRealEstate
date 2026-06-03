@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import { apiClient } from "../lib/auth";
@@ -40,6 +41,8 @@ export default function Pipeline() {
   const [importing, setImporting] = useState(false);
   const [syncingEmail, setSyncingEmail] = useState(false);
   const [selected, setSelected] = useState(null);
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const load = async () => {
     setLoading(true);
@@ -54,6 +57,33 @@ export default function Pipeline() {
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
+
+  // Deep-link da WhatsApp: /pipeline?deal=DEAL-XXXXXX
+  useEffect(() => {
+    if (loading) return;
+    const sp = new URLSearchParams(location.search);
+    const deal = sp.get("deal");
+    if (!deal) return;
+    const exists = Object.values(board).some(arr => (arr || []).some(d => d.id === deal));
+    if (!exists) {
+      toast.error(`Deal ${deal} non trovato. Forse è già stato convertito in immobile.`);
+      navigate("/pipeline", { replace: true });
+      return;
+    }
+    // Scrolla la card + apri il modal di dettaglio
+    setTimeout(() => {
+      const el = document.querySelector(`[data-testid="pipe-card-${deal}"]`);
+      if (el) {
+        try { el.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" }); } catch (_) { el.scrollIntoView(); }
+        el.classList.add("kpi-highlight");
+        setTimeout(() => el.classList.remove("kpi-highlight"), 3200);
+      }
+      setSelected(deal);
+    }, 250);
+    // Pulisce l'URL per non riaprire il modal a ogni reload del board
+    navigate("/pipeline", { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, location.search]);
 
   return (
     <Layout
