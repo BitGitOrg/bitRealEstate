@@ -761,33 +761,35 @@ function InfoPopover({ info, color = "#0F172A" }) {
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
         onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
-        className="opacity-50 hover:opacity-100 transition-opacity p-0.5"
-        aria-label="Spiegazione"
+        className="w-4 h-4 rounded-full bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#64748B] hover:text-[#2563EB] flex items-center justify-center transition-colors"
+        aria-label={`Spiegazione ${info.title || ""}`}
       >
-        <Info size={12} style={{ color }} />
+        <Info size={10} />
       </button>
       {open && (
         <div
-          className="absolute right-0 top-full mt-1.5 z-50 w-[300px] bg-[#0F172A] text-white p-3 shadow-xl border border-[#1E293B] text-left animate-in fade-in zoom-in-95 duration-150"
+          role="tooltip"
+          className="absolute right-0 top-full mt-2 z-50 w-[300px] bg-white text-[#0F172A] rounded-lg shadow-[0_8px_24px_rgba(15,23,42,0.12)] border border-[#E2E8F0] p-3 text-left"
           onMouseEnter={() => setOpen(true)}
           onMouseLeave={() => setOpen(false)}
           data-testid="kpi-info-popover"
         >
-          <div className="text-[12px] font-semibold text-white">{info.title}</div>
+          <div className="absolute -top-1.5 right-3 w-2.5 h-2.5 bg-white border-t border-l border-[#E2E8F0] rotate-45" />
+          <div className="font-semibold text-[10px] uppercase tracking-wider text-[#64748B]">{info.title}</div>
           {info.what && (
-            <div className="text-[10.5px] text-[#CBD5E1] mt-1.5 leading-snug">{info.what}</div>
+            <div className="text-[11px] text-[#334155] mt-1.5 leading-relaxed">{info.what}</div>
           )}
           {info.formula && (
-            <div className="mt-2 bg-[#1E293B] border border-[#334155] px-2 py-1.5 font-mono text-[10px] text-[#7DD3FC] leading-snug whitespace-pre-wrap break-words">
+            <div className="mt-2 bg-[#F8FAFC] border border-[#E2E8F0] px-2 py-1.5 font-mono text-[10px] text-[#1E40AF] leading-snug whitespace-pre-wrap break-words">
               {info.formula}
             </div>
           )}
           {info.vals && info.vals.length > 0 && (
-            <div className="mt-2 space-y-0.5">
+            <div className="mt-2 space-y-0.5 pt-2 border-t border-[#F1F5F9]">
               {info.vals.map(([k, v], i) => (
                 <div key={i} className="flex items-center justify-between gap-3 text-[10.5px]">
-                  <span className="text-[#94A3B8]">{k}</span>
-                  <span className="text-white font-semibold tabular text-right">{v}</span>
+                  <span className="text-[#64748B]">{k}</span>
+                  <span className="text-[#0F172A] font-semibold tabular text-right">{v}</span>
                 </div>
               ))}
             </div>
