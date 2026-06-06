@@ -537,3 +537,14 @@ DOPO: Anno 0 cash_flow=€23.358, utile=€23.358 (corretto)
 - Eliminati fallback demo da: Dashboard (portfolioKPI/cashFlowMensile/ricaviCostiAnnuali/alerts), AlertCenter, Documenti, Operazioni, Patrimonio, SchedaImmobile (getProperty). Ora se DB vuoto → mostrato 0/array vuoti, nessun seed visibile.
 - `ImpostazioniWrapper` con 2 tab: Configurazione + Centro Import. Route `/impostazioni?tab=import` apre direttamente import. Voce sidebar "Centro Import" rimossa (rimane solo Impostazioni).
 - `DataLineage` interattivo: ogni pagina ha campo `route`, bottone "Apri pagina" nell'header e righe tabella cliccabili → naviga direttamente alla pagina target.
+
+## 2026-02 — Fix P0 Mobile Tabs + Service Worker network-first
+- **Problema**: utente su iPhone PWA segnalava 3° tab non visibile in `/forecast` e tab mancanti in `/impostazioni`. Causa duplice: (a) Service Worker v3 cachava JS bundle in cache-first, impedendo aggiornamenti UI; (b) la `TabsList` Shadcn di default era `inline-flex` e non garantiva spazio ai 3 tab in 390px.
+- **Fix CSS**: confermato `className="grid w-full grid-cols-3 h-auto"` in `ForecastWrapper.jsx` e `grid grid-cols-4` in `ImpostazioniWrapper.jsx` (utente ha esplicitamente scelto grid-cols invece di scroll orizzontale).
+- **Fix Service Worker**: `CACHE_NAME` bumpato a `control-room-v5`. Strategia riscritta:
+  - HTML navigation → network-first (fallback cache)
+  - **JS/CSS/MAP/JSON → network-first** (era cache-first: causa principale dello stale su iPhone)
+  - Immagini/Font/Icone → cache-first + revalidate
+  - API `/api/*` → sempre network
+- **Verificato testing agent** (iteration_20.json): su viewport 390×844 (iPhone 13) tutti i tab sono visibili e cliccabili — Portfolio/Mutuo/Deal su /forecast (122px ciascuno), Config/Import/Lineage/Guida su /impostazioni (91.5px ciascuno). Desktop 1440 regression OK. SW cache name `control-room-v5` confermato.
+- **Nota minore**: Recharts emette warning `width(-1) height(-1)` su pagina impostazioni — cosmetico, pre-esistente, non bloccante.
