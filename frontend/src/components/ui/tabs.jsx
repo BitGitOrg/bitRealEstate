@@ -6,13 +6,15 @@ import { cn } from "@/lib/utils"
 const Tabs = TabsPrimitive.Root
 
 const TabsList = React.forwardRef(({ className, ...props }, ref) => (
-  <TabsPrimitive.List
-    ref={ref}
-    className={cn(
-      "inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground",
-      className
-    )}
-    {...props} />
+  <div className="overflow-x-auto no-scrollbar -mx-1">
+    <TabsPrimitive.List
+      ref={ref}
+      className={cn(
+        "inline-flex h-9 items-center justify-start rounded-lg bg-muted p-1 text-muted-foreground whitespace-nowrap mx-1",
+        className
+      )}
+      {...props} />
+  </div>
 ))
 TabsList.displayName = TabsPrimitive.List.displayName
 

@@ -587,8 +587,8 @@ export default function DataLineage({ embedded = false }) {
               <div>Ogni numero che vedi nelle pagine dell'app è tracciabile. Clicca una riga per <strong>aprire la pagina</strong> ed essere portato direttamente al KPI corrispondente.</div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-2">
+              <table className="w-full text-sm min-w-[640px]">
                 <thead>
                   <tr className="text-left text-[10px] uppercase tracking-wider text-[#64748B] border-b border-[#E2E8F0]">
                     <th className="py-2 pr-3 w-[180px]">KPI / Grafico</th>
@@ -638,7 +638,8 @@ export default function DataLineage({ embedded = false }) {
             subtitle="Modificabili in Impostazioni → influiscono su tutta l'app"
             action={<SettingsIcon size={16} className="text-[#B45309]" />}
           >
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-2">
+            <table className="w-full text-sm min-w-[480px]">
               <thead>
                 <tr className="text-left text-[10px] uppercase tracking-wider text-[#64748B] border-b border-[#E2E8F0]">
                   <th className="py-2 pr-3">Setting</th>
@@ -656,6 +657,7 @@ export default function DataLineage({ embedded = false }) {
                 ))}
               </tbody>
             </table>
+            </div>
           </SectionCard>
 
           {/* MongoDB collections legenda */}

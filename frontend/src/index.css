@@ -193,3 +193,76 @@ td,
   border-radius: inherit;
   animation: kpi-highlight-pulse 1.4s ease-out 2;
 }
+
+
+/* Emergent badge: nascondi su schermi molto piccoli per non coprire azioni */
+@media (max-width: 480px) {
+  #emergent-badge {
+    transform: scale(0.75);
+    transform-origin: bottom right;
+  }
+}
+
+/* HelpButton (Floating Action Button): spostalo su mobile per non sovrapporsi al badge */
+@media (max-width: 640px) {
+  [data-help-button] {
+    bottom: 4.5rem !important;
+  }
+}
+
+
+/* ─────────────────────────────────────────────────────────────────
+   Mobile responsiveness — utility globali
+   ───────────────────────────────────────────────────────────────── */
+
+/* iOS: previene auto-zoom su focus negli input quando font-size < 16px */
+@media (max-width: 768px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
+/* Safe-area per dispositivi con notch (iPhone X+) */
+.app-safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* Tabelle: wrap automatico in container scrollabile orizzontale su mobile */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.table-scroll table {
+  min-width: 100%;
+}
+
+/* Tap target minimo 44x44 (linee guida Apple HIG / Material) */
+@media (max-width: 768px) {
+  button, a[role="button"], .clickable {
+    min-height: 36px;
+  }
+}
+
+/* Modali shadcn: full-width su mobile, evitare overflow orizzontale */
+@media (max-width: 640px) {
+  [role="dialog"][data-state="open"] {
+    max-width: calc(100vw - 1rem) !important;
+    width: calc(100vw - 1rem) !important;
+  }
+}
+
+/* Hide scrollbar in elements with .no-scrollbar (mobile-friendly horizontal scroll) */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Mobile: riduci padding nelle SectionCard */
+@media (max-width: 640px) {
+  .section-card-mobile-tight {
+    padding: 0.875rem !important;
+  }
+}

@@ -48,6 +48,7 @@ export function HelpButton() {
   return (
     <button
       data-testid="help-button"
+      data-help-button
       onClick={go}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
