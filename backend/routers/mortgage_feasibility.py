@@ -451,6 +451,13 @@ def make_mortgage_feasibility_router(db, current_user, llm_key: Optional[str] = 
 
         try:
             ai = await _ai_banker_analysis(llm_key, portfolio, inp, kpi)
+        except json.JSONDecodeError as je:
+            logger.warning(f"AI banker analysis returned invalid JSON, retrying once: {je}")
+            try:
+                ai = await _ai_banker_analysis(llm_key, portfolio, inp, kpi)
+            except Exception as e2:
+                logger.exception(f"AI banker analysis failed on retry: {e2}")
+                raise HTTPException(503, "L'AI ha avuto un'esitazione. Riprova fra qualche secondo.")
         except Exception as e:
             logger.exception(f"AI banker analysis failed: {e}")
             raise HTTPException(500, f"AI analysis failed: {str(e)[:120]}")

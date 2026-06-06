@@ -43,18 +43,26 @@ export default function ImpostazioniWrapper() {
   return (
     <Layout title="Impostazioni" subtitle={SUBTITLES[tab] || "Configurazione + risorse"}>
       <Tabs value={tab} onValueChange={onChange} className="w-full">
-        <TabsList data-testid="impostazioni-wrapper-tabs" className="mb-4 flex flex-wrap gap-1">
+        <TabsList data-testid="impostazioni-wrapper-tabs" className="mb-4">
           <TabsTrigger value="config" data-testid="tab-imp-config">
-            <SettingsIcon size={14} className="mr-2"/> Configurazione
+            <SettingsIcon size={14} className="mr-1.5"/>
+            <span className="hidden sm:inline">Configurazione</span>
+            <span className="sm:hidden">Config</span>
           </TabsTrigger>
           <TabsTrigger value="import" data-testid="tab-imp-import">
-            <Database size={14} className="mr-2"/> Centro Import
+            <Database size={14} className="mr-1.5"/>
+            <span className="hidden sm:inline">Centro Import</span>
+            <span className="sm:hidden">Import</span>
           </TabsTrigger>
           <TabsTrigger value="lineage" data-testid="tab-imp-lineage">
-            <GitBranch size={14} className="mr-2"/> Data Lineage
+            <GitBranch size={14} className="mr-1.5"/>
+            <span className="hidden sm:inline">Data Lineage</span>
+            <span className="sm:hidden">Lineage</span>
           </TabsTrigger>
           <TabsTrigger value="manuale" data-testid="tab-imp-manuale">
-            <BookOpen size={14} className="mr-2"/> Manuale d'uso
+            <BookOpen size={14} className="mr-1.5"/>
+            <span className="hidden sm:inline">Manuale d'uso</span>
+            <span className="sm:hidden">Guida</span>
           </TabsTrigger>
         </TabsList>
         <TabsContent value="config" className="mt-0">

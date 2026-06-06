@@ -110,20 +110,48 @@ export default function MortgageFeasibility() {
     }
     setLoading(true);
     setResult(null);
+    const payload = {
+      ...form,
+      prezzo_immobile_target: form.prezzo_immobile_target || null,
+      canone_atteso_mensile: form.canone_atteso_mensile || null,
+      banca_target: form.banca_target || null,
+      note: form.note || null,
+      tag: form.tag || null,
+    };
+    // Retry automatico (max 2 tentativi) per gestire timeout di rete mobile / JSON parse intermittenti
+    const attempt = async (n) => {
+      try {
+        return await apiClient().post("/mortgage-feasibility/analyze", payload, { timeout: 120000 });
+      } catch (e) {
+        const status = e?.response?.status;
+        const code = e?.code;
+        const retriable = !status || status >= 500 || code === "ECONNABORTED" || code === "ERR_NETWORK";
+        if (n < 2 && retriable) {
+          toast.message("Connessione lenta, riprovo…", { duration: 2000 });
+          await new Promise(r => setTimeout(r, 800));
+          return attempt(n + 1);
+        }
+        throw e;
+      }
+    };
     try {
-      const r = await apiClient().post("/mortgage-feasibility/analyze", {
-        ...form,
-        prezzo_immobile_target: form.prezzo_immobile_target || null,
-        canone_atteso_mensile: form.canone_atteso_mensile || null,
-        banca_target: form.banca_target || null,
-        note: form.note || null,
-        tag: form.tag || null,
-      });
+      const r = await attempt(1);
       setResult(r.data);
       toast.success(`Analisi completata · score ${r.data?.ai?.punteggio_fattibilita}/100`);
       loadHistory();
     } catch (e) {
-      toast.error(e?.response?.data?.detail || "Errore analisi");
+      const detail = e?.response?.data?.detail;
+      let msg;
+      if (detail) {
+        msg = detail.length > 160 ? detail.slice(0, 160) + "…" : detail;
+      } else if (e?.code === "ECONNABORTED" || /timeout/i.test(e?.message || "")) {
+        msg = "Analisi troppo lenta (timeout). Ritenta con connessione migliore o riduci le note.";
+      } else if (!navigator.onLine) {
+        msg = "Sei offline. Connettiti a internet e riprova.";
+      } else {
+        msg = "Errore analisi. Riprova fra qualche secondo.";
+      }
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
