@@ -171,6 +171,151 @@ export default function MortgageFeasibility() {
   const semaforo = ai?.semaforo || kpi?.semaforo || "giallo";
   const sty = SEMAFORO_STYLE[semaforo] || SEMAFORO_STYLE.giallo;
 
+  // ─── Info / formula tooltips per ogni KPI ────────────────────────────────
+  const fmtE = (n) => Number.isFinite(n) ? `€ ${Math.round(n).toLocaleString("it-IT")}` : "—";
+  const fmtN = (n, d = 2) => Number.isFinite(n) ? n.toFixed(d) : "—";
+  const fmtP = (n) => Number.isFinite(n) ? `${n.toFixed(1)}%` : "—";
+
+  const infos = kpi && portfolio ? {
+    rata: {
+      title: "Rata mensile del nuovo mutuo",
+      what: "Rata costante mensile in ammortamento alla francese (capitale + interessi).",
+      formula: `Rata = C × (i × (1+i)^n) / ((1+i)^n − 1) · con i=tasso/12 e n=anni×12`,
+      vals: [
+        ["Capitale (C)", fmtE(result?.input?.importo)],
+        ["Tasso annuo (TAN)", `${result?.input?.tasso_pct}%`],
+        ["Durata", `${result?.input?.durata_anni} anni`],
+        ["Risultato", fmtE(kpi.rata_nuova_mensile)],
+        ["Rata totale post (incl. mutui esistenti)", fmtE(kpi.rata_mensile_post)],
+      ],
+    },
+    dscr: {
+      title: "DSCR · Debt Service Coverage Ratio",
+      what: "Quante volte il NOI annuo copre l'intero servizio del debito. È il KPI principale guardato da credit officer e EBA/GL/2020/06.",
+      formula: "DSCR = NOI annuo post / Rata annua totale post",
+      vals: [
+        ["NOI annuo post", fmtE(kpi.noi_post)],
+        ["Rata annua post", fmtE(kpi.rata_annua_post)],
+        ["Risultato", fmtN(kpi.dscr_post)],
+        ["Soglia minima ABI", "≥ 1,20"],
+        ["Ottimo (rating A)", "≥ 1,40"],
+      ],
+    },
+    ltv: {
+      title: "LTV portfolio post-richiesta",
+      what: "Loan-to-Value aggregato sull'intero patrimonio. Banca lo confronta con limiti CRR Art. 124 e politiche interne.",
+      formula: "LTV = (Debito residuo + Nuovo mutuo) / (Valore portfolio + Prezzo immobile target)",
+      vals: [
+        ["Debito residuo attuale", fmtE(portfolio.debito_residuo_totale)],
+        ["Nuovo mutuo", fmtE(result?.input?.importo)],
+        ["Valore portfolio attuale", fmtE(portfolio.valore_immobili)],
+        ["Prezzo immobile target", fmtE(result?.input?.prezzo_immobile_target)],
+        ["Risultato LTV portfolio", fmtP(kpi.ltv_portfolio_post_pct)],
+        ["LTV singolo immobile", fmtP(kpi.ltv_immobile_pct)],
+        ["Limite normativo", "≤ 80% · Conservativo 70%"],
+      ],
+    },
+    rr: {
+      title: "Rata / Ricavi mensili",
+      what: "Quota di reddito assorbita dalle rate. Indicatore di stress finanziario monitorato da EBA.",
+      formula: "Rata su Ricavi = Rata mensile totale post / Ricavi mensili post",
+      vals: [
+        ["Rata mensile totale post", fmtE(kpi.rata_mensile_post)],
+        ["Ricavi mensili post", fmtE(kpi.ricavi_post_mensili)],
+        ["Risultato", fmtP(kpi.rata_su_reddito_pct)],
+        ["Soglia EBA standard", "≤ 33%"],
+        ["Soglia critica", "≥ 40%"],
+      ],
+    },
+    cap_rate: {
+      title: "Cap Rate · Capitalization Rate",
+      what: "Rendimento operativo annuo dell'immobile target prima del debito. Indica la qualità intrinseca dell'asset.",
+      formula: "Cap Rate = NOI immobile target / Prezzo acquisto · NOI ≈ canone × 11mesi − 15% costi",
+      vals: [
+        ["Canone atteso mensile", fmtE(result?.input?.canone_atteso_mensile)],
+        ["Prezzo immobile target", fmtE(result?.input?.prezzo_immobile_target)],
+        ["Risultato", fmtP(kpi.cap_rate_target_pct)],
+        ["Soglia operazione interessante", "≥ 5%"],
+      ],
+    },
+    noi: {
+      title: "NOI annuo post · Net Operating Income",
+      what: "Ricavi annui netti dai costi di gestione, prima del servizio del debito. Base del calcolo DSCR.",
+      formula: "NOI = Ricavi annui post − Costi operativi annui (gestione + IMU + manutenzione + assicurazione)",
+      vals: [
+        ["Ricavi annui post", fmtE(kpi.ricavi_post_annui)],
+        ["Costi operativi annui", fmtE((kpi.ricavi_post_annui || 0) - (kpi.noi_post || 0))],
+        ["Risultato", fmtE(kpi.noi_post)],
+      ],
+    },
+    cashflow: {
+      title: "Cash flow mensile post",
+      what: "Liquidità netta che resta ogni mese dopo aver pagato tutti i costi e tutte le rate dei mutui.",
+      formula: "Cash Flow = Ricavi mensili post − Costi operativi mensili − Rata mensile totale post",
+      vals: [
+        ["Ricavi mensili post", fmtE(kpi.ricavi_post_mensili)],
+        ["Costi operativi mensili", fmtE(portfolio.costi_op_mensili)],
+        ["Rata mensile totale post", fmtE(kpi.rata_mensile_post)],
+        ["Risultato", fmtE(kpi.cashflow_mensile_post)],
+      ],
+    },
+    capitale_proprio: {
+      title: "Capitale proprio richiesto",
+      what: "Quanta cassa devi mettere di tasca tua per chiudere l'operazione (acquisto + costi accessori) al netto del mutuo.",
+      formula: "Equity = Prezzo immobile − Importo mutuo + 10% (costi accessori: notaio, agenzia, imposta registro)",
+      vals: [
+        ["Prezzo immobile target", fmtE(result?.input?.prezzo_immobile_target)],
+        ["Mutuo richiesto", fmtE(result?.input?.importo)],
+        ["Costi accessori (stimati 10%)", fmtE((result?.input?.prezzo_immobile_target || 0) * 0.10)],
+        ["Risultato", fmtE(kpi.capitale_proprio_richiesto)],
+      ],
+    },
+    debito_post: {
+      title: "Debito totale post-richiesta",
+      what: "Esposizione complessiva verso il sistema bancario dopo l'eventuale erogazione del nuovo mutuo.",
+      formula: "Debito post = Debito residuo attuale + Importo nuovo mutuo",
+      vals: [
+        ["Debito residuo attuale", fmtE(portfolio.debito_residuo_totale)],
+        ["Nuovo mutuo", fmtE(result?.input?.importo)],
+        ["Risultato", fmtE(kpi.debito_post)],
+        ["Numero mutui attuali", portfolio.n_mutui_attivi],
+      ],
+    },
+    mesi_liquidita: {
+      title: "Mesi di liquidità coperti",
+      what: "Per quanti mesi potresti pagare le rate del nuovo mutuo + esistenti usando SOLO la cassa disponibile, senza ricavi. Misura di resilienza.",
+      formula: "Mesi = Liquidità disponibile / Rata mensile totale post",
+      vals: [
+        ["Liquidità disponibile", fmtE(portfolio.liquidita_disponibile)],
+        ["Rata mensile totale post", fmtE(kpi.rata_mensile_post)],
+        ["Risultato", fmtN(kpi.mesi_liquidita_coperti, 1)],
+        ["Riserva minima consigliata", "≥ 6 mesi"],
+      ],
+    },
+    dti: {
+      title: "DTI · Debt-to-Income (su patrimonio)",
+      what: "Rapporto fra debito totale e valore degli asset patrimoniali. Approssima la leva finanziaria della società.",
+      formula: "DTI = (Debito residuo + Nuovo mutuo) / (Valore portfolio + Prezzo immobile target)",
+      vals: [
+        ["Debito totale post", fmtE(kpi.debito_post)],
+        ["Valore patrimonio aggregato post", fmtE((portfolio.valore_immobili || 0) + (result?.input?.prezzo_immobile_target || 0))],
+        ["Risultato", fmtP(kpi.dti_post_pct)],
+        ["Soglia banker conservativa", "≤ 50%"],
+      ],
+    },
+    ricavi_post: {
+      title: "Ricavi mensili post-acquisto",
+      what: "Affitti mensili aggregati dopo l'inserimento dell'immobile target in portfolio. Considera 1 mese di sfittanza stimato l'anno.",
+      formula: "Ricavi post = Ricavi attuali + (Canone atteso × 11/12)",
+      vals: [
+        ["Ricavi mensili attuali", fmtE(portfolio.ricavi_mensili_attuali)],
+        ["Canone atteso", fmtE(result?.input?.canone_atteso_mensile)],
+        ["Vacancy assunta", "1 mese / anno"],
+        ["Risultato", fmtE(kpi.ricavi_post_mensili)],
+      ],
+    },
+  } : {};
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-4" data-testid="mortgage-feasibility">
       {/* LEFT — INPUT */}
@@ -425,28 +570,28 @@ export default function MortgageFeasibility() {
 
             {/* 4 KPI tiles */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="mf-kpi-tiles">
-              <KpiTile label="Rata mensile" value={eur(kpi.rata_nuova_mensile)} sub={`Totale post: ${eur(kpi.rata_mensile_post)}`} icon={Banknote} testId="mf-kpi-rata" />
+              <KpiTile label="Rata mensile" value={eur(kpi.rata_nuova_mensile)} sub={`Totale post: ${eur(kpi.rata_mensile_post)}`} icon={Banknote} testId="mf-kpi-rata" info={infos.rata} />
               <KpiTile label="DSCR post" value={num(kpi.dscr_post)} sub={`Soglia ABI ≥ 1.20 · Buono ≥ 1.40`}
                        tone={kpi.dscr_post >= 1.4 ? "positive" : kpi.dscr_post >= 1.2 ? "warning" : "critical"}
-                       icon={ShieldCheck} testId="mf-kpi-dscr" />
+                       icon={ShieldCheck} testId="mf-kpi-dscr" info={infos.dscr} />
               <KpiTile label="LTV portfolio post" value={pct(kpi.ltv_portfolio_post_pct)} sub={kpi.ltv_immobile_pct !== null ? `LTV immobile: ${pct(kpi.ltv_immobile_pct)}` : "Aggregato"}
                        tone={kpi.ltv_portfolio_post_pct < 70 ? "positive" : kpi.ltv_portfolio_post_pct < 80 ? "warning" : "critical"}
-                       icon={Building2} testId="mf-kpi-ltv" />
+                       icon={Building2} testId="mf-kpi-ltv" info={infos.ltv} />
               <KpiTile label="Rata / ricavi" value={pct(kpi.rata_su_reddito_pct)} sub={`Soglia EBA ≤ 33%`}
                        tone={kpi.rata_su_reddito_pct < 33 ? "positive" : kpi.rata_su_reddito_pct < 40 ? "warning" : "critical"}
-                       icon={TrendingUp} testId="mf-kpi-rr" />
+                       icon={TrendingUp} testId="mf-kpi-rr" info={infos.rr} />
             </div>
 
             {/* Secondary KPI */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-              <MiniKpi label="Cap rate" value={pct(kpi.cap_rate_target_pct)} />
-              <MiniKpi label="NOI annuo post" value={eur(kpi.noi_post)} />
-              <MiniKpi label="Cash flow mensile post" value={eur(kpi.cashflow_mensile_post)} />
-              <MiniKpi label="Capitale proprio richiesto" value={eur(kpi.capitale_proprio_richiesto)} />
-              <MiniKpi label="Debito totale post" value={eur(kpi.debito_post)} />
-              <MiniKpi label="Liquidità (mesi rate)" value={num(kpi.mesi_liquidita_coperti, 1)} />
-              <MiniKpi label="DTI post" value={pct(kpi.dti_post_pct)} />
-              <MiniKpi label="Ricavi mensili post" value={eur(kpi.ricavi_post_mensili)} />
+              <MiniKpi label="Cap rate" value={pct(kpi.cap_rate_target_pct)} info={infos.cap_rate} />
+              <MiniKpi label="NOI annuo post" value={eur(kpi.noi_post)} info={infos.noi} />
+              <MiniKpi label="Cash flow mensile post" value={eur(kpi.cashflow_mensile_post)} info={infos.cashflow} />
+              <MiniKpi label="Capitale proprio richiesto" value={eur(kpi.capitale_proprio_richiesto)} info={infos.capitale_proprio} />
+              <MiniKpi label="Debito totale post" value={eur(kpi.debito_post)} info={infos.debito_post} />
+              <MiniKpi label="Liquidità (mesi rate)" value={num(kpi.mesi_liquidita_coperti, 1)} info={infos.mesi_liquidita} />
+              <MiniKpi label="DTI post" value={pct(kpi.dti_post_pct)} info={infos.dti} />
+              <MiniKpi label="Ricavi mensili post" value={eur(kpi.ricavi_post_mensili)} info={infos.ricavi_post} />
             </div>
 
             {/* Analisi dettagliata */}
@@ -604,12 +749,64 @@ const TONE = {
   default:  { bg: "#FFFFFF", text: "#0F172A", strong: "#0F172A", border: "#E2E8F0" },
 };
 
-function KpiTile({ label, value, sub, icon: Icon, tone = "default", testId }) {
+function InfoPopover({ info, color = "#0F172A" }) {
+  const [open, setOpen] = useState(false);
+  if (!info) return null;
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
+        className="opacity-50 hover:opacity-100 transition-opacity p-0.5"
+        aria-label="Spiegazione"
+      >
+        <Info size={12} style={{ color }} />
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 top-full mt-1.5 z-50 w-[300px] bg-[#0F172A] text-white p-3 shadow-xl border border-[#1E293B] text-left animate-in fade-in zoom-in-95 duration-150"
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+          data-testid="kpi-info-popover"
+        >
+          <div className="text-[12px] font-semibold text-white">{info.title}</div>
+          {info.what && (
+            <div className="text-[10.5px] text-[#CBD5E1] mt-1.5 leading-snug">{info.what}</div>
+          )}
+          {info.formula && (
+            <div className="mt-2 bg-[#1E293B] border border-[#334155] px-2 py-1.5 font-mono text-[10px] text-[#7DD3FC] leading-snug whitespace-pre-wrap break-words">
+              {info.formula}
+            </div>
+          )}
+          {info.vals && info.vals.length > 0 && (
+            <div className="mt-2 space-y-0.5">
+              {info.vals.map(([k, v], i) => (
+                <div key={i} className="flex items-center justify-between gap-3 text-[10.5px]">
+                  <span className="text-[#94A3B8]">{k}</span>
+                  <span className="text-white font-semibold tabular text-right">{v}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </span>
+  );
+}
+
+function KpiTile({ label, value, sub, icon: Icon, tone = "default", testId, info }) {
   const t = TONE[tone] || TONE.default;
   return (
-    <div className="border p-3" style={{ background: t.bg, borderColor: t.border }} data-testid={testId}>
+    <div className="border p-3 relative" style={{ background: t.bg, borderColor: t.border }} data-testid={testId}>
       <div className="flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: t.text }}>{label}</span>
+        <span className="text-[10px] uppercase tracking-wider font-semibold flex items-center gap-1" style={{ color: t.text }}>
+          {label}
+          <InfoPopover info={info} color={t.strong} />
+        </span>
         {Icon && <Icon size={14} style={{ color: t.strong }} />}
       </div>
       <div className="font-display text-xl font-bold tabular mt-1" style={{ color: t.strong }}>{value}</div>
@@ -618,10 +815,13 @@ function KpiTile({ label, value, sub, icon: Icon, tone = "default", testId }) {
   );
 }
 
-function MiniKpi({ label, value }) {
+function MiniKpi({ label, value, info }) {
   return (
-    <div className="bg-white border border-[#E2E8F0] p-2">
-      <div className="text-[9.5px] uppercase tracking-wider text-[#64748B]">{label}</div>
+    <div className="bg-white border border-[#E2E8F0] p-2 relative">
+      <div className="text-[9.5px] uppercase tracking-wider text-[#64748B] flex items-center gap-1">
+        {label}
+        <InfoPopover info={info} color="#475569" />
+      </div>
       <div className="text-sm font-semibold text-[#0F172A] tabular mt-0.5">{value}</div>
     </div>
   );
