@@ -44,7 +44,7 @@ const FINALITA = [
   { v: "acquisto_terreno", l: "Acquisto terreno/sviluppo" },
 ];
 
-const DURATE = [10, 15, 20, 25, 30];
+const DURATE = [2, 3, 5, 7, 8];
 
 export default function MortgageFeasibility() {
   const [rateOptions, setRateOptions] = useState([]);
@@ -52,7 +52,7 @@ export default function MortgageFeasibility() {
 
   const [form, setForm] = useState({
     importo: 200000,
-    durata_anni: 20,
+    durata_anni: 5,
     tasso_pct: 3.5,
     tipo_tasso: "fisso",
     finalita: "immobile_reddito",

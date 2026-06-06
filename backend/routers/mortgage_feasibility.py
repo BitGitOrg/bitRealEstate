@@ -26,14 +26,16 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-# Tassi mercato (aggiornati Feb 2026, soglie ABI/BCE approx)
+# Tassi mercato (aggiornati Feb 2026 — orientamento short-term/bridge per società immobiliari)
 MARKET_RATES = {
-    "fisso_20": 3.45,
-    "fisso_25": 3.65,
-    "fisso_30": 3.85,
-    "variabile_20": 4.20,
-    "variabile_25": 4.30,
-    "variabile_30": 4.40,
+    "fisso_2": 4.80,
+    "fisso_3": 4.40,
+    "fisso_5": 3.90,
+    "fisso_7": 3.70,
+    "fisso_8": 3.60,
+    "variabile_3": 5.30,
+    "variabile_5": 4.70,
+    "variabile_8": 4.40,
 }
 
 # Soglie banker italiane standard (ABI / EBA guidelines investitori immobiliari)
@@ -419,11 +421,14 @@ def make_mortgage_feasibility_router(db, current_user, llm_key: Optional[str] = 
                 "fonte": "Media tuoi mutui variabili",
             })
         opts.extend([
-            {"id": "mkt_fix_20", "label": f"Mercato fisso 20a ({MARKET_RATES['fisso_20']}%)", "value": MARKET_RATES['fisso_20'], "tipo_tasso": "fisso", "fonte": "Media indicativa Feb 2026"},
-            {"id": "mkt_fix_25", "label": f"Mercato fisso 25a ({MARKET_RATES['fisso_25']}%)", "value": MARKET_RATES['fisso_25'], "tipo_tasso": "fisso", "fonte": "Media indicativa Feb 2026"},
-            {"id": "mkt_fix_30", "label": f"Mercato fisso 30a ({MARKET_RATES['fisso_30']}%)", "value": MARKET_RATES['fisso_30'], "tipo_tasso": "fisso", "fonte": "Media indicativa Feb 2026"},
-            {"id": "mkt_var_20", "label": f"Mercato variabile 20a ({MARKET_RATES['variabile_20']}%)", "value": MARKET_RATES['variabile_20'], "tipo_tasso": "variabile", "fonte": "Media indicativa Feb 2026"},
-            {"id": "mkt_var_25", "label": f"Mercato variabile 25a ({MARKET_RATES['variabile_25']}%)", "value": MARKET_RATES['variabile_25'], "tipo_tasso": "variabile", "fonte": "Media indicativa Feb 2026"},
+            {"id": "mkt_fix_2", "label": f"Mercato fisso 2a ({MARKET_RATES['fisso_2']}%)", "value": MARKET_RATES['fisso_2'], "tipo_tasso": "fisso", "fonte": "Bridge short-term Feb 2026"},
+            {"id": "mkt_fix_3", "label": f"Mercato fisso 3a ({MARKET_RATES['fisso_3']}%)", "value": MARKET_RATES['fisso_3'], "tipo_tasso": "fisso", "fonte": "Bridge short-term Feb 2026"},
+            {"id": "mkt_fix_5", "label": f"Mercato fisso 5a ({MARKET_RATES['fisso_5']}%)", "value": MARKET_RATES['fisso_5'], "tipo_tasso": "fisso", "fonte": "Media indicativa Feb 2026"},
+            {"id": "mkt_fix_7", "label": f"Mercato fisso 7a ({MARKET_RATES['fisso_7']}%)", "value": MARKET_RATES['fisso_7'], "tipo_tasso": "fisso", "fonte": "Media indicativa Feb 2026"},
+            {"id": "mkt_fix_8", "label": f"Mercato fisso 8a ({MARKET_RATES['fisso_8']}%)", "value": MARKET_RATES['fisso_8'], "tipo_tasso": "fisso", "fonte": "Media indicativa Feb 2026"},
+            {"id": "mkt_var_3", "label": f"Mercato variabile 3a ({MARKET_RATES['variabile_3']}%)", "value": MARKET_RATES['variabile_3'], "tipo_tasso": "variabile", "fonte": "Bridge short-term Feb 2026"},
+            {"id": "mkt_var_5", "label": f"Mercato variabile 5a ({MARKET_RATES['variabile_5']}%)", "value": MARKET_RATES['variabile_5'], "tipo_tasso": "variabile", "fonte": "Media indicativa Feb 2026"},
+            {"id": "mkt_var_8", "label": f"Mercato variabile 8a ({MARKET_RATES['variabile_8']}%)", "value": MARKET_RATES['variabile_8'], "tipo_tasso": "variabile", "fonte": "Media indicativa Feb 2026"},
         ])
         return {
             "options": opts,
