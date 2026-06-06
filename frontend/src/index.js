@@ -21,3 +21,26 @@ root.render(
     </QueryClientProvider>
   </React.StrictMode>,
 );
+
+// ─── PWA Service Worker registration ───────────────────────────────────────
+// Solo in production: in dev hot-reload e SW si scontrano.
+if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/service-worker.js")
+      .then((reg) => {
+        // Reagisci a un nuovo SW disponibile
+        reg.addEventListener("updatefound", () => {
+          const w = reg.installing;
+          if (!w) return;
+          w.addEventListener("statechange", () => {
+            if (w.state === "installed" && navigator.serviceWorker.controller) {
+              // Nuova versione pronta — il prossimo refresh la attiverà
+              console.info("[SW] Nuova versione disponibile al prossimo reload.");
+            }
+          });
+        });
+      })
+      .catch((err) => console.warn("[SW] Registrazione fallita:", err));
+  });
+}

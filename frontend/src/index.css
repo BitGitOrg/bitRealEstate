@@ -195,18 +195,18 @@ td,
 }
 
 
-/* Emergent badge: nascondi su schermi molto piccoli per non coprire azioni */
-@media (max-width: 480px) {
+/* Emergent badge: nascondi su schermi piccoli per non collidere con bottom nav + PWA install */
+@media (max-width: 1023px) {
   #emergent-badge {
-    transform: scale(0.75);
-    transform-origin: bottom right;
+    display: none !important;
   }
 }
 
-/* HelpButton (Floating Action Button): spostalo su mobile per non sovrapporsi al badge */
-@media (max-width: 640px) {
+/* HelpButton (Floating Action Button): spostalo su mobile per non sovrapporsi al badge + bottom nav */
+@media (max-width: 1023px) {
   [data-help-button] {
-    bottom: 4.5rem !important;
+    bottom: 4.75rem !important;
+    right: 0.875rem !important;
   }
 }
 
