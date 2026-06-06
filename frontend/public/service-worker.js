@@ -2,11 +2,12 @@
  *
  * Strategie:
  *  - Navigazione (HTML): network-first con fallback cache, poi /offline.html
- *  - Asset statici (JS/CSS/IMG/FONT): cache-first con revalidate in background
+ *  - JS / CSS (bundle React): network-first per evitare UI stale dopo deploy
+ *  - Immagini / Font / Manifest / Icone: cache-first con revalidate in background
  *  - API (/api/*): SEMPRE network — non cachiamo dati sensibili/auth
  *  - Cache versionato: aggiorna CACHE_NAME a ogni rilascio per forzare refresh
  */
-const CACHE_NAME = "control-room-v3";
+const CACHE_NAME = "control-room-v5";
 const CORE_ASSETS = [
   "/",
   "/manifest.json",
@@ -14,6 +15,11 @@ const CORE_ASSETS = [
   "/icons/icon-512.png",
   "/icons/apple-touch-icon.png",
 ];
+
+// Tipi di asset trattati come "statici immutabili" (cache-first)
+const STATIC_EXT = /\.(?:png|jpg|jpeg|gif|webp|svg|ico|woff2?|ttf|otf|eot)$/i;
+// Tipi di bundle React/CSS (network-first per evitare stale dopo build)
+const APP_EXT = /\.(?:js|mjs|css|map|json)$/i;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -50,7 +56,6 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((resp) => {
-          // Aggiorna cache della root
           if (resp && resp.ok) {
             const copy = resp.clone();
             caches.open(CACHE_NAME).then((c) => c.put("/", copy)).catch(() => {});
@@ -62,10 +67,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Statici → cache-first + revalidate
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      const networkFetch = fetch(request)
+  // Bundle React/CSS/JS/JSON → NETWORK-FIRST (con fallback cache offline)
+  // Necessario per evitare che gli iPhone in PWA vedano UI vecchie dopo i deploy
+  if (APP_EXT.test(url.pathname)) {
+    event.respondWith(
+      fetch(request)
         .then((resp) => {
           if (resp && resp.ok) {
             const copy = resp.clone();
@@ -73,9 +79,41 @@ self.addEventListener("fetch", (event) => {
           }
           return resp;
         })
-        .catch(() => cached);
-      return cached || networkFetch;
-    })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // Immagini / Font / Icone → cache-first + revalidate
+  if (STATIC_EXT.test(url.pathname)) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        const networkFetch = fetch(request)
+          .then((resp) => {
+            if (resp && resp.ok) {
+              const copy = resp.clone();
+              caches.open(CACHE_NAME).then((c) => c.put(request, copy)).catch(() => {});
+            }
+            return resp;
+          })
+          .catch(() => cached);
+        return cached || networkFetch;
+      })
+    );
+    return;
+  }
+
+  // Default: passa dalla rete, fallback alla cache
+  event.respondWith(
+    fetch(request)
+      .then((resp) => {
+        if (resp && resp.ok) {
+          const copy = resp.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(request, copy)).catch(() => {});
+        }
+        return resp;
+      })
+      .catch(() => caches.match(request))
   );
 });
 
@@ -111,7 +149,6 @@ self.addEventListener("notificationclick", (event) => {
   const targetUrl = (event.notification.data && event.notification.data.url) || "/";
   event.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    // Riusa una finestra esistente se aperta
     for (const w of wins) {
       try {
         const u = new URL(w.url);

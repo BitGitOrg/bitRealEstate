@@ -1,0 +1,54 @@
+{
+  "summary": "Frontend-only verification of mobile tab visibility fix on /forecast (3 tabs) and /impostazioni (4 tabs). Verified on iPhone 13 viewport (390x844) and desktop (1440x900). All tabs render, are visible inside viewport, and switch correctly on click. Service Worker cache name confirmed as control-room-v5.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "mobile_390x844": {
+      "/forecast": {
+        "tab-fc-acquisto": {"visible": true, "box": {"x": 16, "y": 83, "width": 122, "height": 36}, "label_mobile": "Portfolio"},
+        "tab-fc-mutuo":    {"visible": true, "box": {"x": 138, "y": 83, "width": 122, "height": 36}, "label_mobile": "Mutuo"},
+        "tab-fc-deal":     {"visible": true, "box": {"x": 260, "y": 83, "width": 122, "height": 36}, "label_mobile": "Deal"},
+        "fits_in_390px": true,
+        "all_clickable_and_switching": true
+      },
+      "/impostazioni": {
+        "tab-imp-config":  {"visible": true, "box": {"x": 16, "y": 83, "width": 91.5, "height": 36}, "label_mobile": "Config"},
+        "tab-imp-import":  {"visible": true, "box": {"x": 107.5, "y": 83, "width": 91.5, "height": 36}, "label_mobile": "Import"},
+        "tab-imp-lineage": {"visible": true, "box": {"x": 199, "y": 83, "width": 91.5, "height": 36}, "label_mobile": "Lineage"},
+        "tab-imp-manuale": {"visible": true, "box": {"x": 290.5, "y": 83, "width": 91.5, "height": 36}, "label_mobile": "Guida"},
+        "fits_in_390px": true,
+        "all_clickable_and_switching": true
+      }
+    },
+    "desktop_1440x900": {
+      "/forecast": {
+        "tab-fc-acquisto": {"visible": true, "text": "Piano portfolio", "width": 378.66},
+        "tab-fc-mutuo":    {"visible": true, "text": "Fattibilità mutuo", "width": 378.67},
+        "tab-fc-deal":     {"visible": true, "text": "Deal singolo", "width": 378.66}
+      },
+      "/impostazioni": {
+        "tab-imp-config":  {"visible": true, "text": "Configurazione", "width": 284},
+        "tab-imp-import":  {"visible": true, "text": "Centro Import", "width": 284},
+        "tab-imp-lineage": {"visible": true, "text": "Data Lineage", "width": 284},
+        "tab-imp-manuale": {"visible": true, "text": "Manuale d'uso", "width": 284}
+      }
+    },
+    "service_worker_cache_name": "control-room-v5"
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Recharts container emits repeated warning 'The width(-1) and height(-1) of chart should be greater than 0' on /impostazioni and during navigation. Not related to this fix but indicates a ResponsiveContainer mounted with 0-sized parent somewhere. Worth addressing in a future pass."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "test_credentials": "ceo@controlroom.it / demo1234 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Mobile P0 fix verified end-to-end: TabsList grid-cols-3 (forecast) and grid-cols-4 (impostazioni) render all tabs within 390px viewport on iPhone 13, all switchable. Service Worker bumped to control-room-v5. Recharts width(-1) warnings still present on settings pages (cosmetic; pre-existing)."
+}
