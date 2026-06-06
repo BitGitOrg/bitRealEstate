@@ -1,10 +1,19 @@
 """Alert center — refresh proattivo basato su scadenze contratti, APE, mutui."""
 import uuid
+import logging
 from datetime import datetime, timezone, date
 from fastapi import APIRouter, Depends, HTTPException
 
+logger = logging.getLogger(__name__)
+
 THRESHOLDS = [90, 60, 30]  # giorni mancanti su cui scatta l'alert
-SEVERITY_BY_DAYS = lambda d: "alta" if d <= 30 else ("media" if d <= 60 else "bassa")
+
+
+def _severity_by_days(d: int) -> str:
+    return "alta" if d <= 30 else ("media" if d <= 60 else "bassa")
+
+
+SEVERITY_BY_DAYS = _severity_by_days
 
 
 def _days_between(iso_str: str) -> int | None:
@@ -113,6 +122,30 @@ def make_alerts_router(db, current_user):
 
         if new_alerts:
             await db.alerts.insert_many([a.copy() for a in new_alerts])
+            # Push notification per alert di severity alta/media (1 sola push aggregata)
+            try:
+                high = [a for a in new_alerts if a.get("severity") in ("alta", "media")]
+                if high:
+                    from routers.push_notifications import send_push_to_user
+                    if len(high) == 1:
+                        a = high[0]
+                        await send_push_to_user(db, uid, {
+                            "title": f"⚠️ Alert · {a['titolo']}",
+                            "body": a.get("descrizione", "")[:120],
+                            "url": "/alert-center",
+                            "tag": f"alert-{a.get('id','')}",
+                            "icon": "/icons/icon-192.png",
+                        })
+                    else:
+                        await send_push_to_user(db, uid, {
+                            "title": f"⚠️ {len(high)} nuovi alert critici",
+                            "body": f"Apri Alert Center per i dettagli: {', '.join([a['titolo'][:30] for a in high[:3]])}",
+                            "url": "/alert-center",
+                            "tag": "alert-batch",
+                            "icon": "/icons/icon-192.png",
+                        })
+            except Exception as ep:
+                logger.warning(f"push on alert refresh failed: {ep}")
         return {"refreshed": True, "alerts_generated": len(new_alerts), "checked_properties": len(props)}
 
     @router.delete("/{alert_id}")

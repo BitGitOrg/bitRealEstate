@@ -487,6 +487,18 @@ def make_whatsapp_router(db, current_user, llm_key: Optional[str] = None):
                         f"Prezzo: {float(prezzo):,.0f}€".replace(",", ".") + "\n"
                         f"🎯 AI Score: {score}/100 ({giud}){pmax_s}{link_s}"
                     )
+                    # Push notification real-time
+                    try:
+                        from routers.push_notifications import send_push_to_user
+                        await send_push_to_user(db, user_id, {
+                            "title": f"🆕 Nuovo deal da WhatsApp · score {score}/100",
+                            "body": f"{indirizzo[:80]} · {float(prezzo):,.0f}€".replace(",", "."),
+                            "url": f"/d/{deal['id'].split('-',1)[-1]}",
+                            "tag": f"deal-{deal['id']}",
+                            "icon": "/icons/icon-192.png",
+                        })
+                    except Exception as ep:
+                        logger.warning(f"push notification on create_deal failed: {ep}")
 
             elif azione == "update_deal":
                 ref = (parsed.get("deal_ref") or "").strip()

@@ -3,10 +3,11 @@ import { Link } from "react-router-dom";
 import { Layout } from "../components/layout/Layout";
 import { SectionCard } from "../components/dashboard/SectionCard";
 import { useAuth } from "../lib/auth";
-import { Save, Building2, Target, Sparkles, Shield, Image as ImageIcon, Upload, Trash2, Receipt, Wrench, MessageCircle, Mail } from "lucide-react";
+import { Save, Building2, Target, Sparkles, Shield, Image as ImageIcon, Upload, Trash2, Receipt, Wrench, MessageCircle, Mail, Bell } from "lucide-react";
 import { toast } from "sonner";
 import EmailInboxConfig from "../components/EmailInboxConfig";
 import WhatsAppConfig from "../components/WhatsAppConfig";
+import PushNotificationsConfig from "../components/PushNotificationsConfig";
 
 const API_BASE = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -480,6 +481,16 @@ export default function Impostazioni({ embedded = false }) {
         className="mb-4"
       >
         <WhatsAppConfig />
+      </SectionCard>
+
+      <SectionCard
+        testId="settings-push"
+        title="Notifiche push real-time"
+        subtitle="Ricevi notifiche istantanee su mobile/desktop per nuovi deal WhatsApp, alert critici, scadenze. Funziona anche con app chiusa (PWA installata)."
+        action={<Bell size={16} className="text-[#0066FF]" />}
+        className="mb-4"
+      >
+        <PushNotificationsConfig />
       </SectionCard>
 
       <SectionCard testId="settings-user" title="Account & ruoli" action={<Shield size={16} className="text-[#B45309]" />}>

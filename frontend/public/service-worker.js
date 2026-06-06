@@ -6,7 +6,7 @@
  *  - API (/api/*): SEMPRE network — non cachiamo dati sensibili/auth
  *  - Cache versionato: aggiorna CACHE_NAME a ogni rilascio per forzare refresh
  */
-const CACHE_NAME = "control-room-v1";
+const CACHE_NAME = "control-room-v2";
 const CORE_ASSETS = [
   "/",
   "/manifest.json",
@@ -82,4 +82,48 @@ self.addEventListener("fetch", (event) => {
 // Permetti aggiornamento manuale via messaggio dalla webapp
 self.addEventListener("message", (event) => {
   if (event.data === "SKIP_WAITING") self.skipWaiting();
+});
+
+// ─── Web Push notifications ───────────────────────────────────────────────
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = { title: "Control Room", body: event.data ? event.data.text() : "Nuovo aggiornamento" };
+  }
+  const title = data.title || "Control Room";
+  const options = {
+    body: data.body || "",
+    icon: data.icon || "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
+    tag: data.tag || "control-room",
+    data: { url: data.url || "/", tag: data.tag },
+    requireInteraction: false,
+    silent: false,
+    vibrate: [120, 60, 120],
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    // Riusa una finestra esistente se aperta
+    for (const w of wins) {
+      try {
+        const u = new URL(w.url);
+        if (u.origin === self.location.origin) {
+          await w.focus();
+          await w.navigate(targetUrl).catch(() => {});
+          return;
+        }
+      } catch (_) { /* ignore */ }
+    }
+    if (self.clients.openWindow) {
+      await self.clients.openWindow(targetUrl);
+    }
+  })());
 });
