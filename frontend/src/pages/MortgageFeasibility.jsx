@@ -5,7 +5,7 @@ import { SectionCard } from "../components/dashboard/SectionCard";
 import {
   Calculator, TrendingUp, AlertTriangle, CheckCircle2, Banknote, Loader2,
   Sparkles, History, Trash2, ChevronDown, ChevronRight, Building2, Target,
-  ShieldCheck, FileText, Info, ScrollText, BookOpen, Tag,
+  ShieldCheck, FileText, Info, ScrollText, BookOpen, Tag, FileDown,
 } from "lucide-react";
 
 const eur = (n) => (Number.isFinite(n) ? `€ ${Math.round(n).toLocaleString("it-IT")}` : "—");
@@ -142,6 +142,26 @@ export default function MortgageFeasibility() {
     setResult(h);
     setShowHistory(false);
     if (h.input) setForm(f => ({ ...f, ...h.input }));
+  };
+
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const downloadBankerPack = async () => {
+    if (!result?.id) return;
+    setPdfLoading(true);
+    try {
+      const r = await apiClient().post(`/banker-pack/v2/from-simulation/${result.id}`, {}, { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([r.data], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `banker-pack-v2-${result.id}-${new Date().toISOString().slice(0,10)}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Banker Pack v2 scaricato");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Errore generazione PDF");
+    } finally {
+      setPdfLoading(false);
+    }
   };
 
   const ai = result?.ai;
@@ -362,7 +382,7 @@ export default function MortgageFeasibility() {
               data-testid="mf-verdict"
             >
               {/* Score gauge */}
-              <div className="flex items-center gap-3 md:gap-4">
+              <div className="flex items-center gap-3 md:gap-4 flex-1">
                 <div className="relative w-24 h-24 shrink-0">
                   <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                     <circle cx="50" cy="50" r="44" fill="none" stroke="#FFFFFF" strokeWidth="9" />
@@ -374,7 +394,7 @@ export default function MortgageFeasibility() {
                     <span className="text-[10px] uppercase tracking-wider" style={{ color: sty.text }}>/ 100</span>
                   </div>
                 </div>
-                <div>
+                <div className="flex-1">
                   <div className="text-[11px] uppercase tracking-wider font-semibold" style={{ color: sty.text }}>
                     Esito atteso · {ESITO_LABEL[ai.esito_atteso] || ai.esito_atteso}
                   </div>
@@ -382,6 +402,24 @@ export default function MortgageFeasibility() {
                     {ai.giudizio_sintetico}
                   </div>
                 </div>
+              </div>
+
+              {/* Download Banker Pack v2 */}
+              <div className="flex flex-col items-stretch md:items-end gap-1.5 shrink-0">
+                <button
+                  onClick={downloadBankerPack}
+                  disabled={pdfLoading}
+                  data-testid="mf-pdf-banker-pack"
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-[#F8FAFC] disabled:opacity-60 border-2 text-sm font-semibold transition shadow-sm"
+                  style={{ borderColor: sty.strong, color: sty.strong }}
+                >
+                  {pdfLoading
+                    ? <><Loader2 size={15} className="animate-spin"/> Generazione PDF…</>
+                    : <><FileDown size={15}/> Scarica Banker Pack v2</>}
+                </button>
+                <span className="text-[10px] text-center md:text-right opacity-70" style={{ color: sty.text }}>
+                  Credit dossier completo pronto per la banca
+                </span>
               </div>
             </div>
 

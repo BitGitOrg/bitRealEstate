@@ -41,6 +41,7 @@ from routers.geo import make_geo_router
 from routers.notifications import make_notifications_router
 from routers.tax_calendar import make_tax_calendar_router
 from routers.banker_pack import make_banker_pack_router
+from routers.banker_pack_v2 import make_banker_pack_v2_router
 from routers.pipeline import make_pipeline_router
 from routers.email_inbox import make_email_inbox_router, background_sync_loop
 from routers.kpi_trends import make_kpi_trends_router
@@ -655,6 +656,7 @@ app.include_router(make_geo_router(db, current_user))
 app.include_router(make_notifications_router(db, current_user, EMERGENT_LLM_KEY))
 app.include_router(make_tax_calendar_router(db, current_user))
 app.include_router(make_banker_pack_router(db, current_user))
+app.include_router(make_banker_pack_v2_router(db, current_user))
 app.include_router(make_pipeline_router(db, current_user, EMERGENT_LLM_KEY))
 app.include_router(make_email_inbox_router(db, current_user, EMERGENT_LLM_KEY))
 app.include_router(make_kpi_trends_router(db, current_user))
