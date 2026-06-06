@@ -43,24 +43,24 @@ export default function ImpostazioniWrapper() {
   return (
     <Layout title="Impostazioni" subtitle={SUBTITLES[tab] || "Configurazione + risorse"}>
       <Tabs value={tab} onValueChange={onChange} className="w-full">
-        <TabsList data-testid="impostazioni-wrapper-tabs" className="mb-4">
-          <TabsTrigger value="config" data-testid="tab-imp-config">
-            <SettingsIcon size={14} className="mr-1.5"/>
+        <TabsList data-testid="impostazioni-wrapper-tabs" className="mb-4 grid w-full grid-cols-4 h-auto">
+          <TabsTrigger value="config" data-testid="tab-imp-config" className="text-xs sm:text-sm py-2 px-1 sm:px-3">
+            <SettingsIcon size={14} className="mr-1 sm:mr-1.5 shrink-0"/>
             <span className="hidden sm:inline">Configurazione</span>
             <span className="sm:hidden">Config</span>
           </TabsTrigger>
-          <TabsTrigger value="import" data-testid="tab-imp-import">
-            <Database size={14} className="mr-1.5"/>
+          <TabsTrigger value="import" data-testid="tab-imp-import" className="text-xs sm:text-sm py-2 px-1 sm:px-3">
+            <Database size={14} className="mr-1 sm:mr-1.5 shrink-0"/>
             <span className="hidden sm:inline">Centro Import</span>
             <span className="sm:hidden">Import</span>
           </TabsTrigger>
-          <TabsTrigger value="lineage" data-testid="tab-imp-lineage">
-            <GitBranch size={14} className="mr-1.5"/>
+          <TabsTrigger value="lineage" data-testid="tab-imp-lineage" className="text-xs sm:text-sm py-2 px-1 sm:px-3">
+            <GitBranch size={14} className="mr-1 sm:mr-1.5 shrink-0"/>
             <span className="hidden sm:inline">Data Lineage</span>
             <span className="sm:hidden">Lineage</span>
           </TabsTrigger>
-          <TabsTrigger value="manuale" data-testid="tab-imp-manuale">
-            <BookOpen size={14} className="mr-1.5"/>
+          <TabsTrigger value="manuale" data-testid="tab-imp-manuale" className="text-xs sm:text-sm py-2 px-1 sm:px-3">
+            <BookOpen size={14} className="mr-1 sm:mr-1.5 shrink-0"/>
             <span className="hidden sm:inline">Manuale d'uso</span>
             <span className="sm:hidden">Guida</span>
           </TabsTrigger>

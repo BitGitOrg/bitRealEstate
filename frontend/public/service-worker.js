@@ -6,7 +6,7 @@
  *  - API (/api/*): SEMPRE network — non cachiamo dati sensibili/auth
  *  - Cache versionato: aggiorna CACHE_NAME a ogni rilascio per forzare refresh
  */
-const CACHE_NAME = "control-room-v2";
+const CACHE_NAME = "control-room-v3";
 const CORE_ASSETS = [
   "/",
   "/manifest.json",

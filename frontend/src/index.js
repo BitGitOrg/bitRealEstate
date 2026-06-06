@@ -35,10 +35,22 @@ if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
           if (!w) return;
           w.addEventListener("statechange", () => {
             if (w.state === "installed" && navigator.serviceWorker.controller) {
-              // Nuova versione pronta — il prossimo refresh la attiverà
-              console.info("[SW] Nuova versione disponibile al prossimo reload.");
+              // Nuova versione installata: attiva subito + reload
+              console.info("[SW] Nuova versione disponibile, attivazione…");
+              w.postMessage("SKIP_WAITING");
             }
           });
+        });
+        // Quando un nuovo SW prende il controllo, ricarica la pagina (1 sola volta)
+        let reloaded = false;
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          if (reloaded) return;
+          reloaded = true;
+          window.location.reload();
+        });
+        // Forza check aggiornamenti ogni volta che torni sull'app
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") reg.update().catch(() => {});
         });
       })
       .catch((err) => console.warn("[SW] Registrazione fallita:", err));

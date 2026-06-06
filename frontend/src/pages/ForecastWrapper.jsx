@@ -36,19 +36,19 @@ export default function ForecastWrapper() {
       subtitle={SUBTITLES[tab] || "Forecast portfolio · fattibilità mutuo · deal singolo"}
     >
       <Tabs value={tab} onValueChange={onChange} className="w-full">
-        <TabsList data-testid="forecast-wrapper-tabs" className="mb-4">
-          <TabsTrigger value="acquisto" data-testid="tab-fc-acquisto">
-            <TrendingUp size={14} className="mr-1.5"/>
+        <TabsList data-testid="forecast-wrapper-tabs" className="mb-4 grid w-full grid-cols-3 h-auto">
+          <TabsTrigger value="acquisto" data-testid="tab-fc-acquisto" className="text-xs sm:text-sm py-2 px-1 sm:px-3">
+            <TrendingUp size={14} className="mr-1 sm:mr-1.5 shrink-0"/>
             <span className="hidden sm:inline">Piano portfolio</span>
             <span className="sm:hidden">Portfolio</span>
           </TabsTrigger>
-          <TabsTrigger value="mutuo" data-testid="tab-fc-mutuo">
-            <Banknote size={14} className="mr-1.5"/>
+          <TabsTrigger value="mutuo" data-testid="tab-fc-mutuo" className="text-xs sm:text-sm py-2 px-1 sm:px-3">
+            <Banknote size={14} className="mr-1 sm:mr-1.5 shrink-0"/>
             <span className="hidden sm:inline">Fattibilità mutuo</span>
             <span className="sm:hidden">Mutuo</span>
           </TabsTrigger>
-          <TabsTrigger value="deal" data-testid="tab-fc-deal">
-            <Calculator size={14} className="mr-1.5"/>
+          <TabsTrigger value="deal" data-testid="tab-fc-deal" className="text-xs sm:text-sm py-2 px-1 sm:px-3">
+            <Calculator size={14} className="mr-1 sm:mr-1.5 shrink-0"/>
             <span className="hidden sm:inline">Deal singolo</span>
             <span className="sm:hidden">Deal</span>
           </TabsTrigger>
