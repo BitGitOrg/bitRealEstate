@@ -24,7 +24,7 @@ import Report from "@/pages/Report";
 import Impostazioni from "@/pages/Impostazioni";import Mappa from "@/pages/Mappa";
 import Watchlists from "@/pages/Watchlists";
 import ImpostazioniWrapper from "@/pages/ImpostazioniWrapper";
-import ForecastSimple from "@/pages/ForecastSimple";
+import ForecastWrapper from "@/pages/ForecastWrapper";
 import Notifiche from "@/pages/Notifiche";
 import Scadenzario from "@/pages/Scadenzario";
 import Pipeline from "@/pages/Pipeline";
@@ -65,7 +65,7 @@ function App() {
             <Route path="/deal-inbox" element={<Navigate to="/pipeline" replace />} />
             <Route path="/watchlists" element={<Protected><Watchlists /></Protected>} />
             <Route path="/import" element={<Navigate to="/impostazioni?tab=import" replace />} />
-            <Route path="/forecast" element={<Protected><ForecastSimple /></Protected>} />
+            <Route path="/forecast" element={<Protected><ForecastWrapper /></Protected>} />
             <Route path="/manuale" element={<Navigate to="/impostazioni?tab=manuale" replace />} />
             <Route path="/data-lineage" element={<Navigate to="/impostazioni?tab=lineage" replace />} />
             <Route path="/notifiche" element={<Protected><Notifiche /></Protected>} />

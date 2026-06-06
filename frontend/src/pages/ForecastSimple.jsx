@@ -26,7 +26,7 @@ const exampleProms = [
   "Conservativa: 1 trilocale Verona ogni 2 anni, canone 950€, leva 50%. Mantieni 50k di liquidità sempre.",
 ];
 
-export default function ForecastSimple() {
+export default function ForecastSimple({ embedded = false }) {
   const [mode, setMode] = useState("prompt"); // 'prompt' | 'params' | 'both'
   const [horizon, setHorizon] = useState(5);
   const [prompt, setPrompt] = useState("");
@@ -109,7 +109,10 @@ export default function ForecastSimple() {
 
   // Debounced sensitivity: ricomputa quando uno slider cambia, salvo tutti a 0
   useEffect(() => {
-    if (!result?.saved_id) return;
+    if (!result?.saved_id) {
+      setSensResult(null);
+      return;
+    }
     const allZero =
       !sensitivity.delta_tasso_pct &&
       !sensitivity.delta_canone_pct &&
@@ -131,7 +134,6 @@ export default function ForecastSimple() {
       }
     }, 280);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sensitivity, result?.saved_id]);
 
   const runTornado = async () => {
@@ -201,11 +203,7 @@ export default function ForecastSimple() {
       ? { bg: "#FFFBEB", border: "#FDE68A", text: "#92400E", icon: "#B45309" }
       : { bg: "#ECFDF5", border: "#A7F3D0", text: "#065F46", icon: "#059669" };
 
-  return (
-    <Layout
-      title="Forecast"
-      subtitle="Descrivi il tuo piano o usa i parametri rapidi · simulazione + grafici + report in 1 click"
-    >
+  const inner = (
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* LEFT — INPUT */}
         <div className="lg:col-span-2 space-y-4">
@@ -633,7 +631,7 @@ export default function ForecastSimple() {
               >
                 {!actionPlan && !actionPlanLoading && (
                   <div className="text-xs text-[#94A3B8] py-3 text-center">
-                    Clicca <b>Genera piano d'azione</b>: l'AI produce 5-7 step concreti con priorità, tempi e KPI da monitorare.
+                    {`Clicca `}<b>{`Genera piano d'azione`}</b>{`: l'AI produce 5-7 step concreti con priorità, tempi e KPI da monitorare.`}
                   </div>
                 )}
                 {actionPlanLoading && (
@@ -661,7 +659,7 @@ export default function ForecastSimple() {
                 <div className="space-y-2 max-h-60 overflow-y-auto mb-3">
                   {chatHistory.length === 0 && (
                     <div className="text-center text-xs text-[#94A3B8] py-3">
-                      Domande tipo: <i>"Qual è l'anno più rischioso?" · "Come riduco l'LTV finale?" · "Cosa cambia se compro 1 in meno?"</i>
+                      {`Domande tipo: `}<i>{`"Qual è l'anno più rischioso?" · "Come riduco l'LTV finale?" · "Cosa cambia se compro 1 in meno?"`}</i>
                     </div>
                   )}
                   {chatHistory.map((m, i) => (
@@ -694,6 +692,15 @@ export default function ForecastSimple() {
           )}
         </div>
       </div>
+  );
+
+  if (embedded) return inner;
+  return (
+    <Layout
+      title="Forecast"
+      subtitle="Descrivi il tuo piano o usa i parametri rapidi · simulazione + grafici + report in 1 click"
+    >
+      {inner}
     </Layout>
   );
 }

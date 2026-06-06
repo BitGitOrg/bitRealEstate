@@ -45,6 +45,7 @@ from routers.pipeline import make_pipeline_router
 from routers.email_inbox import make_email_inbox_router, background_sync_loop
 from routers.kpi_trends import make_kpi_trends_router
 from routers.whatsapp import make_whatsapp_router
+from routers.mortgage_feasibility import make_mortgage_feasibility_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -658,6 +659,7 @@ app.include_router(make_pipeline_router(db, current_user, EMERGENT_LLM_KEY))
 app.include_router(make_email_inbox_router(db, current_user, EMERGENT_LLM_KEY))
 app.include_router(make_kpi_trends_router(db, current_user))
 app.include_router(make_whatsapp_router(db, current_user, EMERGENT_LLM_KEY))
+app.include_router(make_mortgage_feasibility_router(db, current_user, EMERGENT_LLM_KEY))
 
 app.add_middleware(
     CORSMiddleware,
