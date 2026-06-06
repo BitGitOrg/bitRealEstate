@@ -24,7 +24,7 @@ const Field = ({ label, value, onChange, suffix, type = "number", testId, hint }
   </label>
 );
 
-export default function Simulatore() {
+export default function Simulatore({ embedded = false }) {
   // Settings caricati dal backend (società)
   const [settings, setSettings] = useState(null);
   useEffect(() => {
@@ -148,8 +148,8 @@ export default function Simulatore() {
     } finally { setAiLoading(false); }
   };
 
-  return (
-    <Layout title="Simulatore Investimenti" subtitle="Valuta una nuova operazione — tutti i parametri sono modificabili">
+  const inner = (
+    <>
       {settings && (
         <div data-testid="sim-fiscal-banner" className="mb-4 px-3.5 py-2.5 rounded-lg bg-[rgba(124,58,237,0.06)] border border-[rgba(124,58,237,0.25)] flex items-center justify-between gap-3 flex-wrap text-sm">
           <div className="flex items-center gap-2 text-[#475569]">
@@ -226,7 +226,7 @@ export default function Simulatore() {
                   <Info size={12} className="text-[#7C3AED] shrink-0 mt-0.5"/>
                   <div>
                     <strong className="text-[#0F172A]">Regime fiscale: {labelRegime}</strong><br/>
-                    L'aliquota viene applicata sul canone. Per cambiarla, modifica il tipo società da <Link to="/impostazioni" className="text-[#7C3AED] underline">Impostazioni</Link>.
+                    {`L'aliquota viene applicata sul canone. Per cambiarla, modifica il tipo società da `}<Link to="/impostazioni" className="text-[#7C3AED] underline">Impostazioni</Link>.
                   </div>
                 </div>
               </div>
@@ -405,6 +405,13 @@ export default function Simulatore() {
           )}
         </div>
       </div>
+    </>
+  );
+
+  if (embedded) return inner;
+  return (
+    <Layout title="Simulatore Investimenti" subtitle="Valuta una nuova operazione — tutti i parametri sono modificabili">
+      {inner}
     </Layout>
   );
 }

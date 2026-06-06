@@ -30,8 +30,7 @@ const GROUPS = [
     { to: "/costi-ricavi", label: "Costi & Ricavi", icon: Receipt },
     { to: "/mutui", label: "Mutui & Finanziamenti", icon: Banknote },
     { to: "/scadenzario", label: "Scadenzario Fiscale", icon: Calendar, accent: true },
-    { to: "/simulatore", label: "Simulatore", icon: Calculator },
-    { to: "/forecast", label: "Forecast & Piano Industriale", icon: LineChart, accent: true },
+    { to: "/forecast", label: "Simulatore & Forecast", icon: Calculator, accent: true },
   ]},
   { name: "Intelligenza", items: [
     { to: "/watchlists", label: "Watchlists", icon: BellRing },

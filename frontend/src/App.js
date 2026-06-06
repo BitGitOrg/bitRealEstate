@@ -55,7 +55,7 @@ function App() {
             <Route path="/mutui" element={<Protected><Mutui /></Protected>} />
             <Route path="/cash-flow" element={<Protected><CashFlow /></Protected>} />
             <Route path="/kpi" element={<Protected><KPI /></Protected>} />
-            <Route path="/simulatore" element={<Protected><Simulatore /></Protected>} />
+            <Route path="/simulatore" element={<Navigate to="/forecast?tab=deal" replace />} />
             <Route path="/ai-autopilot" element={<Protected><AIAutopilot /></Protected>} />
             <Route path="/alert-center" element={<Protected><AlertCenter /></Protected>} />
             <Route path="/documenti" element={<Protected><Documenti /></Protected>} />
