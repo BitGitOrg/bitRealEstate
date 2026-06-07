@@ -118,38 +118,60 @@ export default function MortgageFeasibility() {
       note: form.note || null,
       tag: form.tag || null,
     };
-    // Retry automatico (max 2 tentativi) per gestire timeout di rete mobile / JSON parse intermittenti
-    const attempt = async (n) => {
-      try {
-        return await apiClient().post("/mortgage-feasibility/analyze", payload, { timeout: 120000 });
-      } catch (e) {
-        const status = e?.response?.status;
-        const code = e?.code;
-        const retriable = !status || status >= 500 || code === "ECONNABORTED" || code === "ERR_NETWORK";
-        if (n < 2 && retriable) {
-          toast.message("Connessione lenta, riprovo…", { duration: 2000 });
-          await new Promise(r => setTimeout(r, 800));
-          return attempt(n + 1);
-        }
-        throw e;
-      }
-    };
+
+    // 2-FASE ASINCRONO (necessario: ingress Kubernetes uccide HTTP a 60s, Claude impiega 60-120s):
+    //   1. POST /analyze → ritorna sim_id + KPI istantaneo, AI parte in background sul server
+    //   2. Polling GET /status/{sim_id} ogni 2.5s fino a status='done' o 'failed' o timeout 3 min
     try {
-      const r = await attempt(1);
-      setResult(r.data);
-      toast.success(`Analisi completata · score ${r.data?.ai?.punteggio_fattibilita}/100`);
+      const created = await apiClient().post("/mortgage-feasibility/analyze", payload, { timeout: 20000 });
+      const simId = created.data?.id;
+      if (!simId) throw new Error("ID simulazione mancante");
+
+      // Mostra subito KPI deterministici, in attesa che arrivi l'analisi banker AI
+      setResult(created.data);
       loadHistory();
+
+      const startedAt = Date.now();
+      const MAX_WAIT_MS = 3 * 60 * 1000; // 3 minuti
+      const POLL_MS = 2500;
+
+      // eslint-disable-next-line no-constant-condition,no-unmodified-loop-condition
+      while (true) {
+        if (Date.now() - startedAt > MAX_WAIT_MS) {
+          toast.error("Analisi AI troppo lenta (>3 min). Controlla lo storico fra poco — potrebbe arrivare comunque.");
+          break;
+        }
+        await new Promise(r => setTimeout(r, POLL_MS));
+        let s;
+        try {
+          s = await apiClient().get(`/mortgage-feasibility/status/${simId}`, { timeout: 15000 });
+        } catch (pollErr) {
+          // Errore transitorio di rete: riprova al prossimo giro
+          continue;
+        }
+        const d = s.data || {};
+        if (d.status === "done" && d.ai) {
+          setResult(d);
+          toast.success(`Analisi completata · score ${d.ai?.punteggio_fattibilita}/100`);
+          loadHistory();
+          break;
+        }
+        if (d.status === "failed") {
+          toast.error(d.error || "Analisi AI fallita. Riprova.");
+          loadHistory();
+          break;
+        }
+        // status === 'processing' → continua polling
+      }
     } catch (e) {
       const detail = e?.response?.data?.detail;
       let msg;
       if (detail) {
         msg = detail.length > 160 ? detail.slice(0, 160) + "…" : detail;
-      } else if (e?.code === "ECONNABORTED" || /timeout/i.test(e?.message || "")) {
-        msg = "Analisi troppo lenta (timeout). Ritenta con connessione migliore o riduci le note.";
       } else if (!navigator.onLine) {
         msg = "Sei offline. Connettiti a internet e riprova.";
       } else {
-        msg = "Errore analisi. Riprova fra qualche secondo.";
+        msg = "Errore avvio analisi. Riprova fra qualche secondo.";
       }
       toast.error(msg);
     } finally {
@@ -495,18 +517,25 @@ export default function MortgageFeasibility() {
               {history.slice(0, 20).map(h => {
                 const hSty = SEMAFORO_STYLE[h.ai?.semaforo || h.kpi?.semaforo || "giallo"];
                 const hScore = h.ai?.punteggio_fattibilita ?? h.kpi?.score_deterministico;
+                const hStatus = h.status || (h.ai ? "done" : "processing");
                 return (
                   <div key={h.id}
                     className="flex items-center gap-2 p-2 border border-[#E2E8F0] hover:border-[#0066FF] cursor-pointer transition-colors group"
                     onClick={() => openHistorical(h)}
                     data-testid={`mf-hist-${h.id}`}>
-                    <div className="w-9 h-9 flex items-center justify-center font-display font-bold text-xs tabular"
+                    <div className="w-9 h-9 flex items-center justify-center font-display font-bold text-xs tabular relative"
                          style={{ background: hSty.bg, color: hSty.strong, border: `1px solid ${hSty.border}` }}>
-                      {hScore}
+                      {hStatus === "processing"
+                        ? <Loader2 size={14} className="animate-spin text-[#0066FF]" />
+                        : hStatus === "failed"
+                          ? <AlertTriangle size={14} className="text-[#DC2626]" />
+                          : hScore}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[12px] font-semibold text-[#0F172A] truncate">
+                      <div className="text-[12px] font-semibold text-[#0F172A] truncate flex items-center gap-1.5">
                         {h.input?.tag || `${eur(h.input?.importo)} × ${h.input?.durata_anni}a`}
+                        {hStatus === "processing" && <span className="text-[9px] uppercase tracking-wider bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE] px-1 py-0.5">AI in corso</span>}
+                        {hStatus === "failed" && <span className="text-[9px] uppercase tracking-wider bg-[#FEF2F2] text-[#991B1B] border border-[#FECACA] px-1 py-0.5">AI fallita</span>}
                       </div>
                       <div className="text-[10px] text-[#64748B]">
                         {new Date(h.created_at).toLocaleDateString("it-IT")} · {h.input?.tasso_pct}% {h.input?.tipo_tasso}
@@ -537,11 +566,80 @@ export default function MortgageFeasibility() {
           </SectionCard>
         )}
 
-        {loading && (
+        {loading && !result && (
           <SectionCard testId="mf-loading" title="Senior Credit Officer al lavoro…">
             <div className="text-center py-16">
               <Loader2 size={48} className="mx-auto text-[#0066FF] animate-spin"/>
               <div className="text-sm text-[#475569] mt-3">Aggregazione bilancio · calcolo DSCR/LTV/DTI · analisi banker-grade</div>
+              <div className="text-[11px] text-[#94A3B8] mt-2">{`L'analisi AI può richiedere 60-120 secondi. Resta sulla pagina o controlla lo storico.`}</div>
+            </div>
+          </SectionCard>
+        )}
+
+        {/* Mentre l'AI elabora in background, mostriamo subito i KPI deterministici */}
+        {loading && result && kpi && !ai && (
+          <SectionCard testId="mf-kpi-preview" title="KPI deterministici · Senior Credit Officer al lavoro…" action={<Loader2 size={14} className="text-[#0066FF] animate-spin" />}>
+            <div className="text-[11px] text-[#475569] mb-3 flex items-center gap-1.5">
+              <Loader2 size={12} className="animate-spin text-[#0066FF]" />
+              {`Claude sta producendo l'analisi banker · score finale e raccomandazioni fra ~60-90s`}
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="mf-kpi-tiles-preview">
+              <KpiTile label="Rata mensile" value={eur(kpi.rata_nuova_mensile)} sub={`Totale post: ${eur(kpi.rata_mensile_post)}`} icon={Banknote} testId="mf-kpi-rata-prev" info={infos.rata} />
+              <KpiTile label="DSCR post" value={num(kpi.dscr_post)} sub="Soglia ABI ≥ 1.20"
+                       tone={kpi.dscr_post >= 1.4 ? "positive" : kpi.dscr_post >= 1.2 ? "warning" : "critical"}
+                       icon={ShieldCheck} testId="mf-kpi-dscr-prev" info={infos.dscr} />
+              <KpiTile label="LTV portfolio post" value={pct(kpi.ltv_portfolio_post_pct)} sub={kpi.ltv_immobile_pct !== null ? `Immobile: ${pct(kpi.ltv_immobile_pct)}` : "Aggregato"}
+                       tone={kpi.ltv_portfolio_post_pct < 70 ? "positive" : kpi.ltv_portfolio_post_pct < 80 ? "warning" : "critical"}
+                       icon={Building2} testId="mf-kpi-ltv-prev" info={infos.ltv} />
+              <KpiTile label="Score deterministico" value={`${kpi.score_deterministico}/100`} sub={`Semaforo: ${kpi.semaforo}`}
+                       tone={kpi.semaforo === "verde" ? "positive" : kpi.semaforo === "giallo" ? "warning" : "critical"}
+                       icon={Sparkles} testId="mf-kpi-score-prev" />
+            </div>
+          </SectionCard>
+        )}
+
+        {/* Record dello storico ancora in elaborazione (status=processing) o fallito (status=failed) */}
+        {!loading && result && kpi && !ai && (
+          <SectionCard
+            testId="mf-history-status"
+            title={result.status === "failed" ? "Analisi AI fallita" : "Analisi AI ancora in lavorazione"}
+            action={result.status === "failed"
+              ? <AlertTriangle size={16} className="text-[#DC2626]" />
+              : <Loader2 size={16} className="text-[#0066FF] animate-spin" />}
+          >
+            <div className={`p-3 mb-3 border text-[12.5px] ${result.status === "failed" ? "bg-[#FEF2F2] border-[#FECACA] text-[#991B1B]" : "bg-[#EFF6FF] border-[#BFDBFE] text-[#1E40AF]"}`}>
+              {result.status === "failed"
+                ? <>{`L'AI non ha completato l'analisi: `}<em>{result.error || "errore sconosciuto"}</em>{`. Puoi rilanciare la simulazione (i KPI deterministici sotto restano validi).`}</>
+                : <>{`Claude sta ancora elaborando l'analisi banker-grade. Premi `}<strong>Aggiorna stato</strong>{` fra qualche secondo oppure rilancia la simulazione.`}</>}
+            </div>
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={async () => {
+                  try {
+                    const s = await apiClient().get(`/mortgage-feasibility/status/${result.id}`);
+                    if (s.data) setResult(s.data);
+                    if (s.data?.status === "done") toast.success("Analisi AI completata");
+                    else if (s.data?.status === "failed") toast.error(s.data.error || "Analisi AI fallita");
+                    else toast.message("Ancora in elaborazione…");
+                  } catch { toast.error("Errore aggiornamento stato"); }
+                }}
+                data-testid="mf-refresh-status"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#0066FF] hover:bg-[#2563EB] text-white text-xs font-semibold transition"
+              >
+                <Loader2 size={12} /> Aggiorna stato
+              </button>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <KpiTile label="Rata mensile" value={eur(kpi.rata_nuova_mensile)} sub={`Totale post: ${eur(kpi.rata_mensile_post)}`} icon={Banknote} testId="mf-kpi-rata-h" info={infos.rata} />
+              <KpiTile label="DSCR post" value={num(kpi.dscr_post)} sub="Soglia ABI ≥ 1.20"
+                       tone={kpi.dscr_post >= 1.4 ? "positive" : kpi.dscr_post >= 1.2 ? "warning" : "critical"}
+                       icon={ShieldCheck} testId="mf-kpi-dscr-h" info={infos.dscr} />
+              <KpiTile label="LTV portfolio post" value={pct(kpi.ltv_portfolio_post_pct)} icon={Building2}
+                       tone={kpi.ltv_portfolio_post_pct < 70 ? "positive" : kpi.ltv_portfolio_post_pct < 80 ? "warning" : "critical"}
+                       testId="mf-kpi-ltv-h" info={infos.ltv} />
+              <KpiTile label="Score deterministico" value={`${kpi.score_deterministico}/100`} sub={`Semaforo: ${kpi.semaforo}`}
+                       tone={kpi.semaforo === "verde" ? "positive" : kpi.semaforo === "giallo" ? "warning" : "critical"}
+                       icon={Sparkles} testId="mf-kpi-score-h" />
             </div>
           </SectionCard>
         )}

@@ -439,8 +439,37 @@ def make_mortgage_feasibility_router(db, current_user, llm_key: Optional[str] = 
             }
         }
 
+    async def _run_ai_in_background(sim_id: str, user_id: str, portfolio: dict, inp: MortgageInput, kpi: dict):
+        """Esegue Claude in background e aggiorna il record con ai/status.
+        Evita che il proxy Kubernetes (timeout 60s) chiuda la connessione client mentre
+        l'AI sta ancora lavorando (l'analisi banker-grade richiede 60-120s tipici)."""
+        try:
+            try:
+                ai = await _ai_banker_analysis(llm_key, portfolio, inp, kpi)
+            except json.JSONDecodeError as je:
+                logger.warning(f"[MF {sim_id}] AI JSON invalido, retry: {je}")
+                ai = await _ai_banker_analysis(llm_key, portfolio, inp, kpi)
+            await db.mortgage_simulations.update_one(
+                {"id": sim_id, "user_id": user_id},
+                {"$set": {"ai": ai, "status": "done", "completed_at": datetime.now(timezone.utc).isoformat()}}
+            )
+            logger.info(f"[MF {sim_id}] analisi AI completata · score {ai.get('punteggio_fattibilita')}")
+        except Exception as e:
+            logger.exception(f"[MF {sim_id}] AI fallita: {e}")
+            await db.mortgage_simulations.update_one(
+                {"id": sim_id, "user_id": user_id},
+                {"$set": {
+                    "status": "failed",
+                    "error": f"AI analysis failed: {str(e)[:160]}",
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                }}
+            )
+
     @router.post("/analyze")
     async def analyze(inp: MortgageInput, user: dict = Depends(current_user)):
+        """Avvia simulazione in modo asincrono.
+        Ritorna subito (sim_id + KPI deterministici) in <2s, l'AI gira in background.
+        Il frontend deve fare polling su GET /status/{sim_id} per ottenere l'analisi AI."""
         if not llm_key:
             raise HTTPException(503, "LLM non configurato")
         if inp.importo <= 0 or inp.durata_anni <= 0 or inp.tasso_pct <= 0:
@@ -449,33 +478,38 @@ def make_mortgage_feasibility_router(db, current_user, llm_key: Optional[str] = 
         portfolio = await _aggregate_portfolio(db, user["id"])
         kpi = _compute_kpi(portfolio, inp)
 
-        try:
-            ai = await _ai_banker_analysis(llm_key, portfolio, inp, kpi)
-        except json.JSONDecodeError as je:
-            logger.warning(f"AI banker analysis returned invalid JSON, retrying once: {je}")
-            try:
-                ai = await _ai_banker_analysis(llm_key, portfolio, inp, kpi)
-            except Exception as e2:
-                logger.exception(f"AI banker analysis failed on retry: {e2}")
-                raise HTTPException(503, "L'AI ha avuto un'esitazione. Riprova fra qualche secondo.")
-        except Exception as e:
-            logger.exception(f"AI banker analysis failed: {e}")
-            raise HTTPException(500, f"AI analysis failed: {str(e)[:120]}")
-
-        result = {
-            "id": f"MF-{uuid.uuid4().hex[:8].upper()}",
+        sim_id = f"MF-{uuid.uuid4().hex[:8].upper()}"
+        record = {
+            "id": sim_id,
             "user_id": user["id"],
             "input": inp.model_dump(),
             "portfolio_snapshot": portfolio,
             "kpi": kpi,
-            "ai": ai,
+            "ai": None,
+            "status": "processing",
+            "error": None,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        # Salva storico (sempre, scelta utente confermata)
-        await db.mortgage_simulations.insert_one(result.copy())
-        # Output non include user_id
-        result_out = {k: v for k, v in result.items() if k != "user_id"}
-        return result_out
+        await db.mortgage_simulations.insert_one(record.copy())
+        # Spawn AI task: la chiamata a Claude (60-120s) gira in background dopo il return.
+        asyncio.create_task(_run_ai_in_background(sim_id, user["id"], portfolio, inp, kpi))
+
+        out = {k: v for k, v in record.items() if k != "user_id"}
+        return out
+
+    @router.get("/status/{sim_id}")
+    async def status(sim_id: str, user: dict = Depends(current_user)):
+        """Polling endpoint: ritorna lo stato corrente della simulazione.
+        - status='processing' → AI ancora in lavorazione (frontend continua il polling)
+        - status='done'       → ai popolato, risultato pronto
+        - status='failed'     → errore, mostrare error al cliente
+        """
+        doc = await db.mortgage_simulations.find_one(
+            {"id": sim_id, "user_id": user["id"]}, {"_id": 0, "user_id": 0}
+        )
+        if not doc:
+            raise HTTPException(404, "Simulazione non trovata")
+        return doc
 
     @router.get("/history")
     async def history(user: dict = Depends(current_user)):

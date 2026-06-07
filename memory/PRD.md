@@ -538,6 +538,24 @@ DOPO: Anno 0 cash_flow=€23.358, utile=€23.358 (corretto)
 - `ImpostazioniWrapper` con 2 tab: Configurazione + Centro Import. Route `/impostazioni?tab=import` apre direttamente import. Voce sidebar "Centro Import" rimossa (rimane solo Impostazioni).
 - `DataLineage` interattivo: ogni pagina ha campo `route`, bottone "Apri pagina" nell'header e righe tabella cliccabili → naviga direttamente alla pagina target.
 
+## 2026-02 — Fix P0 Mortgage Feasibility timeout 60s ingress Kubernetes
+- **Problema**: chiamando POST `/api/mortgage-feasibility/analyze` il client riceveva HTTP 502 dopo 60s (proxy kube), ma il backend completava l'AI in 60-90s e salvava nello storico. Utente vedeva errore ma poi trovava la simulazione nello storico.
+- **Causa**: Claude impiega 60-120s per produrre l'analisi banker-grade strutturata; l'ingress Kubernetes ha timeout HTTP fisso a 60s.
+- **Fix backend** (`routers/mortgage_feasibility.py`): pattern asincrono a 2 fasi
+  - POST `/analyze`: calcola KPI deterministici, INSERISCE record con `status="processing"`, spawn `asyncio.create_task(_run_ai_in_background)`, ritorna sim_id in <2s
+  - GET `/status/{sim_id}` (nuovo): ritorna lo stato corrente per il polling
+  - Background task: chiama Claude, fa UPDATE su MongoDB con `ai+status="done"` o `error+status="failed"`
+- **Fix frontend** (`MortgageFeasibility.jsx`):
+  - Dopo POST mostra subito i KPI deterministici nel pannello destro ("KPI deterministici · Senior Credit Officer al lavoro…") con loader
+  - Polling GET /status ogni 2.5s, max 3 minuti, sostituisce KPI preview con analisi completa quando `status="done"`
+  - Storico: badge "AI IN CORSO" o "AI FALLITA" su record con status non-done; bottone "Aggiorna stato" su record aperto da storico
+  - Tile "Score deterministico X/100" nella preview così l'utente vede subito il giudizio iniziale
+- **Verificato**:
+  - POST risponde in 0.1s (vs 60s+ → 502)
+  - Polling: status=processing per ~72s, poi done a ~80s con AI completo
+  - UI: KPI deterministici visibili subito (Rata 3638€, DSCR 0.76, LTV 38.1%, Score 16/100)
+  - Nessun più timeout 502
+
 ## 2026-02 — Fix P0 Mobile Tabs + Service Worker network-first
 - **Problema**: utente su iPhone PWA segnalava 3° tab non visibile in `/forecast` e tab mancanti in `/impostazioni`. Causa duplice: (a) Service Worker v3 cachava JS bundle in cache-first, impedendo aggiornamenti UI; (b) la `TabsList` Shadcn di default era `inline-flex` e non garantiva spazio ai 3 tab in 390px.
 - **Fix CSS**: confermato `className="grid w-full grid-cols-3 h-auto"` in `ForecastWrapper.jsx` e `grid grid-cols-4` in `ImpostazioniWrapper.jsx` (utente ha esplicitamente scelto grid-cols invece di scroll orizzontale).
