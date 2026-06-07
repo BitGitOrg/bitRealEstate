@@ -150,7 +150,9 @@ def make_mutui_router(db, current_user, llm_key: str = ""):
 
     @router.get("/aggregato")
     async def aggregato(user: dict = Depends(current_user)):
-        """KPI di portafoglio per la pagina Mutui."""
+        """KPI di portafoglio per la pagina Mutui.
+        Include il rilevamento del debito_mutui dall'ultimo bilancio caricato per
+        permettere alla UI di mostrare banner di riconciliazione bilancio↔gestionale."""
         items = await db.mutui.find({"user_id": user["id"]}, {"_id": 0}).to_list(200)
         debito_totale = 0.0
         rata_totale = 0.0
@@ -168,6 +170,18 @@ def make_mutui_router(db, current_user, llm_key: str = ""):
         # ricavi mensili da affitti per incidenza
         props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
         ricavi_mensili = sum(float(p.get("canone_mensile") or 0) for p in props)
+
+        # Rilevamento debito mutui dall'ultimo bilancio caricato (per banner UX)
+        latest_bil = await db.bilanci.find_one(
+            {"user_id": user["id"]}, {"_id": 0}, sort=[("periodo", -1), ("created_at", -1)]
+        )
+        bilancio_debito_mutui = None
+        bilancio_periodo = None
+        if latest_bil:
+            sp = latest_bil.get("stato_patrimoniale") or {}
+            bilancio_debito_mutui = float(sp.get("debito_mutui") or 0)
+            bilancio_periodo = latest_bil.get("periodo")
+
         return {
             "n_mutui": len(items),
             "debito_totale": round(debito_totale, 2),
@@ -176,6 +190,10 @@ def make_mutui_router(db, current_user, llm_key: str = ""):
             "ltv_pct": round(debito_totale / valore_immobili_garanzia * 100, 1) if valore_immobili_garanzia else None,
             "ricavi_mensili": round(ricavi_mensili, 2),
             "incidenza_rata_su_affitti_pct": round(rata_totale / ricavi_mensili * 100, 1) if ricavi_mensili else None,
+            # rilevamento bilancio
+            "bilancio_caricato": latest_bil is not None,
+            "bilancio_periodo": bilancio_periodo,
+            "bilancio_debito_mutui": round(bilancio_debito_mutui, 2) if bilancio_debito_mutui is not None else None,
         }
 
     @router.post("")

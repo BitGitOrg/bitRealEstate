@@ -7,11 +7,36 @@ import { toast } from "sonner";
 import {
   Banknote, AlertTriangle, TrendingDown, Plus, Upload, Sparkles, Loader2,
   FileText, Trash2, Edit2, X, Wallet, Activity, Percent, Calendar,
+  CheckCircle2, FileWarning, Info,
 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { formatEur } from "../lib/demoData";
 
 const tooltipStyle = { backgroundColor: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12, color: "#0F172A", boxShadow: "0 4px 12px rgba(15,23,42,0.08)" };
+
+// Soglia tolleranza riconciliazione bilancio↔gestionale (€)
+const RECONCILE_TOLERANCE_EUR = 2000;
+// Soglia tolleranza in % rispetto al debito bilancio
+const RECONCILE_TOLERANCE_PCT = 0.05;
+
+/**
+ * Calcola lo stato del banner di rilevamento mutui in base a:
+ *  - aggregato.bilancio_caricato / bilancio_debito_mutui / bilancio_periodo
+ *  - mutui caricati nel gestionale (debito_totale)
+ *
+ * 4 stati possibili:
+ *   - 'no-bilancio'    → A: utente non ha mai caricato bilanci. Tutto attivo, banner informativo.
+ *   - 'no-debito'      → B: bilancio caricato senza voce debito mutui + nessun piano gestionale. Pulsanti DISABILITATI.
+ *   - 'alert-missing'  → C: bilancio rileva debito mutui ma nessun piano caricato. ALERT rosso, import evidenziato.
+ *   - 'reconcile'      → D: bilancio + piani caricati. Banner di riconciliazione (verde / giallo / rosso).
+ */
+function computeBannerState(aggregato, mutuiCount) {
+  if (!aggregato?.bilancio_caricato) return "no-bilancio";
+  const bilDeb = Number(aggregato?.bilancio_debito_mutui || 0);
+  if (bilDeb === 0 && mutuiCount === 0) return "no-debito";
+  if (bilDeb > 0 && mutuiCount === 0) return "alert-missing";
+  return "reconcile";
+}
 
 export default function Mutui() {
   const [mutui, setMutui] = useState([]);
@@ -59,6 +84,10 @@ export default function Mutui() {
     rata: m.rata_mensile || 0,
   }));
 
+  const bannerState = computeBannerState(aggregato, mutui.length);
+  const buttonsDisabled = bannerState === "no-debito";
+  const importHighlighted = bannerState === "alert-missing";
+
   return (
     <Layout
       title="Mutui & Finanziamenti"
@@ -67,21 +96,43 @@ export default function Mutui() {
         <div className="flex items-center gap-2 flex-wrap">
           <button
             data-testid="mutui-import-pdf-btn"
-            onClick={() => setShowImport(true)}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-gradient-to-r from-[#7C3AED] to-[#2563EB] hover:opacity-90 text-white text-sm font-medium transition-opacity"
+            onClick={() => !buttonsDisabled && setShowImport(true)}
+            disabled={buttonsDisabled}
+            title={buttonsDisabled ? `Nessun debito mutui rilevato nel bilancio ${aggregato?.bilancio_periodo || ""}` : ""}
+            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-white text-sm font-medium transition ${
+              buttonsDisabled
+                ? "bg-[#CBD5E1] cursor-not-allowed"
+                : importHighlighted
+                  ? "bg-gradient-to-r from-[#DC2626] to-[#B45309] hover:opacity-90 ring-2 ring-[#FECACA] animate-pulse"
+                  : "bg-gradient-to-r from-[#7C3AED] to-[#2563EB] hover:opacity-90"
+            }`}
           >
             <Sparkles size={14} /> Importa PDF banca (AI)
           </button>
           <button
             data-testid="mutui-add-btn"
-            onClick={() => { setEditingMutuo(null); setShowForm(true); }}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#0066FF] hover:bg-[#2563EB] text-white text-sm font-medium transition-colors"
+            onClick={() => { if (!buttonsDisabled) { setEditingMutuo(null); setShowForm(true); } }}
+            disabled={buttonsDisabled}
+            title={buttonsDisabled ? `Nessun debito mutui rilevato nel bilancio ${aggregato?.bilancio_periodo || ""}` : ""}
+            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-white text-sm font-medium transition-colors ${
+              buttonsDisabled ? "bg-[#CBD5E1] cursor-not-allowed" : "bg-[#0066FF] hover:bg-[#2563EB]"
+            }`}
           >
             <Plus size={14} /> Nuovo mutuo
           </button>
         </div>
       }
     >
+      {/* Banner stato rilevamento mutui da bilancio */}
+      {!loading && (
+        <MutuiDetectionBanner
+          state={bannerState}
+          aggregato={aggregato}
+          gestDebito={aggregato?.debito_totale || 0}
+          onImportClick={() => !buttonsDisabled && setShowImport(true)}
+        />
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <KpiCard
           label="Debito totale" value={formatEur(aggregato?.debito_totale || 0)}
@@ -111,16 +162,28 @@ export default function Mutui() {
         />
       </div>
 
-      {mutui.length === 0 && !loading && (
+      {mutui.length === 0 && !loading && bannerState !== "alert-missing" && (
         <SectionCard testId="mut-empty" title="Nessun mutuo registrato" subtitle="Inizia importando il PDF del contratto banca oppure inserendo manualmente.">
           <div className="py-8 text-center">
             <Banknote size={36} className="mx-auto text-[#CBD5E1] mb-3" />
-            <div className="text-sm text-[#475569] mb-4">Aggiungi il tuo primo mutuo per iniziare a monitorare debito, rate e piano di ammortamento.</div>
+            <div className="text-sm text-[#475569] mb-4">
+              {bannerState === "no-debito"
+                ? `Nessun debito mutui rilevato nel bilancio ${aggregato?.bilancio_periodo || ""}. Per registrare un mutuo, carica prima un bilancio che lo contempli.`
+                : "Aggiungi il tuo primo mutuo per iniziare a monitorare debito, rate e piano di ammortamento."}
+            </div>
             <div className="flex items-center justify-center gap-2 flex-wrap">
-              <button onClick={() => setShowImport(true)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-[#7C3AED] to-[#2563EB] text-white text-sm font-medium">
+              <button
+                onClick={() => !buttonsDisabled && setShowImport(true)}
+                disabled={buttonsDisabled}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium ${buttonsDisabled ? "bg-[#CBD5E1] cursor-not-allowed" : "bg-gradient-to-r from-[#7C3AED] to-[#2563EB]"}`}
+              >
                 <Sparkles size={14} /> Carica PDF banca
               </button>
-              <button onClick={() => setShowForm(true)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[#E2E8F0] text-[#475569] hover:border-[#CBD5E1] text-sm font-medium">
+              <button
+                onClick={() => !buttonsDisabled && setShowForm(true)}
+                disabled={buttonsDisabled}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${buttonsDisabled ? "border border-[#E2E8F0] text-[#CBD5E1] cursor-not-allowed" : "border border-[#E2E8F0] text-[#475569] hover:border-[#CBD5E1]"}`}
+              >
                 <Plus size={14} /> Inserisci manualmente
               </button>
             </div>
@@ -506,3 +569,120 @@ const PreviewRow = ({ label, value }) => (
     <span className="text-[#0F172A] font-medium tabular">{value || "—"}</span>
   </div>
 );
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Banner di rilevamento mutui da bilancio (4 stati)
+// ───────────────────────────────────────────────────────────────────────────────
+function MutuiDetectionBanner({ state, aggregato, gestDebito, onImportClick }) {
+  const periodo = aggregato?.bilancio_periodo;
+  const bilDeb = Number(aggregato?.bilancio_debito_mutui || 0);
+
+  if (state === "no-bilancio") {
+    return (
+      <div data-testid="mut-banner-no-bilancio" className="mb-5 flex items-start gap-3 p-3.5 bg-[#EFF6FF] border border-[#BFDBFE]">
+        <Info size={18} className="shrink-0 mt-0.5 text-[#2563EB]" />
+        <div className="flex-1">
+          <div className="text-[13px] font-semibold text-[#1E40AF]">Nessun bilancio caricato</div>
+          <div className="text-[12px] text-[#1E3A8A] mt-0.5">
+            {`Carica almeno un bilancio in Impostazioni → Centro Import per attivare il rilevamento automatico dei mutui dallo stato patrimoniale.
+            Puoi comunque inserire piani di ammortamento manualmente per iniziare.`}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === "no-debito") {
+    return (
+      <div data-testid="mut-banner-no-debito" className="mb-5 flex items-start gap-3 p-3.5 bg-[#ECFDF5] border border-[#A7F3D0]">
+        <CheckCircle2 size={18} className="shrink-0 mt-0.5 text-[#059669]" />
+        <div className="flex-1">
+          <div className="text-[13px] font-semibold text-[#065F46]">{`Nessun debito mutui attivo nel bilancio ${periodo || ""}`}</div>
+          <div className="text-[12px] text-[#047857] mt-0.5">
+            {`Lo stato patrimoniale del bilancio più recente non riporta alcuna voce di debito verso banche. I pulsanti di import e inserimento sono disabilitati: per registrare un nuovo mutuo, carica prima un bilancio che lo contempli.`}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === "alert-missing") {
+    return (
+      <div data-testid="mut-banner-alert-missing" className="mb-5 p-4 bg-[#FEF2F2] border-2 border-[#FCA5A5]">
+        <div className="flex items-start gap-3">
+          <FileWarning size={20} className="shrink-0 mt-0.5 text-[#DC2626]" />
+          <div className="flex-1">
+            <div className="text-[14px] font-bold text-[#991B1B]">{`Debito mutui rilevato nel bilancio ${periodo || ""}: ${formatEur(bilDeb)}`}</div>
+            <div className="text-[12.5px] text-[#7F1D1D] mt-1 leading-relaxed">
+              {`Lo stato patrimoniale riporta un'esposizione bancaria di ${formatEur(bilDeb)} ma nel gestionale non risulta alcun piano di ammortamento caricato.`}
+              <strong> {`Carica i contratti PDF`} </strong>
+              {`per allineare la rappresentazione e ottenere DSCR, LTV e cash flow accurati.`}
+            </div>
+            <button
+              onClick={onImportClick}
+              data-testid="mut-banner-import-cta"
+              className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-semibold uppercase tracking-wider transition-colors"
+            >
+              <Sparkles size={13} /> Carica ora il PDF banca
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // state === 'reconcile' → bilancio + piani caricati: riconciliazione bilancio↔gestionale
+  const delta = bilDeb - gestDebito;
+  const absDelta = Math.abs(delta);
+  const pctDelta = bilDeb > 0 ? absDelta / bilDeb : 1;
+  let tone, msg, Icon;
+  if (bilDeb === 0 && gestDebito > 0) {
+    tone = { bg: "#FFFBEB", border: "#FDE68A", text: "#92400E", strong: "#B45309" };
+    Icon = AlertTriangle;
+    msg = `Il bilancio ${periodo || ""} non riporta debiti mutui, ma il gestionale ha piani caricati per ${formatEur(gestDebito)}. Verifica la coerenza dei dati.`;
+  } else if (absDelta <= RECONCILE_TOLERANCE_EUR || pctDelta <= RECONCILE_TOLERANCE_PCT) {
+    tone = { bg: "#ECFDF5", border: "#A7F3D0", text: "#065F46", strong: "#059669" };
+    Icon = CheckCircle2;
+    msg = `Bilancio ${periodo || ""} allineato con il gestionale (scostamento ${formatEur(absDelta)}).`;
+  } else if (pctDelta <= 0.15) {
+    tone = { bg: "#FFFBEB", border: "#FDE68A", text: "#92400E", strong: "#B45309" };
+    Icon = AlertTriangle;
+    msg = `Scostamento moderato tra bilancio e gestionale: ${formatEur(absDelta)} (${(pctDelta * 100).toFixed(1)}%). Verifica se manca un piano o se i capitali residui sono aggiornati.`;
+  } else {
+    tone = { bg: "#FEF2F2", border: "#FECACA", text: "#991B1B", strong: "#DC2626" };
+    Icon = AlertTriangle;
+    msg = `Forte scostamento bilancio↔gestionale: ${formatEur(absDelta)} (${(pctDelta * 100).toFixed(1)}%). Possibile piano mancante o disallineato.`;
+  }
+
+  return (
+    <div
+      data-testid="mut-banner-reconcile"
+      className="mb-5 p-3.5 border"
+      style={{ background: tone.bg, borderColor: tone.border }}
+    >
+      <div className="flex items-start gap-3">
+        <Icon size={18} className="shrink-0 mt-0.5" style={{ color: tone.strong }} />
+        <div className="flex-1">
+          <div className="text-[13px] font-semibold" style={{ color: tone.text }}>
+            {`Riconciliazione bilancio ↔ gestionale`}
+          </div>
+          <div className="text-[12px] mt-0.5" style={{ color: tone.text }}>{msg}</div>
+          <div className="flex flex-wrap gap-4 mt-2.5 text-[11px]">
+            <div>
+              <span className="text-[#64748B] uppercase tracking-wider">Bilancio {periodo || ""}:</span>{" "}
+              <span className="font-semibold tabular" style={{ color: tone.strong }}>{formatEur(bilDeb)}</span>
+            </div>
+            <div>
+              <span className="text-[#64748B] uppercase tracking-wider">Gestionale:</span>{" "}
+              <span className="font-semibold tabular" style={{ color: tone.strong }}>{formatEur(gestDebito)}</span>
+            </div>
+            <div>
+              <span className="text-[#64748B] uppercase tracking-wider">Δ:</span>{" "}
+              <span className="font-semibold tabular" style={{ color: tone.strong }}>{formatEur(absDelta)}{delta !== 0 ? ` (${delta > 0 ? "↑ bilancio" : "↑ gestionale"})` : ""}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

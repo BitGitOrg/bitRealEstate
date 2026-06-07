@@ -538,6 +538,20 @@ DOPO: Anno 0 cash_flow=€23.358, utile=€23.358 (corretto)
 - `ImpostazioniWrapper` con 2 tab: Configurazione + Centro Import. Route `/impostazioni?tab=import` apre direttamente import. Voce sidebar "Centro Import" rimossa (rimane solo Impostazioni).
 - `DataLineage` interattivo: ogni pagina ha campo `route`, bottone "Apri pagina" nell'header e righe tabella cliccabili → naviga direttamente alla pagina target.
 
+## 2026-02 — Mutui: detection intelligente dal bilancio (4 stati UX)
+- **Logica**: la pagina Mutui ora rileva automaticamente la presenza di debiti bancari nello stato patrimoniale dell'ultimo bilancio caricato e adatta la UI in base a 4 stati:
+  - **A** (`no-bilancio`): nessun bilancio caricato → banner blu informativo, pulsanti import/manuale entrambi ATTIVI (per flessibilità primo utilizzo)
+  - **B** (`no-debito`): bilancio con `stato_patrimoniale.debito_mutui = 0` + nessun piano gestionale → banner verde "Nessun debito mutui attivo nel bilancio [periodo]", entrambi i pulsanti DISABILITATI (UX rigorosa scelta dall'utente)
+  - **C** (`alert-missing`): bilancio con `debito_mutui > 0` + nessun piano gestionale → banner ROSSO alert "Debito mutui rilevato nel bilancio [periodo]: €X" con CTA "Carica ora il PDF banca" + pulsante import in alto evidenziato red+gradient+pulse
+  - **D** (`reconcile`): bilancio + piani gestionale → banner di riconciliazione bilancio↔gestionale con confronto numerico (verde se Δ < €2k o 5%, giallo se Δ < 15%, rosso oltre). Mostra "BILANCIO €X · GESTIONALE €Y · Δ €Z (↑ bilancio/gestionale)"
+- **Backend** (`routers/mutui.py`): esteso `/api/mutui/aggregato` con 3 campi nuovi: `bilancio_caricato`, `bilancio_periodo`, `bilancio_debito_mutui`. Letti dal documento più recente in `db.bilanci`.
+- **Frontend** (`pages/Mutui.jsx`): aggiunto componente `MutuiDetectionBanner` + funzione `computeBannerState`. Pulsanti `mutui-import-pdf-btn` e `mutui-add-btn` ora hanno disabled+styling condizionali. Anche i pulsanti nella card empty-state seguono lo stesso comportamento.
+- **Verificato 4 stati** con screenshot reali iniettando bilanci/mutui di test nel DB:
+  - State A → banner blu OK, pulsanti attivi
+  - State B → banner verde OK, pulsanti grigio disabled
+  - State C → banner rosso alert OK con CTA, import evidenziato red+pulse, "Nuovo mutuo" attivo
+  - State D → banner riconciliazione rosso OK (Δ 15.6% rilevato), pulsanti attivi
+
 ## 2026-02 — Fix P0 Mortgage Feasibility timeout 60s ingress Kubernetes
 - **Problema**: chiamando POST `/api/mortgage-feasibility/analyze` il client riceveva HTTP 502 dopo 60s (proxy kube), ma il backend completava l'AI in 60-90s e salvava nello storico. Utente vedeva errore ma poi trovava la simulazione nello storico.
 - **Causa**: Claude impiega 60-120s per produrre l'analisi banker-grade strutturata; l'ingress Kubernetes ha timeout HTTP fisso a 60s.
