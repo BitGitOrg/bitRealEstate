@@ -538,6 +538,18 @@ DOPO: Anno 0 cash_flow=€23.358, utile=€23.358 (corretto)
 - `ImpostazioniWrapper` con 2 tab: Configurazione + Centro Import. Route `/impostazioni?tab=import` apre direttamente import. Voce sidebar "Centro Import" rimossa (rimane solo Impostazioni).
 - `DataLineage` interattivo: ogni pagina ha campo `route`, bottone "Apri pagina" nell'header e righe tabella cliccabili → naviga direttamente alla pagina target.
 
+## 2026-02 — Patrimonio: stesso pattern detection bilancio→UI (riconciliazione automatica)
+- **Backend** (`routers/properties.py`): nuovo endpoint `GET /api/patrimonio/reconcile` ritorna `n_immobili`, `gestionale_valore_immobili` (somma `valore_stimato`/`prezzo_acquisto` da `properties`), `bilancio_caricato`, `bilancio_periodo`, `bilancio_valore_immobili`.
+- **Frontend** (`pages/Patrimonio.jsx`): nuovo componente `PatrimonioReconcileBanner` con 4 stati:
+  - **A** no-bilancio → banner blu informativo "Carica almeno un bilancio…"
+  - **B** no-immobili (bilancio `valore_immobili=0` + zero properties) → banner verde "Nessun immobile a bilancio"
+  - **C** alert-missing (bilancio dichiara immobili + gestionale vuoto) → banner ROSSO con CTA "Aggiungi il primo immobile"
+  - **D** reconcile → confronto BILANCIO vs GESTIONALE (N immobili) vs Δ. Tonalità: verde se Δ < €5k o 5%, giallo < 15%, rosso oltre
+- **Verificato 4 stati** con screenshot reali:
+  - State A: "Riconciliazione bilancio non disponibile" + 5 immobili reali in tabella
+  - State D: "Forte scostamento bilancio↔gestionale: 145.000 € (32.2%)" + BILANCIO €450k vs GESTIONALE 5 IMMOBILI €305k vs Δ €145k ↑ bilancio
+- Riusa lo stesso pattern UX di Mutui (stesse soglie, stesso linguaggio, stessi colori). Coherenza visiva totale tra le due pagine.
+
 ## 2026-02 — Mutui: detection intelligente dal bilancio (4 stati UX)
 - **Logica**: la pagina Mutui ora rileva automaticamente la presenza di debiti bancari nello stato patrimoniale dell'ultimo bilancio caricato e adatta la UI in base a 4 stati:
   - **A** (`no-bilancio`): nessun bilancio caricato → banner blu informativo, pulsanti import/manuale entrambi ATTIVI (per flessibilità primo utilizzo)

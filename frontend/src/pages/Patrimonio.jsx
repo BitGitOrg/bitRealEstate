@@ -4,10 +4,139 @@ import { SectionCard } from "../components/dashboard/SectionCard";
 import { StatusBadge, DisdettaBadge } from "../components/StatusBadge";
 import { ScoreBadge } from "../components/ScoreBadge";
 import { STATI, formatEur } from "../lib/demoData";
-import { Search, Plus, LayoutGrid, List, MapPin, Sparkles } from "lucide-react";
+import { Search, Plus, LayoutGrid, List, MapPin, Sparkles, Info, CheckCircle2, AlertTriangle, FileWarning } from "lucide-react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../lib/auth";
 import NewPropertyModal from "../components/property/NewPropertyModal";
+
+// Soglie tolleranza riconciliazione bilancio↔gestionale (valore immobili)
+const RECONCILE_TOLERANCE_EUR = 5000;
+const RECONCILE_TOLERANCE_PCT = 0.05;
+
+function computeBannerState(reconcile, propsCount) {
+  if (!reconcile?.bilancio_caricato) return "no-bilancio";
+  const bilVal = Number(reconcile?.bilancio_valore_immobili || 0);
+  if (bilVal === 0 && propsCount === 0) return "no-immobili";
+  if (bilVal > 0 && propsCount === 0) return "alert-missing";
+  return "reconcile";
+}
+
+function PatrimonioReconcileBanner({ state, reconcile, propsCount, onAddClick }) {
+  const periodo = reconcile?.bilancio_periodo;
+  const bilVal = Number(reconcile?.bilancio_valore_immobili || 0);
+  const gestVal = Number(reconcile?.gestionale_valore_immobili || 0);
+
+  if (state === "no-bilancio") {
+    return (
+      <div data-testid="patr-banner-no-bilancio" className="mb-5 flex items-start gap-3 p-3.5 bg-[#EFF6FF] border border-[#BFDBFE]">
+        <Info size={18} className="shrink-0 mt-0.5 text-[#2563EB]" />
+        <div className="flex-1">
+          <div className="text-[13px] font-semibold text-[#1E40AF]">Riconciliazione bilancio non disponibile</div>
+          <div className="text-[12px] text-[#1E3A8A] mt-0.5">
+            {`Carica almeno un bilancio in Impostazioni → Centro Import per confrontare automaticamente il valore degli immobili a bilancio con il totale del gestionale.`}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === "no-immobili") {
+    return (
+      <div data-testid="patr-banner-no-immobili" className="mb-5 flex items-start gap-3 p-3.5 bg-[#ECFDF5] border border-[#A7F3D0]">
+        <CheckCircle2 size={18} className="shrink-0 mt-0.5 text-[#059669]" />
+        <div className="flex-1">
+          <div className="text-[13px] font-semibold text-[#065F46]">{`Nessun immobile a bilancio ${periodo || ""}`}</div>
+          <div className="text-[12px] text-[#047857] mt-0.5">
+            {`Lo stato patrimoniale del bilancio più recente non riporta immobili. Carica prima un bilancio aggiornato per registrare nuovi immobili nel gestionale.`}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === "alert-missing") {
+    return (
+      <div data-testid="patr-banner-alert-missing" className="mb-5 p-4 bg-[#FEF2F2] border-2 border-[#FCA5A5]">
+        <div className="flex items-start gap-3">
+          <FileWarning size={20} className="shrink-0 mt-0.5 text-[#DC2626]" />
+          <div className="flex-1">
+            <div className="text-[14px] font-bold text-[#991B1B]">{`Immobili a bilancio ${periodo || ""}: ${formatEur(bilVal)}`}</div>
+            <div className="text-[12.5px] text-[#7F1D1D] mt-1 leading-relaxed">
+              {`Lo stato patrimoniale riporta immobili per ${formatEur(bilVal)} ma il gestionale è vuoto.`}
+              <strong> {`Carica i tuoi immobili`} </strong>
+              {`per allineare la rappresentazione e ottenere KPI, cash flow e portfolio score accurati.`}
+            </div>
+            <button
+              onClick={onAddClick}
+              data-testid="patr-banner-add-cta"
+              className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-semibold uppercase tracking-wider transition-colors"
+            >
+              <Plus size={13} /> Aggiungi il primo immobile
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // state === 'reconcile'
+  const delta = bilVal - gestVal;
+  const absDelta = Math.abs(delta);
+  const pctDelta = bilVal > 0 ? absDelta / bilVal : 1;
+  let tone, msg, Icon;
+  if (bilVal === 0 && gestVal > 0) {
+    tone = { bg: "#FFFBEB", border: "#FDE68A", text: "#92400E", strong: "#B45309" };
+    Icon = AlertTriangle;
+    msg = `Il bilancio ${periodo || ""} non riporta immobili a libro, ma in gestionale ne hai ${propsCount} per ${formatEur(gestVal)}. Verifica i dati del bilancio.`;
+  } else if (absDelta <= RECONCILE_TOLERANCE_EUR || pctDelta <= RECONCILE_TOLERANCE_PCT) {
+    tone = { bg: "#ECFDF5", border: "#A7F3D0", text: "#065F46", strong: "#059669" };
+    Icon = CheckCircle2;
+    msg = `Patrimonio allineato (${propsCount} immobili · scostamento ${formatEur(absDelta)}).`;
+  } else if (pctDelta <= 0.15) {
+    tone = { bg: "#FFFBEB", border: "#FDE68A", text: "#92400E", strong: "#B45309" };
+    Icon = AlertTriangle;
+    msg = `Scostamento moderato bilancio↔gestionale: ${formatEur(absDelta)} (${(pctDelta * 100).toFixed(1)}%). Verifica eventuali immobili mancanti o valori non aggiornati.`;
+  } else {
+    tone = { bg: "#FEF2F2", border: "#FECACA", text: "#991B1B", strong: "#DC2626" };
+    Icon = AlertTriangle;
+    msg = `Forte scostamento bilancio↔gestionale: ${formatEur(absDelta)} (${(pctDelta * 100).toFixed(1)}%). Possibile immobile mancante o valutazione disallineata.`;
+  }
+
+  return (
+    <div
+      data-testid="patr-banner-reconcile"
+      className="mb-5 p-3.5 border"
+      style={{ background: tone.bg, borderColor: tone.border }}
+    >
+      <div className="flex items-start gap-3">
+        <Icon size={18} className="shrink-0 mt-0.5" style={{ color: tone.strong }} />
+        <div className="flex-1">
+          <div className="text-[13px] font-semibold" style={{ color: tone.text }}>
+            {`Riconciliazione bilancio ↔ gestionale`}
+          </div>
+          <div className="text-[12px] mt-0.5" style={{ color: tone.text }}>{msg}</div>
+          <div className="flex flex-wrap gap-4 mt-2.5 text-[11px]">
+            <div>
+              <span className="text-[#64748B] uppercase tracking-wider">Bilancio {periodo || ""}:</span>{" "}
+              <span className="font-semibold tabular" style={{ color: tone.strong }}>{formatEur(bilVal)}</span>
+            </div>
+            <div>
+              <span className="text-[#64748B] uppercase tracking-wider">Gestionale ({propsCount} immobili):</span>{" "}
+              <span className="font-semibold tabular" style={{ color: tone.strong }}>{formatEur(gestVal)}</span>
+            </div>
+            <div>
+              <span className="text-[#64748B] uppercase tracking-wider">Δ:</span>{" "}
+              <span className="font-semibold tabular" style={{ color: tone.strong }}>
+                {formatEur(absDelta)}
+                {delta !== 0 ? ` (${delta > 0 ? "↑ bilancio" : "↑ gestionale"})` : ""}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Patrimonio() {
   const [q, setQ] = useState("");
@@ -16,14 +145,17 @@ export default function Patrimonio() {
   const [dealsInTrattativa, setDealsInTrattativa] = useState([]);
   const [realProps, setRealProps] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
+  const [reconcile, setReconcile] = useState(null);
 
   const loadProps = () => apiClient().get("/properties").then(r => setRealProps(r.data || [])).catch(() => {});
+  const loadReconcile = () => apiClient().get("/patrimonio/reconcile").then(r => setReconcile(r.data || null)).catch(() => {});
 
   useEffect(() => {
     apiClient().get("/deals?status=in_trattativa")
       .then(r => setDealsInTrattativa(r.data || []))
       .catch(() => {});
     loadProps();
+    loadReconcile();
   }, []);
 
   // Convert deals into property-like rows
@@ -77,8 +209,19 @@ export default function Patrimonio() {
       <NewPropertyModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        onCreated={() => loadProps()}
+        onCreated={() => { loadProps(); loadReconcile(); }}
       />
+
+      {/* Banner riconciliazione bilancio↔gestionale */}
+      {reconcile && (
+        <PatrimonioReconcileBanner
+          state={computeBannerState(reconcile, realProps.length)}
+          reconcile={reconcile}
+          propsCount={realProps.length}
+          onAddClick={() => setModalOpen(true)}
+        />
+      )}
+
       {/* Filters */}
       <div className="bg-[#FFFFFF] border border-[#E2E8F0] rounded-xl p-4 mb-4 flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2 flex-1 min-w-[240px] px-3 py-2 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">

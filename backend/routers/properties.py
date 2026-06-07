@@ -149,6 +149,35 @@ def make_properties_router(db, current_user):
             out.append(p)
         return out
 
+    @router.get("/patrimonio/reconcile")
+    async def patrimonio_reconcile(user: dict = Depends(current_user)):
+        """Riconciliazione bilancio↔gestionale per il patrimonio immobiliare.
+        Ritorna i totali necessari alla UI per mostrare uno dei 4 stati banner."""
+        # Gestionale: somma valori immobili attualmente registrati
+        props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+        gest_valore = sum(
+            float(p.get("valore_stimato") or p.get("prezzo_acquisto") or 0) for p in props
+        )
+
+        # Ultimo bilancio caricato
+        latest_bil = await db.bilanci.find_one(
+            {"user_id": user["id"]}, {"_id": 0}, sort=[("periodo", -1), ("created_at", -1)]
+        )
+        bilancio_caricato = latest_bil is not None
+        bilancio_periodo = latest_bil.get("periodo") if latest_bil else None
+        bilancio_valore = None
+        if latest_bil:
+            sp = latest_bil.get("stato_patrimoniale") or {}
+            bilancio_valore = float(sp.get("valore_immobili") or 0)
+
+        return {
+            "n_immobili": len(props),
+            "gestionale_valore_immobili": round(gest_valore, 2),
+            "bilancio_caricato": bilancio_caricato,
+            "bilancio_periodo": bilancio_periodo,
+            "bilancio_valore_immobili": round(bilancio_valore, 2) if bilancio_valore is not None else None,
+        }
+
     @router.get("/properties/{pid}")
     async def get_property(pid: str, user: dict = Depends(current_user)):
         p = await db.properties.find_one({"id": pid, "user_id": user["id"]}, {"_id": 0})
