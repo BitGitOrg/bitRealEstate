@@ -11,6 +11,7 @@ import {
 import { Wallet, TrendingUp, AlertTriangle, Loader2 } from "lucide-react";
 import { MiniSparkline } from "../components/MiniSparkline";
 import { useKpiTrends } from "../lib/useKpiTrends";
+import { LiquiditaReconcileBanner, useFinanzaReconcile } from "../components/FinanzaReconcileBanner";
 
 const tooltipStyle = { backgroundColor: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12, color: "#0F172A", boxShadow: "0 4px 12px rgba(15,23,42,0.08)" };
 
@@ -20,6 +21,7 @@ export default function CashFlow() {
   const [forecast, setForecast] = useState([]);
   const [agg, setAgg] = useState(null);
   const [loading, setLoading] = useState(true);
+  const finanzaReconcile = useFinanzaReconcile();
 
   useEffect(() => {
     (async () => {
@@ -44,6 +46,7 @@ export default function CashFlow() {
 
   return (
     <Layout title="Cash Flow" subtitle={loading ? "Caricamento…" : "Andamento storico e forecast 12 mesi"}>
+      <LiquiditaReconcileBanner data={finanzaReconcile} />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <SectionCard testId="cf-kpi-current">
           <div className="flex items-center gap-2 text-[10px] uppercase text-[#64748B]"><Wallet size={12}/> Saldo mese corrente</div>

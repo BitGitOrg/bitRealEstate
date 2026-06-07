@@ -1,4 +1,5 @@
 """Properties + Deal-to-Property conversion router."""
+import re
 import uuid
 from datetime import datetime, timezone, date
 from dateutil.relativedelta import relativedelta
@@ -6,6 +7,48 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from routers._shared import enrich_property as _enrich_property, apply_dynamic_score
+
+
+_MESI_IT_MAP = {
+    "gennaio": 1, "febbraio": 2, "marzo": 3, "aprile": 4, "maggio": 5, "giugno": 6,
+    "luglio": 7, "agosto": 8, "settembre": 9, "ottobre": 10, "novembre": 11, "dicembre": 12,
+}
+
+
+def _period_end_iso(periodo: str) -> Optional[str]:
+    """Converte "Q4 2025" / "2025" / "Marzo 2025" → "YYYY-MM-DD" (ultimo giorno del periodo).
+    Ritorna None se non riconosciuto."""
+    if not periodo:
+        return None
+    p = periodo.lower().strip()
+    # Mese specifico (es. "Marzo 2025")
+    for name, num in _MESI_IT_MAP.items():
+        if name in p:
+            m = re.search(r"(20\d{2})", p)
+            if m:
+                year = int(m.group(1))
+                # ultimo giorno del mese
+                if num == 12:
+                    last = date(year, 12, 31)
+                else:
+                    last = date(year, num + 1, 1) - relativedelta(days=1)
+                return last.isoformat()
+    # Trimestre (es. "Q4 2025")
+    m = re.search(r"q(\d)\s*(20\d{2})", p)
+    if m:
+        q = int(m.group(1))
+        year = int(m.group(2))
+        end_month = q * 3
+        if end_month == 12:
+            last = date(year, 12, 31)
+        else:
+            last = date(year, end_month + 1, 1) - relativedelta(days=1)
+        return last.isoformat()
+    # Anno (es. "2025")
+    m = re.search(r"(20\d{2})", p)
+    if m:
+        return date(int(m.group(1)), 12, 31).isoformat()
+    return None
 
 
 async def _generate_expected_incassi(db, user_id: str, prop: dict) -> int:
@@ -176,6 +219,88 @@ def make_properties_router(db, current_user):
             "bilancio_caricato": bilancio_caricato,
             "bilancio_periodo": bilancio_periodo,
             "bilancio_valore_immobili": round(bilancio_valore, 2) if bilancio_valore is not None else None,
+        }
+
+    @router.get("/finanza/reconcile")
+    async def finanza_reconcile(user: dict = Depends(current_user)):
+        """Riconciliazione completa bilancio↔gestionale: liquidità, debito mutui, immobili e patrimonio netto reale.
+        Calcola la liquidità live aggiungendo i movimenti bancari successivi alla data del bilancio."""
+        # ─── Ultimo bilancio ───
+        latest_bil = await db.bilanci.find_one(
+            {"user_id": user["id"]}, {"_id": 0}, sort=[("periodo", -1), ("created_at", -1)]
+        )
+        if not latest_bil:
+            return {
+                "bilancio_caricato": False,
+                "bilancio_periodo": None,
+                "bilancio": None,
+                "gestionale": None,
+                "liquidita_live": None,
+                "patrimonio_netto_reale": None,
+                "n_movimenti_post_bilancio": 0,
+            }
+        sp = latest_bil.get("stato_patrimoniale") or {}
+        bil_valore_immobili = float(sp.get("valore_immobili") or 0)
+        bil_debito_mutui = float(sp.get("debito_mutui") or 0)
+        bil_liquidita = float(sp.get("liquidita") or 0)
+        bil_pn = float(sp.get("patrimonio_netto") or 0)
+        periodo = latest_bil.get("periodo")
+
+        # ─── Gestionale: immobili ───
+        props = await db.properties.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+        gest_valore_immobili = sum(
+            float(p.get("valore_stimato") or p.get("prezzo_acquisto") or 0) for p in props
+        )
+
+        # ─── Gestionale: debito mutui (capitale residuo dai piani caricati) ───
+        mutui = await db.mutui.find({"user_id": user["id"]}, {"_id": 0}).to_list(200)
+        gest_debito_mutui = 0.0
+        for m in mutui:
+            gest_debito_mutui += float(m.get("capitale_residuo") or m.get("importo_originario") or 0)
+
+        # ─── Liquidità live: bilancio.liquidita + movimenti dopo fine periodo ───
+        end_iso = _period_end_iso(periodo)
+        n_post = 0
+        delta_post = 0.0
+        if end_iso:
+            mov_cursor = db.movimenti_bancari.find(
+                {"user_id": user["id"], "data": {"$gt": end_iso}}, {"_id": 0, "importo": 1, "tipo": 1}
+            )
+            async for m in mov_cursor:
+                imp = float(m.get("importo") or 0)
+                t = (m.get("tipo") or "uscita").lower()
+                if t in ("incasso", "entrata", "credito"):
+                    delta_post += abs(imp)
+                else:
+                    delta_post -= abs(imp)
+                n_post += 1
+        liquidita_live = bil_liquidita + delta_post
+
+        # ─── Patrimonio Netto Reale ───
+        # = immobili gestionale + liquidità live - debito mutui gestionale
+        pn_reale = gest_valore_immobili + liquidita_live - gest_debito_mutui
+
+        return {
+            "bilancio_caricato": True,
+            "bilancio_periodo": periodo,
+            "bilancio_periodo_end": end_iso,
+            "bilancio": {
+                "valore_immobili": round(bil_valore_immobili, 2),
+                "liquidita": round(bil_liquidita, 2),
+                "debito_mutui": round(bil_debito_mutui, 2),
+                "patrimonio_netto": round(bil_pn, 2),
+            },
+            "gestionale": {
+                "n_immobili": len(props),
+                "valore_immobili": round(gest_valore_immobili, 2),
+                "n_mutui": len(mutui),
+                "debito_mutui": round(gest_debito_mutui, 2),
+            },
+            "liquidita_live": round(liquidita_live, 2),
+            "liquidita_delta_post_bilancio": round(delta_post, 2),
+            "n_movimenti_post_bilancio": n_post,
+            "patrimonio_netto_reale": round(pn_reale, 2),
+            "delta_pn": round(pn_reale - bil_pn, 2),
         }
 
     @router.get("/properties/{pid}")

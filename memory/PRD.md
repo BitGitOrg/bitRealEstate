@@ -538,6 +538,27 @@ DOPO: Anno 0 cash_flow=€23.358, utile=€23.358 (corretto)
 - `ImpostazioniWrapper` con 2 tab: Configurazione + Centro Import. Route `/impostazioni?tab=import` apre direttamente import. Voce sidebar "Centro Import" rimossa (rimane solo Impostazioni).
 - `DataLineage` interattivo: ogni pagina ha campo `route`, bottone "Apri pagina" nell'header e righe tabella cliccabili → naviga direttamente alla pagina target.
 
+## 2026-02 — Tris Riconciliazione: Liquidità live + Patrimonio Netto Reale (Dashboard + Cash Flow)
+- **Backend** (`routers/properties.py`): nuovo endpoint `GET /api/finanza/reconcile` che ritorna in unica chiamata:
+  - `bilancio_periodo`, `bilancio_periodo_end` (calcolato da helper `_period_end_iso` che parsa "Q4 2025" / "2025" / "Marzo 2025" → ultimo giorno)
+  - `bilancio.valore_immobili/liquidita/debito_mutui/patrimonio_netto`
+  - `gestionale.n_immobili/valore_immobili/n_mutui/debito_mutui` (somma capitale residuo dai piani)
+  - `liquidita_live` = `bilancio.liquidita + Σ(movimenti_bancari dopo periodo_end)` (incassi −= uscite +=)
+  - `liquidita_delta_post_bilancio`, `n_movimenti_post_bilancio`
+  - `patrimonio_netto_reale` = `immobili_gest + liquidità_live - debito_gest`
+  - `delta_pn` vs bilancio
+- **Frontend** (`components/FinanzaReconcileBanner.jsx` nuovo): componente riusabile + hook `useFinanzaReconcile()`:
+  - `<LiquiditaReconcileBanner>` — verde (stabile/cresciuta), giallo (scesa < 30%), rosso (scesa > 30%). Auto-hides se bilancio non caricato o cassa=0+0 movimenti.
+  - `<PatrimonioNettoRealeCard>` — 4 tile (immobili gest / cassa live / debito residuo / PN reale stimato) + badge Δ vs bilancio (verde/giallo/rosso secondo soglie). Formula trasparente in calce.
+  - `<FinanzaNoBilancioHint>` — banner blu per pagine senza bilancio caricato.
+- **Integrazione**: Dashboard.jsx e CashFlow.jsx ora caricano l'endpoint e mostrano i banner. Pattern coerente con Mutui e Patrimonio.
+- **Verificato** con scenario reale (bilancio Q4 2025 cassa €15k + 10 movimenti post per netto +€4870):
+  - Liquidità live = €19.870 (banner verde "Cassa cresciuta di 4870 € dopo Q4 2025")
+  - PN Reale = €144.870 vs bilancio €115k → Δ +29.870 € (badge rosso "alert")
+  - 4 tile renderizzati correttamente + formula in calce
+  - Cash Flow page: stesso banner liquidità in cima ✅
+- Helper `_period_end_iso` gestisce: "Q1-Q4 YYYY", mese italiano "Marzo YYYY", "YYYY" annuale.
+
 ## 2026-02 — Patrimonio: stesso pattern detection bilancio→UI (riconciliazione automatica)
 - **Backend** (`routers/properties.py`): nuovo endpoint `GET /api/patrimonio/reconcile` ritorna `n_immobili`, `gestionale_valore_immobili` (somma `valore_stimato`/`prezzo_acquisto` da `properties`), `bilancio_caricato`, `bilancio_periodo`, `bilancio_valore_immobili`.
 - **Frontend** (`pages/Patrimonio.jsx`): nuovo componente `PatrimonioReconcileBanner` con 4 stati:
