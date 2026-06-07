@@ -221,6 +221,106 @@ def make_properties_router(db, current_user):
             "bilancio_valore_immobili": round(bilancio_valore, 2) if bilancio_valore is not None else None,
         }
 
+    async def _compute_finanza_reconcile(user_id: str):
+        """Logica condivisa: ritorna lo stesso payload di /finanza/reconcile (riusato da pn-timeline)."""
+        latest_bil = await db.bilanci.find_one(
+            {"user_id": user_id}, {"_id": 0}, sort=[("periodo", -1), ("created_at", -1)]
+        )
+        if not latest_bil:
+            return None
+        sp = latest_bil.get("stato_patrimoniale") or {}
+        bil_pn = float(sp.get("patrimonio_netto") or 0)
+        bil_liq = float(sp.get("liquidita") or 0)
+        bil_debm = float(sp.get("debito_mutui") or 0)
+        bil_imm = float(sp.get("valore_immobili") or 0)
+        periodo = latest_bil.get("periodo")
+        end_iso = _period_end_iso(periodo)
+
+        props = await db.properties.find({"user_id": user_id}, {"_id": 0}).to_list(500)
+        gest_imm = sum(float(p.get("valore_stimato") or p.get("prezzo_acquisto") or 0) for p in props)
+
+        mutui = await db.mutui.find({"user_id": user_id}, {"_id": 0}).to_list(200)
+        gest_deb = sum(float(m.get("capitale_residuo") or m.get("importo_originario") or 0) for m in mutui)
+
+        n_post = 0
+        delta_post = 0.0
+        if end_iso:
+            async for m in db.movimenti_bancari.find(
+                {"user_id": user_id, "data": {"$gt": end_iso}}, {"_id": 0, "importo": 1, "tipo": 1}
+            ):
+                imp = float(m.get("importo") or 0)
+                t = (m.get("tipo") or "uscita").lower()
+                delta_post += abs(imp) if t in ("incasso", "entrata", "credito") else -abs(imp)
+                n_post += 1
+        liq_live = bil_liq + delta_post
+        pn_reale = gest_imm + liq_live - gest_deb
+
+        return {
+            "bilancio_periodo": periodo,
+            "bilancio_pn": bil_pn,
+            "bilancio_immobili": bil_imm,
+            "bilancio_liquidita": bil_liq,
+            "bilancio_debito_mutui": bil_debm,
+            "gestionale_immobili": gest_imm,
+            "gestionale_debito_mutui": gest_deb,
+            "liquidita_live": liq_live,
+            "delta_post": delta_post,
+            "n_post": n_post,
+            "pn_reale": pn_reale,
+            "end_iso": end_iso,
+        }
+
+    @router.get("/finanza/pn-timeline")
+    async def pn_timeline(user: dict = Depends(current_user)):
+        """Timeline storica del Patrimonio Netto.
+        Ogni punto = uno snapshot di bilancio (PN ufficiale). Aggiunge un punto extra "Oggi"
+        con il PN Reale live (ricalcolato da gestionale + cassa post-bilancio).
+        Frontend: chart line con 2 serie ('PN Bilancio' storica + 'PN Reale' che prosegue oltre)."""
+        bilanci = await db.bilanci.find(
+            {"user_id": user["id"]}, {"_id": 0}
+        ).sort("created_at", 1).to_list(100)
+
+        points = []
+        for b in bilanci:
+            sp = b.get("stato_patrimoniale") or {}
+            periodo = b.get("periodo") or ""
+            end = _period_end_iso(periodo)
+            pn_bil = float(sp.get("patrimonio_netto") or 0)
+            # Per i bilanci storici, PN Reale = PN bilancio (snapshot ufficiale già allineato)
+            # La divergenza emerge solo nel punto "Oggi" post-ultimo bilancio
+            points.append({
+                "label": periodo,
+                "data": end,
+                "pn_bilancio": round(pn_bil, 2),
+                "pn_reale": round(pn_bil, 2),
+                "immobili": round(float(sp.get("valore_immobili") or 0), 2),
+                "liquidita": round(float(sp.get("liquidita") or 0), 2),
+                "debito_mutui": round(float(sp.get("debito_mutui") or 0), 2),
+                "is_snapshot": True,
+            })
+
+        # Ordina cronologicamente per data (alcuni bilanci possono avere ordine errato)
+        points.sort(key=lambda p: (p.get("data") or "9999-99-99"))
+
+        # Aggiunge punto "Oggi" col PN Reale live (sostituisce/estende l'ultimo se è il più recente)
+        rec = await _compute_finanza_reconcile(user["id"])
+        if rec:
+            today_iso = datetime.now(timezone.utc).date().isoformat()
+            # Se l'ultimo bilancio è già "alla data" (es. fine periodo > oggi -7gg), aggiungiamo comunque
+            points.append({
+                "label": "Oggi (live)",
+                "data": today_iso,
+                "pn_bilancio": None,  # serie bilancio si ferma all'ultimo snapshot
+                "pn_reale": round(rec["pn_reale"], 2),
+                "immobili": round(rec["gestionale_immobili"], 2),
+                "liquidita": round(rec["liquidita_live"], 2),
+                "debito_mutui": round(rec["gestionale_debito_mutui"], 2),
+                "is_snapshot": False,
+                "delta_vs_ultimo_bilancio": round(rec["pn_reale"] - rec["bilancio_pn"], 2),
+            })
+
+        return {"points": points, "n_snapshots": len([p for p in points if p["is_snapshot"]])}
+
     @router.get("/finanza/reconcile")
     async def finanza_reconcile(user: dict = Depends(current_user)):
         """Riconciliazione completa bilancio↔gestionale: liquidità, debito mutui, immobili e patrimonio netto reale.

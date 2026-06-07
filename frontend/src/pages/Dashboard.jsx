@@ -17,7 +17,7 @@ import {
   CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell,
 } from "recharts";
 import { distribuzioneTipologia, formatEur } from "../lib/demoData";
-import { LiquiditaReconcileBanner, PatrimonioNettoRealeCard, useFinanzaReconcile } from "../components/FinanzaReconcileBanner";
+import { LiquiditaReconcileBanner, PatrimonioNettoRealeCard, PNTimelineChart, useFinanzaReconcile } from "../components/FinanzaReconcileBanner";
 
 // KPI vuoti — usati solo se DB completamente vuoto (utente appena registrato)
 const EMPTY_KPI = {
@@ -181,6 +181,7 @@ export default function Dashboard() {
       {/* Riconciliazione finanziaria bilancio↔gestionale (liquidità + PN reale) */}
       <LiquiditaReconcileBanner data={finanzaReconcile} />
       <PatrimonioNettoRealeCard data={finanzaReconcile} />
+      <PNTimelineChart />
 
       {/* KPI grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-6">

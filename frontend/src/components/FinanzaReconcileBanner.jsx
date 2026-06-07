@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { Info, CheckCircle2, AlertTriangle, TrendingUp, TrendingDown, Wallet, Building2, Banknote, Scale } from "lucide-react";
+import { Info, CheckCircle2, AlertTriangle, TrendingUp, TrendingDown, Wallet, Building2, Banknote, Scale, LineChart as LineIcon } from "lucide-react";
+import {
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, Legend, ReferenceDot,
+} from "recharts";
 import { apiClient } from "../lib/auth";
 import { formatEur } from "../lib/demoData";
 
@@ -143,6 +146,122 @@ export function PatrimonioNettoRealeCard({ data }) {
       <div className="text-[11px] text-[#64748B] leading-relaxed">
         <strong>Formula:</strong>{` valore immobili gestionale + liquidità live (cassa bilancio + movimenti post) − debito residuo dai piani caricati = patrimonio netto reale.
         Confrontato col patrimonio netto a bilancio per evidenziare scostamenti dovuti a immobili non caricati, mutui da aggiornare o liquidità non riconciliata.`}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Timeline storica del Patrimonio Netto.
+ * - Serie blu "PN Bilancio": snapshot storici da bilanci caricati
+ * - Serie verde "PN Reale": stessi snapshot + un punto extra "Oggi (live)" col ricalcolo dal gestionale
+ * Il punto live evidenzia la divergenza tra bilancio storico ufficiale e ricalcolo a oggi.
+ */
+export function PNTimelineChart() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    apiClient().get("/finanza/pn-timeline")
+      .then(r => setData(r.data || null))
+      .catch(() => setError(true));
+  }, []);
+
+  if (error || !data || !data.points || data.points.length < 2) return null;
+
+  const points = data.points;
+  const livePoint = points.find(p => !p.is_snapshot);
+  const lastBilancio = [...points].reverse().find(p => p.is_snapshot);
+  const deltaLive = livePoint && lastBilancio ? livePoint.pn_reale - lastBilancio.pn_bilancio : 0;
+  const absDelta = Math.abs(deltaLive);
+  const deltaPct = lastBilancio && lastBilancio.pn_bilancio > 0 ? absDelta / lastBilancio.pn_bilancio : 0;
+  const deltaTone = deltaPct <= 0.05
+    ? { strong: "#059669", bg: "#ECFDF5", border: "#A7F3D0" }
+    : deltaPct <= 0.15
+      ? { strong: "#B45309", bg: "#FFFBEB", border: "#FDE68A" }
+      : { strong: "#DC2626", bg: "#FEF2F2", border: "#FECACA" };
+
+  return (
+    <div data-testid="pn-timeline-card" className="bg-white border border-[#E2E8F0] p-4 mb-6">
+      <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+        <div>
+          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-[#64748B] font-semibold">
+            <LineIcon size={12} /> Timeline Patrimonio Netto
+          </div>
+          <div className="text-[12px] text-[#64748B] mt-0.5">
+            {`Snapshot storici dei bilanci confrontati col ricalcolo live a oggi`}
+          </div>
+        </div>
+        {livePoint && lastBilancio && (
+          <div className="flex items-center gap-2 px-2.5 py-1 text-[11px] font-semibold" style={{ background: deltaTone.bg, border: `1px solid ${deltaTone.border}`, color: deltaTone.strong }}>
+            {deltaLive >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+            {`Δ vs ultimo bilancio: ${deltaLive >= 0 ? "+" : "-"}${formatEur(absDelta)}`}
+          </div>
+        )}
+      </div>
+
+      <div style={{ width: "100%", height: 280 }}>
+        <ResponsiveContainer>
+          <LineChart data={points} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+            <XAxis
+              dataKey="label"
+              stroke="#64748B"
+              tick={{ fontSize: 11 }}
+              angle={-15}
+              textAnchor="end"
+              height={50}
+            />
+            <YAxis
+              stroke="#64748B"
+              tick={{ fontSize: 11 }}
+              tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+            />
+            <ReTooltip
+              contentStyle={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12 }}
+              formatter={(v) => (v === null || v === undefined ? "—" : formatEur(v))}
+              labelFormatter={(l) => `Periodo: ${l}`}
+            />
+            <Legend wrapperStyle={{ fontSize: 12, paddingTop: 6 }} />
+            <Line
+              type="monotone"
+              dataKey="pn_bilancio"
+              name="PN Bilancio (snapshot)"
+              stroke="#0066FF"
+              strokeWidth={2.5}
+              dot={{ r: 4, fill: "#0066FF" }}
+              activeDot={{ r: 6 }}
+              connectNulls={false}
+              isAnimationActive={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="pn_reale"
+              name="PN Reale (live)"
+              stroke="#059669"
+              strokeWidth={2.5}
+              strokeDasharray="6 3"
+              dot={{ r: 4, fill: "#059669" }}
+              activeDot={{ r: 6 }}
+              isAnimationActive={false}
+            />
+            {livePoint && (
+              <ReferenceDot
+                x={livePoint.label}
+                y={livePoint.pn_reale}
+                r={7}
+                fill={deltaTone.strong}
+                stroke="#FFFFFF"
+                strokeWidth={2}
+              />
+            )}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="text-[11px] text-[#64748B] leading-relaxed mt-3">
+        {`La serie blu è interrotta dopo l'ultimo bilancio (linea continua = snapshot ufficiale). La serie verde tratteggiata prosegue fino al punto "Oggi (live)" con il PN ricalcolato dal gestionale.
+        Una divergenza positiva indica accumulo di valore (cassa cresciuta, ammortamento mutui, rivalutazioni); negativa indica erosione.`}
       </div>
     </div>
   );

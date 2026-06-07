@@ -538,6 +538,23 @@ DOPO: Anno 0 cash_flow=€23.358, utile=€23.358 (corretto)
 - `ImpostazioniWrapper` con 2 tab: Configurazione + Centro Import. Route `/impostazioni?tab=import` apre direttamente import. Voce sidebar "Centro Import" rimossa (rimane solo Impostazioni).
 - `DataLineage` interattivo: ogni pagina ha campo `route`, bottone "Apri pagina" nell'header e righe tabella cliccabili → naviga direttamente alla pagina target.
 
+## 2026-02 — Timeline Patrimonio Netto storica (chart line + live point)
+- **Backend** (`routers/properties.py`): nuovo endpoint `GET /api/finanza/pn-timeline`. Ordina cronologicamente tutti i bilanci caricati, calcola end-date di ciascun periodo via `_period_end_iso`, e accoda un punto extra `"Oggi (live)"` col PN Reale ricalcolato dall'helper condiviso `_compute_finanza_reconcile`.
+  - Output: array `points[]` con `{label, data, pn_bilancio, pn_reale, immobili, liquidita, debito_mutui, is_snapshot}` per ogni bilancio + 1 punto live (pn_bilancio = null per disconnettere la serie blu).
+- **Frontend** (`components/FinanzaReconcileBanner.jsx`): nuovo componente `<PNTimelineChart>` con Recharts LineChart 2 serie:
+  - Serie BLU solida = `PN Bilancio (snapshot)` — si ferma all'ultimo bilancio (connectNulls=false)
+  - Serie VERDE tratteggiata = `PN Reale (live)` — prosegue fino al punto "Oggi (live)"
+  - `ReferenceDot` colorato sul punto live (verde/giallo/rosso secondo Δ%)
+  - Badge in alto a destra "Δ vs ultimo bilancio: +/- €X" con tono e icona TrendingUp/Down
+  - Spiegazione testuale in calce
+- **Integrazione**: aggiunto a Dashboard.jsx dopo `PatrimonioNettoRealeCard`.
+- **Verificato** con scenario 4 bilanci trimestrali Q1→Q4 2025 + movimenti post-bilancio:
+  - 5 punti renderizzati correttamente
+  - Linea blu si interrompe a Q4 2025 ✅
+  - Linea verde tratteggiata prosegue a "Oggi (live)" ✅
+  - Tooltip mostra entrambi i valori al passaggio del mouse ✅
+  - Badge Δ aggiornato dinamicamente ✅
+
 ## 2026-02 — Tris Riconciliazione: Liquidità live + Patrimonio Netto Reale (Dashboard + Cash Flow)
 - **Backend** (`routers/properties.py`): nuovo endpoint `GET /api/finanza/reconcile` che ritorna in unica chiamata:
   - `bilancio_periodo`, `bilancio_periodo_end` (calcolato da helper `_period_end_iso` che parsa "Q4 2025" / "2025" / "Marzo 2025" → ultimo giorno)
